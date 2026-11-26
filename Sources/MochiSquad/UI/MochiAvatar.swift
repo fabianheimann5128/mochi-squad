@@ -209,6 +209,8 @@ struct MochiAvatar: View {
     let key: String
     let size: CGFloat
     var working = false
+    /// Rund statt als Kachel, für Pillen und Chips.
+    var round = false
     @Environment(\.accessibilityReduceMotion) private var still
 
     var body: some View {
@@ -218,10 +220,10 @@ struct MochiAvatar: View {
                 TimelineView(.animation(minimumInterval: 1 / 20)) { moment in
                     let t = moment.date.timeIntervalSinceReferenceDate
                     let phase = t.truncatingRemainder(dividingBy: 3.6)
-                    MochiCanvas(look: look, breathe: (1 - cos(t * 2 * .pi / 2.2)) / 2, blink: phase < 0.16 ? sin(phase / 0.16 * .pi) : 0)
+                    MochiCanvas(look: look, breathe: (1 - cos(t * 2 * .pi / 2.2)) / 2, blink: phase < 0.16 ? sin(phase / 0.16 * .pi) : 0, round: round)
                 }
             } else {
-                MochiCanvas(look: look, breathe: 0, blink: 0)
+                MochiCanvas(look: look, round: round)
             }
         }.frame(width: size, height: size).accessibilityHidden(true)
     }
@@ -234,12 +236,14 @@ struct MochiCanvas: View, Equatable {
     var blink: Double = 0
     /// Ohne Kachel zeichnen, z. B. für das App-Icon mit eigenem Hintergrund.
     var showsPlate = true
+    var round = false
 
     var body: some View {
         Canvas { ctx, canvas in
             let s = min(canvas.width, canvas.height) / 100
             ctx.scaleBy(x: s, y: s)
-            let plate = Path(roundedRect: CGRect(x: 0, y: 0, width: 100, height: 100), cornerRadius: 23, style: .continuous)
+            let plate = round ? Path(ellipseIn: CGRect(x: 0, y: 0, width: 100, height: 100))
+                : Path(roundedRect: CGRect(x: 0, y: 0, width: 100, height: 100), cornerRadius: 23, style: .continuous)
             ctx.clip(to: plate)
             if showsPlate {
                 ctx.fill(plate, with: .color(Color(.sRGB, red: 20 / 255, green: 20 / 255, blue: 20 / 255)))
@@ -247,8 +251,9 @@ struct MochiCanvas: View, Equatable {
             }
             draw(&ctx)
             if showsPlate {
-                ctx.stroke(Path(roundedRect: CGRect(x: 0.5, y: 0.5, width: 99, height: 99), cornerRadius: 22.5, style: .continuous),
-                           with: .color(Color.white.opacity(0.1)), lineWidth: 1)
+                let border = round ? Path(ellipseIn: CGRect(x: 0.5, y: 0.5, width: 99, height: 99))
+                    : Path(roundedRect: CGRect(x: 0.5, y: 0.5, width: 99, height: 99), cornerRadius: 22.5, style: .continuous)
+                ctx.stroke(border, with: .color(Color.white.opacity(0.1)), lineWidth: 1)
             }
         }
     }
@@ -257,18 +262,13 @@ struct MochiCanvas: View, Equatable {
         let hex = look.hex
         let base = Mochi.color(hex)
         var body = ctx
-        // Die Figur steht auf der Kachel; Bauform und Atmen skalieren um den Fuß.
-        let build = Mochi.buildScale(look.build), size = 0.88
-        body.translateBy(x: 50, y: 88)
+        // Der Fuß schließt mit dem unteren Kachelrand ab und läuft seitlich leicht darüber hinaus; Bauform und Atmen skalieren um den Fuß.
+        let build = Mochi.buildScale(look.build), size = 1.15
+        body.translateBy(x: 50, y: 103)
         body.scaleBy(x: size * build.x * (1 - 0.015 * breathe), y: size * build.y * (1 + 0.035 * breathe))
         body.translateBy(x: -50, y: -Mochi.foot)
         let shape = Mochi.silhouette(look.top)
 
-        // Standschatten
-        body.drawLayer { layer in
-            layer.addFilter(.blur(radius: 3))
-            layer.fill(Path(ellipseIn: CGRect(x: 0, y: Mochi.foot - 3.5, width: 100, height: 10)), with: .color(.black.opacity(0.6)))
-        }
         // Grundton mit Licht von links oben, dunkle Flanke rechts unten, Glanzfleck und helle Kante.
         body.boxFill(shape, cx: 0.4, cy: 0.3, r: 0.8, stops: [.init(color: Mochi.color(hex, factor: 1.08), location: 0), .init(color: base, location: 0.45),
                                                               .init(color: Mochi.color(hex, factor: 0.78), location: 1)])

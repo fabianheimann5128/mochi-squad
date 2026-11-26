@@ -22,7 +22,7 @@ struct AgentChat: View {
             ChatHeader(showRail: $showRail) {
                 Button(action: edit) {
                     GlassPill {
-                        MochiAvatar(key: agent.avatar, size: 30)
+                        MochiAvatar(key: agent.avatar, size: 30, round: true)
                         Text(agent.name).font(.system(size: 15, weight: .medium)).lineLimit(1)
                         if let session { SessionStatus(session: session) }
                     }

@@ -84,7 +84,7 @@ struct TeamChat: View {
             focused = true
         } label: {
             HStack(spacing: 6) {
-                if let avatar { MochiAvatar(key: avatar, size: 18) }
+                if let avatar { MochiAvatar(key: avatar, size: 18, round: true) }
                 Text(mention).font(.system(size: 13, weight: .medium))
                 if let job { Text(job).font(.system(size: 12)).foregroundStyle(Desk.faint) }
             }.padding(.leading, avatar == nil ? 12 : 6).padding(.trailing, 12).frame(height: 30)
