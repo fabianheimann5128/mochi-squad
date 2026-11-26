@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Alle Zustände der App an einem Ort; Views bekommen die einzelnen Stores über die Umgebung.
+/// All state of the app in one place; views get the individual stores through the environment.
 @MainActor final class AppState: ObservableObject {
     static let shared = AppState()
     let settings = SettingsStore()
@@ -11,9 +11,11 @@ import SwiftUI
     let transcript = TranscriptStore()
     let chats = ChatIndex()
     let manager: SessionManager
+    let messengers: MessengerHub
 
     private init() {
         manager = SessionManager(agents: agents, settings: settings, routines: routines, team: team)
+        messengers = MessengerHub(manager: manager, settings: settings, team: team)
     }
 }
 
@@ -32,6 +34,7 @@ struct MochiSquadApp: App {
                 .environmentObject(state.transcript)
                 .environmentObject(state.chats)
                 .environmentObject(state.manager)
+                .environmentObject(state.messengers)
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: min(1500, NSScreen.main?.visibleFrame.width ?? 1200),
@@ -42,9 +45,9 @@ struct MochiSquadApp: App {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Ein beendeter Hilfsprozess darf die App nicht über ein Schreiben in seine Pipe mitreißen.
+        // A helper process that ended must not take the app down through a write to its pipe.
         signal(SIGPIPE, SIG_IGN)
-        // Zwei Instanzen würden sich die Sitzungsordner gegenseitig löschen: Die laufende nach vorn holen und diese beenden.
+        // Two instances would delete each other's session folders: bring the running one to the front and quit this one.
         if let id = Bundle.main.bundleIdentifier,
            let other = NSRunningApplication.runningApplications(withBundleIdentifier: id).first(where: { $0 != .current }) {
             other.activate()
@@ -52,13 +55,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         AppPaths.prepareRuntime()
         let state = AppState.shared
+        SaveGuard.report = { [weak manager = state.manager] text in manager?.notice = text }
         state.manager.start()
         if state.agents.loadFailed {
-            state.manager.notice = "Die Liste deiner Agenten war beschädigt und wurde gesichert. Routinen bleiben erhalten; lege die Agenten bitte neu an."
-        } else {
-            state.routines.sync(with: state.agents.agents)
+            // Routines carry a description of their agent: those agents come back with their ids, so every routine keeps its owner.
+            let restored = state.agents.restore(from: state.routines.routines)
+            state.manager.notice = t("The list of your agents was damaged and has been backed up. Your routines are untouched\(restored > 0 ? ", and \(restored == 1 ? "the agent" : "the \(restored) agents") they belong to \(restored == 1 ? "was" : "were") restored" : ""). Please create the remaining agents again.",
+                                     "Die Liste deiner Agenten war beschädigt und wurde gesichert. Deine Routinen sind unverändert\(restored > 0 ? ", und \(restored == 1 ? "der zugehörige Agent wurde" : "die \(restored) zugehörigen Agenten wurden") wiederhergestellt" : ""). Lege die übrigen Agenten bitte neu an.")
         }
+        state.routines.sync(with: state.agents.agents)
         state.routines.installAll()
+        state.messengers.start()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -66,28 +73,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if manager.runningCount > 0 {
             let count = manager.runningCount
             let alert = NSAlert()
-            alert.messageText = count == 1 ? "Eine Sitzung ist noch offen" : "\(count) Sitzungen sind noch offen"
-            alert.informativeText = "Sollen deine Agenten im Hintergrund weiterlaufen? Mochi Squad bleibt dann geöffnet und ist nur ausgeblendet; "
-                + "über das Dock holst du es zurück. Beim Beenden werden die Sitzungen geschlossen, die Verläufe bleiben erhalten."
-            alert.addButton(withTitle: "Im Hintergrund weiterlaufen")
-            alert.addButton(withTitle: "Beenden")
-            alert.addButton(withTitle: "Abbrechen")
+            alert.messageText = count == 1 ? t("One session is still open", "Eine Sitzung ist noch offen") : t("\(count) sessions are still open", "\(count) Sitzungen sind noch offen")
+            alert.informativeText = t("Should your agents keep running in the background? Mochi Squad then stays open and is only hidden; you bring it back through the Dock. Quitting closes the sessions; the chat histories are kept.",
+                                      "Sollen deine Agenten im Hintergrund weiterlaufen? Mochi Squad bleibt dann geöffnet und ist nur ausgeblendet; über das Dock holst du es zurück. Beim Beenden werden die Sitzungen geschlossen, die Verläufe bleiben erhalten.")
+            alert.addButton(withTitle: t("Keep running in the background", "Im Hintergrund weiterlaufen"))
+            alert.addButton(withTitle: t("Quit", "Beenden"))
+            alert.addButton(withTitle: t("Cancel", "Abbrechen"))
             switch alert.runModal() {
             case .alertFirstButtonReturn:
-                // Die Sitzungen gehören zur App; im Hintergrund weiterlaufen heißt deshalb: ausblenden statt beenden.
+                // The sessions belong to the app; running in the background therefore means: hide instead of quit.
                 NSApp.hide(nil)
                 return .terminateCancel
             case .alertSecondButtonReturn: break
             default: return .terminateCancel
             }
         }
+        AppState.shared.messengers.stop()
         manager.shutdown()
         return .terminateNow
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
-    /// Klick aufs Dock-Symbol: die ausgeblendete App samt Fenster zurückholen.
+    /// Click on the Dock icon: bring back the hidden app together with its window.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
         sender.unhide(nil)
         if !hasVisibleWindows { sender.windows.first { $0.canBecomeMain }?.makeKeyAndOrderFront(nil) }
@@ -95,7 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-/// Zeigt die Ersteinrichtung, bis sie abgeschlossen ist, danach den Arbeitsbereich.
+/// Shows the first setup until it is finished, then the workspace.
 struct RootView: View {
     @EnvironmentObject private var settings: SettingsStore
 
@@ -103,6 +111,9 @@ struct RootView: View {
         Group {
             if settings.value.onboarded, !settings.projects.isEmpty { Workspace() } else { Onboarding() }
         }
+        // A new language rebuilds everything, so every text is read again.
+        .id(settings.language)
+        .environment(\.locale, settings.language.locale)
         .frame(minWidth: 640, minHeight: 480)
         .preferredColorScheme(.dark).foregroundStyle(Desk.text).tint(Desk.accent)
         .background(Desk.canvas)
@@ -111,7 +122,7 @@ struct RootView: View {
     }
 }
 
-/// Durchsichtige Titelleiste; die Ampelknöpfe sitzen in der Seitenleiste.
+/// Transparent title bar; the window buttons sit above the icon rail.
 struct WindowChrome: NSViewRepresentable {
     final class Probe: NSView {
         override func viewDidMoveToWindow() {
@@ -125,7 +136,7 @@ struct WindowChrome: NSViewRepresentable {
     func updateNSView(_ nsView: Probe, context: Context) {}
 }
 
-/// Die App im Dock behalten (wie „Optionen › Im Dock behalten“).
+/// Keep the app in the Dock (like "Options › Keep in Dock").
 enum Dock {
     static var containsApp: Bool {
         let apps = UserDefaults(suiteName: "com.apple.dock")?.array(forKey: "persistent-apps") as? [[String: Any]] ?? []
@@ -135,7 +146,7 @@ enum Dock {
         }
     }
 
-    /// Trägt die App ins Dock ein und lädt das Dock neu. Tut nichts, wenn sie schon dort liegt.
+    /// Adds the app to the Dock and reloads the Dock. Does nothing if it is already there.
     static func keepApp() {
         guard !containsApp, Bundle.main.bundleURL.pathExtension == "app" else { return }
         let entry = entry(for: Bundle.main.bundleURL)
@@ -145,7 +156,7 @@ enum Dock {
         }
     }
 
-    /// Dock-Eintrag einer App als Property-List-Text für `defaults write … -array-add`.
+    /// Dock entry of an app as property list text for `defaults write … -array-add`.
     static func entry(for app: URL) -> String {
         let path = app.path
             .replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")

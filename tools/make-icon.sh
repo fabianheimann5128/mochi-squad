@@ -1,9 +1,9 @@
 #!/bin/bash
-# Rendert Resources/AppIcon.icns neu (nur nötig, wenn sich der Mochi ändert).
+# Renders Resources/AppIcon.icns again (only needed when the Mochi changes).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
-swiftc -parse-as-library -o "$work/make-icon" tools/make-icon/main.swift Sources/MochiSquad/UI/MochiAvatar.swift
+swiftc -parse-as-library -o "$work/make-icon" tools/make-icon/main.swift Sources/MochiSquad/UI/MochiAvatar.swift Sources/MochiSquad/Core/L10n.swift
 "$work/make-icon" "$work/icon.png"
 set="$work/AppIcon.iconset"; mkdir "$set"
 for size in 16 32 128 256 512; do

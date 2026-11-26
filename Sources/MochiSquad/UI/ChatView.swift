@@ -1,7 +1,7 @@
 import SwiftTerm
 import SwiftUI
 
-/// Chat mit einem Agenten: Kopf, Verlauf oder Konsole, Eingabe.
+/// Chat with an agent: header, history or console, input.
 struct AgentChat: View {
     let agent: Agent
     @Binding var showRail: Bool
@@ -26,7 +26,7 @@ struct AgentChat: View {
                         Text(agent.name).font(.system(size: 15, weight: .medium)).lineLimit(1)
                         if let session { SessionStatus(session: session) }
                     }
-                }.buttonStyle(.plain).help("Agent bearbeiten")
+                }.buttonStyle(.plain).help(t("Edit agent", "Agent bearbeiten"))
             } trailing: {
                 if let session {
                     SessionControls(session: session, console: $console) { manager.close(session); console = false }
@@ -39,7 +39,7 @@ struct AgentChat: View {
                     Image(systemName: "display").font(.system(size: 14)).foregroundStyle(showPanel ? Desk.text : Desk.dim)
                         .frame(width: 36, height: 36).background(Desk.glass, in: Circle())
                         .overlay { Circle().strokeBorder(Desk.glassStroke) }.contentShape(Circle())
-                }.buttonStyle(.plain).help("Computer des Agenten")
+                }.buttonStyle(.plain).help(t("The agent's computer", "Computer des Agenten"))
             }
             if console, let session {
                 SessionTerminal(session: session).padding(.horizontal, 12).padding(.bottom, 12)
@@ -53,15 +53,16 @@ struct AgentChat: View {
                         LiveExtras(session: session, name: agent.name) { console = true }
                     }
                 }
-                // Geänderte Einstellungen gelten erst nach einem Neustart der Sitzung; hier ist das immer sichtbar.
+                // Changed settings apply only after the session restarts; here that is always visible.
                 if let live = manager.liveSession(for: agent.id), live.signature != (agents.agent(agent.id) ?? agent).sessionSignature {
                     HStack(spacing: 10) {
                         Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 12)).foregroundStyle(Desk.dim)
-                        Text("Du hast \(agent.name) geändert. Die laufende Sitzung arbeitet noch mit den alten Einstellungen."
-                             + (agent.provider == .codex ? " Codex beginnt beim Neustart einen neuen Chat." : ""))
+                        Text(t("You changed \(agent.name). The running session still works with the old settings.",
+                               "Du hast \(agent.name) geändert. Die laufende Sitzung arbeitet noch mit den alten Einstellungen.")
+                             + (agent.provider == .codex ? t(" Codex starts a new chat on restart.", " Codex beginnt beim Neustart einen neuen Chat.") : ""))
                             .font(.system(size: 12.5)).foregroundStyle(Desk.dim)
                         Spacer(minLength: 8)
-                        Button("Sitzung neu starten") { manager.restart(agents.agent(agent.id) ?? agent) }.buttonStyle(.pill)
+                        Button(t("Restart session", "Sitzung neu starten")) { manager.restart(agents.agent(agent.id) ?? agent) }.buttonStyle(.pill)
                     }
                     .padding(.horizontal, 14).padding(.vertical, 8).frame(maxWidth: 960)
                     .background(Desk.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -93,10 +94,10 @@ struct AgentChat: View {
         }
     }
 
-    /// Liest den Verlauf, solange dieser Chat offen ist.
+    /// Reads the history while this chat is open.
     private func follow() async {
         transcript.reset()
-        // Die gezeigte Sitzung bleibt erhalten, auch wenn sie endet; frühere Sitzungen dieses Agenten werden freigegeben.
+        // The session on screen is kept even when it ends; earlier sessions of this agent are released.
         manager.pinned.subtract(manager.sessions.filter { $0.agentID == agent.id }.map(\.id))
         if let session { manager.pinned.insert(session.id) }
         while !Task.isCancelled {
@@ -109,13 +110,13 @@ struct AgentChat: View {
         let fresh = agents.agent(agent.id) ?? agent
         let journals = fresh.journals.filter { FileManager.default.fileExists(atPath: $0) }
         guard let current = manager.latestSession(for: agent.id)?.usage.historyPath ?? journals.last else { return }
-        // Der Verlauf gehört dem Programm, das ihn geschrieben hat, auch wenn der Agent inzwischen den Anbieter gewechselt hat.
+        // The history belongs to the program that wrote it, even if the agent has switched provider since.
         let writer: Provider = URL(fileURLWithPath: current).lastPathComponent.hasPrefix("rollout-") ? .codex : .claude
         await transcript.load(current, provider: writer, earlier: journals.filter { $0 != current }, more: more)
     }
 }
 
-/// Früherer Chat ohne Agenten (nur lesen).
+/// Earlier chat without an agent (read only).
 struct ArchiveChat: View {
     let entry: ChatEntry
     @Binding var showRail: Bool
@@ -129,19 +130,24 @@ struct ArchiveChat: View {
                     Text(entry.title).font(.system(size: 15, weight: .medium)).lineLimit(1)
                 }.frame(maxWidth: 420)
             } trailing: { EmptyView() }
-            TranscriptList(agentName: entry.providerKind.title, peers: [:]) { EmptyView() }
-            Text("Dieser Chat wurde außerhalb von Mochi Squad geführt und lässt sich hier nur lesen.")
+            TranscriptList(agentName: entry.providerKind.title, peers: [:], loadEarlier: { Task { await load(more: true) } }) { EmptyView() }
+            Text(t("This chat was held outside Mochi Squad and can only be read here.",
+                   "Dieser Chat wurde außerhalb von Mochi Squad geführt und lässt sich hier nur lesen."))
                 .font(.system(size: 12.5)).foregroundStyle(Desk.dim).padding(.bottom, 18)
         }
         .background(Desk.canvas)
         .task {
             transcript.reset()
-            await transcript.load(entry.path, provider: entry.providerKind)
+            await load()
         }
+    }
+
+    private func load(more: Bool = false) async {
+        await transcript.load(entry.path, provider: entry.providerKind, more: more)
     }
 }
 
-/// Kopfzeile: Titel in der Mitte, Knöpfe rechts.
+/// Header: title in the middle, buttons on the right.
 struct ChatHeader<Title: View, Trailing: View>: View {
     @Binding var showRail: Bool
     @ViewBuilder let title: () -> Title
@@ -154,11 +160,11 @@ struct ChatHeader<Title: View, Trailing: View>: View {
                 if !showRail {
                     Button { withAnimation(.easeInOut(duration: 0.2)) { showRail = true } } label: {
                         Image(systemName: "sidebar.left").font(.system(size: 15)).foregroundStyle(Desk.dim).frame(width: 30, height: 30).contentShape(Rectangle())
-                    }.buttonStyle(.plain).help("Seitenleiste einblenden")
+                    }.buttonStyle(.plain).help(t("Show chat list", "Chatliste einblenden")).accessibilityLabel(t("Show chat list", "Chatliste einblenden"))
                 }
                 Spacer()
                 trailing()
-            }.padding(.leading, showRail ? 22 : 84).padding(.trailing, 22)
+            }.padding(.horizontal, 22)
         }.padding(.top, 8).padding(.bottom, 12).frame(height: 66)
     }
 }
@@ -167,8 +173,8 @@ private struct SessionStatus: View {
     @ObservedObject var session: AgentSession
     var body: some View {
         if session.isRunning {
-            let (text, color): (String, SwiftUI.Color) = session.prompt != nil ? ("wartet auf dich", Desk.warning)
-                : session.working ? ("schreibt …", Desk.success) : ("online", Desk.dim)
+            let (text, color): (String, SwiftUI.Color) = session.prompt != nil ? (t("waiting for you", "wartet auf dich"), Desk.warning)
+                : session.working ? (t("typing …", "schreibt …"), Desk.success) : ("online", Desk.dim)
             HStack(spacing: 5) {
                 Circle().fill(color).frame(width: 6, height: 6)
                 Text(text).font(.system(size: 12)).foregroundStyle(color).lineLimit(1)
@@ -182,14 +188,14 @@ private struct SessionControls: View {
     @Binding var console: Bool
     let close: () -> Void
     var body: some View {
-        PillPicker(selection: $console, options: [(false, "Chat"), (true, "Konsole")])
+        PillPicker(selection: $console, options: [(false, "Chat"), (true, t("Console", "Konsole"))])
         Button(action: close) {
             Image(systemName: "xmark").font(.system(size: 13)).foregroundStyle(Desk.dim).frame(width: 28, height: 28).contentShape(Rectangle())
-        }.buttonStyle(.plain).help(session.isRunning ? "Sitzung beenden" : "Sitzung schließen")
+        }.buttonStyle(.plain).help(session.isRunning ? t("End session", "Sitzung beenden") : t("Close session", "Sitzung schließen"))
     }
 }
 
-/// Der Verlauf als Liste von Blasen. Die Blasen sind vorab aufbereitet; hier wird nur gezeichnet.
+/// The history as a list of bubbles. The bubbles are prepared in advance; here they are only drawn.
 struct TranscriptList<Extras: View>: View {
     let agentName: String
     let peers: [String: String]
@@ -202,7 +208,7 @@ struct TranscriptList<Extras: View>: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if transcript.older, let reload = loadEarlier {
-                        Button("Frühere Nachrichten laden", action: reload).buttonStyle(.pill).frame(maxWidth: .infinity).padding(.bottom, 10)
+                        Button(t("Load earlier messages", "Frühere Nachrichten laden"), action: reload).buttonStyle(.pill).frame(maxWidth: .infinity).padding(.bottom, 10)
                     }
                     if let issue = transcript.issue { NoticeLine(text: issue) }
                     if transcript.loading && transcript.bubbles.isEmpty { ProgressView().controlSize(.small).frame(maxWidth: .infinity).padding(.top, 40) }
@@ -225,7 +231,7 @@ struct TranscriptList<Extras: View>: View {
     }
 }
 
-/// Projektordner des gezeigten Chats, um angehängte Dateien zu finden.
+/// Project folder of the chat on screen, to find attached files.
 private struct ProjectFolderKey: EnvironmentKey { static let defaultValue: URL? = nil }
 extension EnvironmentValues {
     var projectFolder: URL? {
@@ -234,17 +240,17 @@ extension EnvironmentValues {
     }
 }
 
-/// Vorschau einer angehängten Datei: Bilder als passgenaue Kachel, alles andere mit Symbol und Namen. Ein Klick öffnet sie.
+/// Preview of an attached file: images as a fitted tile, everything else with icon and name. A click opens it.
 struct AttachmentPreview: View {
     let file: URL
-    /// Kleine quadratische Kachel fürs Eingabefeld statt der großen Ansicht im Verlauf.
+    /// Small square tile for the input field instead of the large view in the history.
     var compact = false
 
-    /// Größte Darstellung im Verlauf; das Bild behält sein Seitenverhältnis.
+    /// Largest size in the history; the image keeps its aspect ratio.
     private static let limit = CGSize(width: 320, height: 240)
 
     var body: some View {
-        // Bilder öffnen sich in der Vorschau; alles andere wird nur im Finder gezeigt, nie direkt ausgeführt.
+        // Images open in Preview; everything else is only revealed in Finder, never run directly.
         Button {
             if Attachments.isImage(file) { NSWorkspace.shared.open(file) } else { NSWorkspace.shared.activateFileViewerSelecting([file]) }
         } label: {
@@ -272,6 +278,28 @@ struct AttachmentPreview: View {
     }
 }
 
+/// Draws the rows of a message: paragraphs, and list items with their marker set off so wrapped lines stay aligned.
+struct RowsView: View {
+    let rows: [TextRow]
+    var font: Font = .system(size: 15)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            ForEach(rows) { row in
+                if let marker = row.marker {
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(marker).monospacedDigit().foregroundStyle(Desk.dim).frame(minWidth: 12, alignment: .trailing)
+                        Text(row.text).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                } else {
+                    Text(row.text)
+                }
+            }
+        }
+        .font(font).foregroundStyle(Desk.text).lineSpacing(4).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+    }
+}
+
 struct BubbleView: View, Equatable {
     let bubble: Bubble
     let avatar: String?
@@ -284,13 +312,13 @@ struct BubbleView: View, Equatable {
         HStack(spacing: 0) {
             if outgoing { Spacer(minLength: 120) }
             VStack(alignment: outgoing ? .trailing : .leading, spacing: 6) {
-                // Anhänge stehen wie in Messengern als eigene Kacheln über dem Text, nicht in der farbigen Blase.
+                // As in messengers, attachments are tiles of their own above the text, not inside the coloured bubble.
                 if let project {
                     ForEach(bubble.attachments.compactMap { Attachments.resolve($0, in: project) }, id: \.self) { AttachmentPreview(file: $0) }
                 }
                 if !bubble.plain.isEmpty || bubble.attachments.isEmpty || project == nil { textBubble(outgoing: outgoing) }
             }
-            .frame(maxWidth: 680, alignment: outgoing ? .trailing : .leading)
+            .frame(maxWidth: 620, alignment: outgoing ? .trailing : .leading)
             if !outgoing { Spacer(minLength: 120) }
         }.frame(maxWidth: .infinity, alignment: outgoing ? .trailing : .leading)
     }
@@ -304,8 +332,7 @@ struct BubbleView: View, Equatable {
                     Text(bubble.relayedVia ?? "").font(.system(size: 12)).foregroundStyle(Desk.dim)
                 }
             }
-            Text(bubble.text).font(bubble.kind == .code ? .system(size: 13, design: .monospaced) : .system(size: 15))
-                .foregroundStyle(Desk.text).lineSpacing(4).textSelection(.enabled)
+            RowsView(rows: bubble.rows, font: bubble.kind == .code ? .system(size: 13, design: .monospaced) : .system(size: 15))
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
         .background(outgoing ? (bubble.relayedFrom == nil ? Desk.bubble : Desk.relayed) : Desk.incoming,
@@ -313,7 +340,7 @@ struct BubbleView: View, Equatable {
     }
 }
 
-/// Unter dem Verlauf einer laufenden Sitzung: Rückfrage des Clients oder „schreibt …“.
+/// Below the history of a running session: the client's question or "typing …".
 private struct LiveExtras: View {
     @ObservedObject var session: AgentSession
     let name: String
@@ -326,25 +353,24 @@ private struct LiveExtras: View {
     }
 }
 
-/// Rückfrage des Clients als Karte: beantworten per Klick statt in der Konsole.
-/// Rückfrage des Clients als Karte: Was der Agent vorhat, und die Antworten als Knöpfe.
+/// The client's question as a card: what the agent intends to do, and the answers as buttons.
 struct PromptCard: View {
     @ObservedObject var session: AgentSession
     let name: String
-    /// Öffnet die Konsole, wo das geht; sonst entfällt der Verweis.
+    /// Opens the console where that is possible; otherwise the link is left out.
     var openConsole: (() -> Void)?
 
     var body: some View {
         if let ask = session.prompt {
-            // Nur echte Freigaben (Ja/Nein) bekommen deutsche Antworten; Auswahlfragen des Clients bleiben im Original.
+            // Only real approvals (yes/no) get our own wording; other questions of the client stay as they are.
             let permission = Self.isPermission(ask.options.map(\.label))
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 10) {
                     Image(systemName: permission ? "hand.raised.fill" : "questionmark.bubble.fill").font(.system(size: 13)).foregroundStyle(Desk.warning)
                         .frame(width: 30, height: 30).background(Desk.warning.opacity(0.15), in: Circle())
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(name + (permission ? " braucht deine Erlaubnis" : " hat eine Rückfrage")).font(.system(size: 14.5, weight: .semibold))
-                        Text(permission ? "Lies kurz, was geplant ist, und entscheide." : "Wähle eine Antwort.").font(.system(size: 12)).foregroundStyle(Desk.dim)
+                        Text(permission ? t("\(name) needs your permission", "\(name) braucht deine Erlaubnis") : t("\(name) has a question", "\(name) hat eine Rückfrage")).font(.system(size: 14.5, weight: .semibold))
+                        Text(permission ? t("Read what is planned, then decide.", "Lies kurz, was geplant ist, und entscheide.") : t("Choose an answer.", "Wähle eine Antwort.")).font(.system(size: 12)).foregroundStyle(Desk.dim)
                     }
                 }
                 if !ask.context.isEmpty {
@@ -371,7 +397,7 @@ struct PromptCard: View {
                     }
                 }
                 if let openConsole {
-                    Button(action: openConsole) { Label("In der Konsole ansehen", systemImage: "terminal") }
+                    Button(action: openConsole) { Label(t("View in the console", "In der Konsole ansehen"), systemImage: "terminal") }
                         .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(Desk.dim)
                 }
             }
@@ -381,27 +407,27 @@ struct PromptCard: View {
         }
     }
 
-    /// Eine Freigabe erkennt man an Ja- und Nein-Antworten.
+    /// An approval is recognised by yes and no answers.
     static func isPermission(_ labels: [String]) -> Bool {
         let lower = labels.map { $0.lowercased() }
         return lower.first?.hasPrefix("yes") == true && lower.contains { $0 == "no" || $0.hasPrefix("no,") || $0.hasPrefix("no ") }
     }
 
-    /// Die Clients fragen auf Englisch. Häufige Antworten bekommen eine deutsche Überschrift; das Original steht klein darunter.
+    /// The clients ask in their own wording. Common answers get a short title in the interface language; the original is shown small below it.
     static func wording(_ label: String) -> (title: String, detail: String?) {
         let lower = label.lowercased()
-        if lower == "yes" || lower == "yes, proceed" || lower == "allow" { return ("Erlauben", nil) }
-        if lower == "no" || lower.hasPrefix("no,") || lower.hasPrefix("no ") || lower == "deny" { return ("Ablehnen", lower == "no" || lower == "deny" ? nil : label) }
-        if lower.hasPrefix("yes, and don't ask again") || lower.hasPrefix("yes, and dont ask again") { return ("Erlauben und nicht mehr fragen", label) }
-        if lower.hasPrefix("yes, allow all") || lower.hasPrefix("yes, and allow") { return ("Für diese Sitzung immer erlauben", label) }
-        if lower.hasPrefix("yes, and auto-accept") { return ("Erlauben, weitere Änderungen automatisch", label) }
-        if lower.hasPrefix("yes, and manually") { return ("Erlauben, Änderungen einzeln bestätigen", label) }
-        if lower.hasPrefix("yes") { return ("Erlauben", label) }
+        if lower == "yes" || lower == "yes, proceed" || lower == "allow" { return (t("Allow", "Erlauben"), nil) }
+        if lower == "no" || lower.hasPrefix("no,") || lower.hasPrefix("no ") || lower == "deny" { return (t("Deny", "Ablehnen"), lower == "no" || lower == "deny" ? nil : label) }
+        if lower.hasPrefix("yes, and don't ask again") || lower.hasPrefix("yes, and dont ask again") { return (t("Allow and don't ask again", "Erlauben und nicht mehr fragen"), label) }
+        if lower.hasPrefix("yes, allow all") || lower.hasPrefix("yes, and allow") { return (t("Always allow for this session", "Für diese Sitzung immer erlauben"), label) }
+        if lower.hasPrefix("yes, and auto-accept") { return (t("Allow, accept further edits automatically", "Erlauben, weitere Änderungen automatisch"), label) }
+        if lower.hasPrefix("yes, and manually") { return (t("Allow, confirm edits one by one", "Erlauben, Änderungen einzeln bestätigen"), label) }
+        if lower.hasPrefix("yes") { return (t("Allow", "Erlauben"), label) }
         return (label, nil)
     }
 }
 
-/// Meldet im Chat, wenn eine Sitzung nicht arbeiten kann: Anmeldung nötig oder beim Start gescheitert.
+/// Tells in the chat when a session cannot work: sign-in needed or failed at start.
 private struct SessionNotice: View {
     @ObservedObject var session: AgentSession
     let name: String
@@ -409,10 +435,12 @@ private struct SessionNotice: View {
 
     var body: some View {
         if session.needsLogin {
-            card("person.crop.circle.badge.exclamationmark", "\(name) wartet auf deine Anmeldung",
-                 "Das Programm dieses Agenten ist noch nicht angemeldet. Öffne die Konsole und melde dich mit deinem Abo an.", nil)
+            card("person.crop.circle.badge.exclamationmark", t("\(name) is waiting for you to sign in", "\(name) wartet auf deine Anmeldung"),
+                 t("This agent's program is not signed in yet. Open the console and sign in with your subscription.",
+                   "Das Programm dieses Agenten ist noch nicht angemeldet. Öffne die Konsole und melde dich mit deinem Abo an."), nil)
         } else if !session.isRunning, session.failed, session.usage.historyPath == nil {
-            card("exclamationmark.triangle.fill", "\(name) konnte nicht starten", "Die Sitzung ist beendet, bevor sie arbeiten konnte.", session.screenText(lines: 6))
+            card("exclamationmark.triangle.fill", t("\(name) could not start", "\(name) konnte nicht starten"),
+                 t("The session ended before it could work.", "Die Sitzung ist beendet, bevor sie arbeiten konnte."), session.screenText(lines: 6))
         }
     }
 
@@ -431,7 +459,7 @@ private struct SessionNotice: View {
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 10)
                     .background(Desk.canvas.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
-            Button(action: openConsole) { Label("Konsole öffnen", systemImage: "terminal") }.buttonStyle(.pill)
+            Button(action: openConsole) { Label(t("Open console", "Konsole öffnen"), systemImage: "terminal") }.buttonStyle(.pill)
         }
         .padding(18).frame(maxWidth: 560, alignment: .leading)
         .background(Desk.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -445,12 +473,12 @@ private struct EmptyChat: View {
 
     private var examples: [(symbol: String, text: String)] {
         agent.isCoordinator
-            ? [("chart.bar.xaxis", "Wie ist der Stand in meinen Projekten?"),
-               ("person.badge.plus", "Welche Agenten sollte ich für dieses Projekt anlegen?"),
-               ("checklist", "Was sollte ich als Nächstes erledigen lassen?")]
-            : [("hand.wave", "Stell dich kurz vor und sag mir, wobei du helfen kannst."),
-               ("folder", "Sieh dir das Projekt an und fasse es in fünf Sätzen zusammen."),
-               ("lightbulb", "Schlag mir drei Aufgaben vor, die du übernehmen könntest.")]
+            ? [("chart.bar.xaxis", t("What is the status of my projects?", "Wie ist der Stand in meinen Projekten?")),
+               ("person.badge.plus", t("Which agents should I create for this project?", "Welche Agenten sollte ich für dieses Projekt anlegen?")),
+               ("checklist", t("What should I have done next?", "Was sollte ich als Nächstes erledigen lassen?"))]
+            : [("hand.wave", t("Introduce yourself briefly and tell me what you can help with.", "Stell dich kurz vor und sag mir, wobei du helfen kannst.")),
+               ("folder", t("Look at the project and summarise it in five sentences.", "Sieh dir das Projekt an und fasse es in fünf Sätzen zusammen.")),
+               ("lightbulb", t("Suggest three tasks you could take on.", "Schlag mir drei Aufgaben vor, die du übernehmen könntest."))]
     }
 
     var body: some View {
@@ -459,7 +487,7 @@ private struct EmptyChat: View {
             Text(agent.name).font(.system(size: 22, weight: .semibold)).padding(.top, 14)
             Text(agent.instructions.isEmpty ? agent.jobTitle : agent.instructions)
                 .font(.system(size: 14)).foregroundStyle(Desk.dim).multilineTextAlignment(.center).lineLimit(3).padding(.top, 4)
-            // Vorschläge als ruhige Liste: gleiche Breite, links ausgerichtet, ein Klick übernimmt den Text.
+            // Suggestions as a calm list: same width, left-aligned, one click takes the text.
             VStack(spacing: 0) {
                 ForEach(Array(examples.enumerated()), id: \.element.text) { index, example in
                     if index > 0 { Rectangle().fill(Desk.rule).frame(height: 1).padding(.leading, 44) }
@@ -484,13 +512,13 @@ private struct EmptyChat: View {
     }
 }
 
-/// Eingabe: schreibt in die laufende Sitzung oder startet eine neue.
+/// Input: writes to the running session or starts a new one.
 private struct Composer: View {
     let agent: Agent
     @Binding var draft: String
     @EnvironmentObject private var manager: SessionManager
     @State private var hint: String?
-    /// Dateien, die mit der nächsten Nachricht mitgehen.
+    /// Files that go along with the next message.
     @State private var files = [URL]()
     @FocusState private var focused: Bool
 
@@ -509,7 +537,7 @@ private struct Composer: View {
                                         Button { files.removeAll { $0 == file } } label: {
                                             Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).foregroundStyle(.white)
                                                 .frame(width: 16, height: 16).background(Color.black.opacity(0.75), in: Circle())
-                                        }.buttonStyle(.plain).offset(x: 5, y: -5).help("Anhang entfernen")
+                                        }.buttonStyle(.plain).offset(x: 5, y: -5).help(t("Remove attachment", "Anhang entfernen"))
                                     }
                             }
                         }.padding(.horizontal, 4).padding(.top, 6)
@@ -517,19 +545,19 @@ private struct Composer: View {
                 }
                 HStack(alignment: .bottom, spacing: 8) {
                     Button { files += Attachments.choose().filter { !files.contains($0) } } label: { RoundGlyph(name: "paperclip") }
-                        .buttonStyle(.plain).help("Bilder oder Dateien anhängen")
-                    TextField("Nachricht an " + agent.name, text: $draft, axis: .vertical)
+                        .buttonStyle(.plain).help(t("Attach images or files", "Bilder oder Dateien anhängen")).accessibilityLabel(t("Attach images or files", "Bilder oder Dateien anhängen"))
+                    TextField(t("Message \(agent.name)", "Nachricht an \(agent.name)"), text: $draft, axis: .vertical)
                         .textFieldStyle(.plain).lineLimit(1...6).font(.system(size: 15)).focused($focused).onSubmit(send)
                         .padding(.vertical, 8).frame(minHeight: 34)
                     MicControl(draft: $draft)
                     Button(action: send) { SendGlyph() }.buttonStyle(.plain)
-                        .keyboardShortcut(.return, modifiers: .command).disabled(empty)
+                        .keyboardShortcut(.return, modifiers: .command).disabled(empty).accessibilityLabel(t("Send", "Senden"))
                 }
             }
             .composerCapsule()
-            // Dateien lassen sich auch auf das Eingabefeld ziehen.
+            // Files can also be dragged onto the input field.
             .dropDestination(for: URL.self) { dropped, _ in
-                // Ordner werden nicht angehängt; sie würden komplett ins Projekt kopiert.
+                // Folders are not attached; they would be copied into the project as a whole.
                 files += dropped.filter { $0.isFileURL && !$0.hasDirectoryPath && !files.contains($0) }
                 return !dropped.isEmpty
             }
@@ -543,7 +571,7 @@ private struct Composer: View {
         do {
             let staged = try Attachments.stage(files, in: URL(fileURLWithPath: agent.project))
             text = Attachments.message(draft.trimmingCharacters(in: .whitespacesAndNewlines), files: staged)
-            // Ab hier liegen die Kopien im Projekt; der Text trägt die Verweise, falls das Senden gleich warten muss.
+            // From here on the copies are in the project; the text carries the references in case sending has to wait.
             if !files.isEmpty { files = []; draft = text }
         } catch { hint = error.localizedDescription; return }
         if let live = manager.liveSession(for: agent.id) {
@@ -551,7 +579,8 @@ private struct Composer: View {
             else if live.submitPending {
                 Task { @MainActor in try? await Task.sleep(for: .seconds(1.3)); send() }
             } else {
-                hint = "\(agent.name) kann gerade keine Nachricht annehmen (startet noch oder wartet auf eine Antwort). Dein Text bleibt hier stehen."
+                hint = t("\(agent.name) cannot take a message right now (still starting or waiting for an answer). Your text stays here.",
+                         "\(agent.name) kann gerade keine Nachricht annehmen (startet noch oder wartet auf eine Antwort). Dein Text bleibt hier stehen.")
             }
             return
         }
@@ -562,7 +591,7 @@ private struct Composer: View {
     }
 }
 
-/// Das echte Terminal des Clients.
+/// The client's real terminal.
 struct SessionTerminal: NSViewRepresentable {
     let session: AgentSession
     func makeNSView(context: Context) -> LocalProcessTerminalView {

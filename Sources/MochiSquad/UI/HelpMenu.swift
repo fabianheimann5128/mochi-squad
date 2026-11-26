@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Rückmeldungen gehen als Issue ins Repository. Der Link wählt nur die Vorlage; ausgefüllt und abgeschickt wird im Browser.
+/// Feedback goes to the repository as an issue. The link only picks the template; filling in and sending happens in the browser.
 enum Feedback {
     static let repository = "https://github.com/fabianheimann5128/mochi-squad"
 
@@ -9,43 +9,25 @@ enum Feedback {
 
     static func url(_ kind: Kind) -> URL {
         var parts = URLComponents(string: repository + "/issues/new")!
-        parts.queryItems = [URLQueryItem(name: "template", value: kind == .bug ? "fehler.md" : "funktion.md")]
+        parts.queryItems = [URLQueryItem(name: "template", value: kind == .bug ? "bug.md" : "feature.md")]
         return parts.url!
     }
 
-    static var appVersion: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Entwicklung" }
+    static var appVersion: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev" }
 
-    /// Text von CHANGELOG.md aus dem App-Bundle.
+    /// Text of the changelog from the app bundle: CHANGELOG.md, or CHANGELOG.de.md for the German interface.
     static var changelog: String {
-        Bundle.main.url(forResource: "CHANGELOG", withExtension: "md").flatMap { try? String(contentsOf: $0, encoding: .utf8) } ?? ""
+        let names = L10n.language == .de ? ["CHANGELOG.de", "CHANGELOG"] : ["CHANGELOG"]
+        return names.lazy.compactMap { Bundle.main.url(forResource: $0, withExtension: "md") }
+            .compactMap { try? String(contentsOf: $0, encoding: .utf8) }.first ?? ""
     }
 }
 
-/// Knopf unten links: Neuigkeiten, Fehler melden, Funktion vorschlagen.
-struct HelpMenu: View {
-    @State private var showNews = false
-
-    var body: some View {
-        Menu {
-            Button { showNews = true } label: { Label("Was ist neu?", systemImage: "sparkles") }
-            Divider()
-            Button { NSWorkspace.shared.open(Feedback.url(.bug)) } label: { Label("Fehler melden …", systemImage: "ladybug") }
-            Button { NSWorkspace.shared.open(Feedback.url(.idea)) } label: { Label("Funktion vorschlagen …", systemImage: "lightbulb") }
-        } label: {
-            Image(systemName: "questionmark").font(.system(size: 13, weight: .semibold)).foregroundStyle(Desk.dim)
-                .frame(width: 38, height: 38).background(Color(white: 0.96).opacity(0.04), in: Circle()).contentShape(Circle())
-        }
-        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
-        .help("Neuigkeiten und Rückmeldung").accessibilityLabel("Neuigkeiten und Rückmeldung")
-        .sheet(isPresented: $showNews) { WhatsNew().dialogStyle() }
-    }
-}
-
-/// Zeigt CHANGELOG.md: Überschriften je Version, darunter die Punkte.
+/// Shows the changelog: one heading per version, its items below.
 struct WhatsNew: View {
     @Environment(\.dismiss) private var dismiss
 
-    /// (Überschrift, Punkte) je Version.
+    /// (heading, items) per version.
     static func sections(_ text: String) -> [(title: String, items: [String])] {
         var result = [(title: String, items: [String])]()
         for line in text.components(separatedBy: "\n").map({ $0.trimmingCharacters(in: .whitespaces) }) {
@@ -58,9 +40,9 @@ struct WhatsNew: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Text("Was ist neu?").font(.system(size: 22, weight: .semibold))
+                Text(t("What's new?", "Was ist neu?")).font(.system(size: 22, weight: .semibold))
                 Spacer()
-                Button("Fertig") { dismiss() }.buttonStyle(.primaryPill).keyboardShortcut(.defaultAction)
+                Button(t("Done", "Fertig")) { dismiss() }.buttonStyle(.primaryPill).keyboardShortcut(.defaultAction)
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
@@ -77,7 +59,8 @@ struct WhatsNew: View {
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }.frame(height: 320)
-            Text("Du nutzt Mochi Squad " + Feedback.appVersion + ".").font(.system(size: 12)).foregroundStyle(Desk.dim)
+            Text(t("You are using Mochi Squad \(Feedback.appVersion).", "Du nutzt Mochi Squad \(Feedback.appVersion)."))
+                .font(.system(size: 12)).foregroundStyle(Desk.dim)
         }.padding(22).frame(width: 480)
     }
 }

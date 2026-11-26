@@ -3,6 +3,7 @@ import sys
 import tempfile
 import unittest
 import uuid
+from unittest import mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
@@ -12,10 +13,10 @@ import launcher  # noqa: E402
 
 
 def make_spec(project, **agent):
-    base = {"name": "Mira", "job": "Researcherin", "instructions": "Recherchiere Quellen.", "persona": "",
+    base = {"name": "Mira", "job": "researcher", "instructions": "Research sources.", "persona": "",
             "model": "", "effort": "", "canEdit": False, "isCoordinator": False}
     base.update(agent)
-    return launcher.validate_spec({"provider": "claude", "project": project, "task": "Prüfe die Quellen.",
+    return launcher.validate_spec({"provider": "claude", "project": project, "task": "Check the sources.",
                                    "sessionId": str(uuid.uuid4()).upper(), "owner": "Alex", "agent": base})
 
 
@@ -30,7 +31,7 @@ class SpecTests(unittest.TestCase):
     def test_valid_spec_is_normalised(self):
         spec = make_spec(self.project, canEdit="yes")
         self.assertEqual(spec["sessionId"], spec["sessionId"].lower())
-        self.assertFalse(spec["agent"]["canEdit"], "Nur echtes true erlaubt Schreibrechte")
+        self.assertFalse(spec["agent"]["canEdit"], "only a real true grants write access")
         self.assertEqual(spec["project"], str(Path(self.project).resolve()))
 
     def test_rejects_bad_input(self):
@@ -43,7 +44,7 @@ class SpecTests(unittest.TestCase):
 
     def test_load_spec_reports_unreadable_file(self):
         path = Path(self.project) / "spec.json"
-        path.write_text("{kaputt")
+        path.write_text("{broken")
         with self.assertRaises(launcher.SpecError):
             launcher.load_spec(path)
 
@@ -59,24 +60,33 @@ class PromptTests(unittest.TestCase):
         prompt = launcher.build_prompt(make_spec(self.dir.name))
         briefing, task = prompt.split(common.TASK_MARK)
         self.assertTrue(briefing.startswith(common.BRIEFING_MARK))
-        self.assertIn("Du bist Mira, Researcherin im Agenten-Team von Alex", briefing)
-        self.assertIn("Recherchiere Quellen.", briefing)
-        self.assertEqual(task, "Prüfe die Quellen.")
+        self.assertIn("You are Mira, researcher in Alex's team of agents", briefing)
+        self.assertIn("Research sources.", briefing)
+        self.assertEqual(task, "Check the sources.")
+
+    def test_agents_answer_in_the_language_they_are_addressed_in(self):
+        english = launcher.build_prompt(make_spec(self.dir.name))
+        self.assertIn("Always answer in the language of the message you are answering", english)
+        self.assertIn("use English", english)
+        spec = make_spec(self.dir.name)
+        spec["language"] = "de"
+        self.assertIn("use German", launcher.build_prompt(spec))
+        self.assertEqual(launcher.validate_spec(dict(spec, language="fr"))["language"], "en")
 
     def test_coordinator_and_routine_notes(self):
         spec = make_spec(self.dir.name, isCoordinator=True, job="")
         spec["unattended"] = True
         prompt = launcher.build_prompt(spec)
-        self.assertIn("Koordinator", prompt)
-        self.assertIn("geplante Routine", prompt)
+        self.assertIn("coordinator", prompt)
+        self.assertIn("scheduled routine", prompt)
 
     def test_post_instructions_only_with_post_tool(self):
         spec = make_spec(self.dir.name)
-        self.assertNotIn(" liste`", launcher.build_prompt(spec))
-        spec.update(post="/tmp/x/post", team=["Karo (Autorin)"])
+        self.assertNotIn(" list`", launcher.build_prompt(spec))
+        spec.update(post="/tmp/x/post", team=["Karo (writer)"])
         prompt = launcher.build_prompt(spec)
-        self.assertIn("/tmp/x/post liste", prompt)
-        self.assertIn("Karo (Autorin)", prompt)
+        self.assertIn("/tmp/x/post list", prompt)
+        self.assertIn("Karo (writer)", prompt)
 
 
 class SettingsTests(unittest.TestCase):
@@ -94,9 +104,54 @@ class SettingsTests(unittest.TestCase):
         for can_edit in (False, True):
             sandbox = self.settings(canEdit=can_edit)["sandbox"]
             self.assertTrue(sandbox["enabled"])
+            # No sandbox, no session: the client must quit rather than work unprotected.
+            self.assertTrue(sandbox["failIfUnavailable"])
             self.assertFalse(sandbox["allowUnsandboxedCommands"])
+            # Local ports stay closed.
+            self.assertNotIn("network", sandbox)
             for secret in (".ssh", ".codex", ".claude", "Library/Application Support"):
                 self.assertIn("/Users/test/" + secret, sandbox["filesystem"]["denyRead"])
+
+    def test_file_tools_are_locked_out_like_commands(self):
+        """Every path that is locked for commands is locked for the client's own file tools too."""
+        settings = self.settings()
+        for path in settings["sandbox"]["filesystem"]["denyRead"]:
+            self.assertIn(f"Read(/{path})", settings["permissions"]["deny"])
+            self.assertIn(f"Read(/{path}/**)", settings["permissions"]["deny"])
+        self.assertIn("Read(//Users/test/.ssh/**)", settings["permissions"]["deny"])
+
+    def test_relocated_client_folders_are_locked_too(self):
+        import os
+        with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": "/Volumes/x/claude", "CODEX_HOME": "/Volumes/x/codex"}):
+            spec = make_spec(self.project)
+            claude = launcher.build_claude_settings(spec, home="/Users/test")
+            codex = launcher.build_codex_permissions(spec, home="/Users/test")
+        for moved in ("/Volumes/x/claude", "/Volumes/x/codex"):
+            self.assertIn(moved, claude["sandbox"]["filesystem"]["denyRead"])
+            self.assertEqual(codex["filesystem"][moved], "none")
+
+    def test_routines_without_web_cannot_fetch(self):
+        spec = make_spec(self.project)
+        spec["unattended"] = True
+        deny = launcher.build_claude_settings(spec, home="/Users/test")["permissions"]["deny"]
+        self.assertIn("WebFetch", deny)
+        self.assertIn("WebSearch", deny)
+        spec["allowWeb"] = True
+        allowed = launcher.build_claude_settings(spec, home="/Users/test")["permissions"]
+        self.assertIn("WebFetch", allowed["allow"])
+        self.assertNotIn("WebFetch", allowed["deny"])
+        # In a chat the user is there to confirm a request, so nothing is denied outright.
+        self.assertNotIn("WebFetch", self.settings()["permissions"]["deny"])
+
+    def test_routines_load_no_project_settings_or_servers(self):
+        """Without the user present there is no trust question, so a routine takes nothing from the project."""
+        spec = make_spec(self.project)
+        spec["unattended"] = True
+        args = launcher.claude_args(spec, interactive=False)
+        self.assertEqual(args[args.index("--setting-sources") + 1], "user")
+        self.assertIn("--strict-mcp-config", args)
+        self.assertNotIn("--mcp-config", args)
+        self.assertNotIn("--setting-sources", launcher.claude_args(make_spec(self.project)))
 
     def test_read_only_agent_cannot_write_the_project(self):
         settings = self.settings()
@@ -130,12 +185,12 @@ class SettingsTests(unittest.TestCase):
 
 
 class RuntimeTests(unittest.TestCase):
-    """Pfade einer Sitzung kommen nie aus der Datei, sondern aus dem Sitzungsordner der App."""
+    """A session's paths never come from the file but from the app's session folder."""
 
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
         root = Path(self.dir.name).resolve()
-        self.project = root / "projekt"
+        self.project = root / "project"
         self.session = root / "sessions" / "abc"
         self.shared = root / "shared"
         for folder in (self.project, self.session, self.shared / "bin", self.shared / "outbox" / "abc"):
@@ -154,7 +209,7 @@ class RuntimeTests(unittest.TestCase):
         spec = launcher.validate_spec({"provider": "claude", "project": str(self.project), "task": "x", "sessionId": str(uuid.uuid4()),
                                        "agent": {"name": "A"}, "post": "/bin/sh", "outbox": "/tmp", "mcpConfig": "/tmp/evil.json",
                                        "contextFile": "/tmp/c.json", "parentChat": "../../x"})
-        for key in ("post", "outbox", "mcpConfig", "contextFile"):
+        for key in ("post", "outbox", "mcpConfig", "contextFile", "toolUrl"):
             self.assertNotIn(key, spec)
         self.assertIsNone(spec["parentChat"])
 
@@ -175,13 +230,32 @@ class RuntimeTests(unittest.TestCase):
         args = launcher.claude_args(spec)
         self.assertIn("--strict-mcp-config", args)
         self.assertEqual(args[args.index("--mcp-config") + 1], str(self.session / "mcp.json"))
+        self.assertEqual(args.count("--strict-mcp-config"), 1)
+
+    def test_codex_coordinator_gets_the_app_tools_and_nothing_else(self):
+        def config(url):
+            (self.session / "mcp.json").write_text(json.dumps({"mcpServers": {"mochi": {"type": "http", "url": url}}}))
+            return launcher.attach_runtime(self.spec(provider="codex", isCoordinator=True), self.session, shared=self.shared)
+        spec = config("http://127.0.0.1:51234/mcp")
+        args = launcher.codex_args(spec, servers=[("mochi", False, "", []), ("postiz", False, "", [])])
+        self.assertIn('mcp_servers.mochi.url="http://127.0.0.1:51234/mcp"', args)
+        self.assertIn('mcp_servers.mochi.bearer_token_env_var="MOCHI_TOKEN"', args)
+        # The app's own entry comes last, so a user server of the same name cannot stay in its place.
+        self.assertGreater(args.index("mcp_servers.mochi.enabled=true"), args.index("mcp_servers.mochi.enabled=false"))
+        self.assertIn("mcp_servers.postiz.enabled=false", args)
+        self.assertFalse(any("MOCHI_TOKEN=" in a or "Bearer" in a for a in args))
+        # Only the app's own loopback address is accepted as a tool server.
+        for foreign in ("https://evil.example/mcp", "http://127.0.0.1:51234/other", "http://10.0.0.5:51234/mcp"):
+            self.assertNotIn("toolUrl", config(foreign))
+        plain = launcher.attach_runtime(self.spec(provider="codex"), self.session, shared=self.shared)
+        self.assertFalse(any(a.startswith("mcp_servers.mochi") for a in launcher.codex_args(plain)))
 
     def test_run_rejects_specs_outside_the_session_area(self):
         outside = self.project / "spec.json"
         outside.write_text("{}")
         with self.assertRaises(SystemExit) as failure:
             launcher.run(str(outside))
-        self.assertIn("Sitzungsbereich", str(failure.exception))
+        self.assertIn("session area", str(failure.exception))
 
 
 class ArgumentTests(unittest.TestCase):
@@ -229,7 +303,7 @@ class ArgumentTests(unittest.TestCase):
         self.assertRegex(name, r"^mochi_[0-9a-f]{16}$")
         self.assertIn(f'default_permissions="{name}"', args)
         profile = next(a for a in args if a.startswith(f"permissions.{name}="))
-        # Jeder Start bekommt einen eigenen Namen; ein Projekt kann das Profil so nicht vorab erweitern.
+        # Every launch gets its own name, so a project cannot widen the profile in advance.
         other = make_spec(self.dir.name)
         launcher.codex_args(other)
         self.assertNotEqual(other["profileName"], name)
@@ -240,15 +314,15 @@ class ArgumentTests(unittest.TestCase):
     def test_codex_profile_check_fails_closed(self):
         spec = make_spec(self.dir.name)
         script = Path(self.dir.name) / "fake-codex"
-        # Ein Client, der das Profil übergeht: jeder Befehl gelingt.
+        # A client that ignores the profile: every command succeeds.
         script.write_text("#!/bin/sh\nexit 0\n")
         script.chmod(0o755)
         self.assertFalse(launcher.codex_profile_enforced(str(script), spec))
-        # Ein Client ohne Unterbefehl „sandbox“: nichts gelingt.
+        # A client without the "sandbox" subcommand: nothing succeeds.
         script.write_text("#!/bin/sh\nexit 2\n")
         self.assertFalse(launcher.codex_profile_enforced(str(script), spec))
-        self.assertFalse(launcher.codex_profile_enforced(str(script) + "-fehlt", spec))
-        # Ein Client, der die Sperre durchsetzt: der Lesetest scheitert, der Leerlauf gelingt.
+        self.assertFalse(launcher.codex_profile_enforced(str(script) + "-missing", spec))
+        # A client that enforces the lock: the read probe fails, the no-op succeeds.
         script.write_text('#!/bin/sh\nfor a; do last="$a"; done\ncase "$last" in /usr/bin/true) exit 0;; *) exit 1;; esac\n')
         self.assertTrue(launcher.codex_profile_enforced(str(script), spec))
 
@@ -275,14 +349,14 @@ class ArgumentTests(unittest.TestCase):
     def test_project_must_not_expose_home(self):
         home = Path(self.dir.name).resolve()
         (home / "Library" / "Caches").mkdir(parents=True)
-        (home / "Projekt").mkdir()
+        (home / "Project").mkdir()
         for hidden in (".ssh", ".claude", "Applications"):
             (home / hidden / "x").mkdir(parents=True)
             self.assertFalse(common.project_allowed(home / hidden, home=home), hidden)
             self.assertFalse(common.project_allowed(home / hidden / "x", home=home), hidden)
         for bad in (home, home.parent, Path("/"), home / "Library", home / "Library" / "Caches"):
             self.assertFalse(common.project_allowed(bad, home=home), bad)
-        self.assertTrue(common.project_allowed(home / "Projekt", home=home))
+        self.assertTrue(common.project_allowed(home / "Project", home=home))
         with self.assertRaises(launcher.SpecError):
             launcher.validate_spec(make_spec(str(common.HOME)))
 
@@ -291,28 +365,32 @@ class ArgumentTests(unittest.TestCase):
 
     def test_codex_switches_off_personal_tool_servers(self):
         script = Path(self.dir.name) / "fake-codex"
-        script.write_text('#!/bin/sh\necho \'[{"name":"postiz","enabled":true,"transport":{"url":"https://x"}},{"name":"aus","enabled":false},{"name":"node_repl","transport":{"command":"node"}}]\'\n')
+        script.write_text('#!/bin/sh\npwd > "$0.cwd"\necho \'[{"name":"postiz","enabled":true,"transport":{"url":"https://x"}},{"name":"off","enabled":false},{"name":"node_repl","transport":{"command":"node","args":["./s.mjs"]}}]\'\n')
         script.chmod(0o755)
-        servers = launcher.codex_servers(str(script))
-        self.assertEqual(servers, [("postiz", False, ""), ("node_repl", True, "node")])
+        project = Path(self.dir.name).resolve() / "work"
+        project.mkdir()
+        servers = launcher.codex_servers(str(script), str(project))
+        self.assertEqual(servers, [("postiz", False, "", []), ("node_repl", True, "node", ["./s.mjs"])])
+        # The list is asked for inside the project: that is where the session will run.
+        self.assertEqual(Path(str(script) + ".cwd").read_text().strip(), str(project))
         args = launcher.codex_args(make_spec(self.dir.name), servers=servers)
         self.assertIn("mcp_servers.postiz.enabled=false", args)
         self.assertIn("mcp_servers.node_repl.enabled=false", args)
         self.assertIn('mcp_servers.node_repl.command="/usr/bin/false"', args)
         self.assertNotIn('mcp_servers.postiz.command="/usr/bin/false"', args)
-        # Nicht lesbar oder nicht abschaltbar heißt: nicht starten.
+        # Unreadable or impossible to switch off means: do not start.
         script.write_text('#!/bin/sh\necho \'[{"name":"a.b=true"}]\'\n')
-        self.assertIsNone(launcher.codex_servers(str(script)))
-        script.write_text("#!/bin/sh\necho kaputt\n")
-        self.assertIsNone(launcher.codex_servers(str(script)))
-        self.assertIsNone(launcher.codex_servers(str(script) + "-fehlt"))
+        self.assertIsNone(launcher.codex_servers(str(script), str(project)))
+        script.write_text("#!/bin/sh\necho broken\n")
+        self.assertIsNone(launcher.codex_servers(str(script), str(project)))
+        self.assertIsNone(launcher.codex_servers(str(script) + "-missing", str(project)))
 
     def test_account_selects_its_own_codex_home(self):
         original = common.DATA
         common.DATA = Path(self.dir.name)
         try:
-            env = common.use_account("arbeit-1a2b", {})
-            home = Path(self.dir.name) / "accounts" / "codex" / "arbeit-1a2b"
+            env = common.use_account("work-1a2b", {})
+            home = Path(self.dir.name) / "accounts" / "codex" / "work-1a2b"
             self.assertEqual(env, {"CODEX_HOME": str(home)})
             self.assertEqual(home.stat().st_mode & 0o777, 0o700)
             self.assertEqual(common.use_account("", {}), {})
@@ -327,9 +405,9 @@ class ArgumentTests(unittest.TestCase):
         def spec(provider, account):
             return launcher.validate_spec({"provider": provider, "project": self.dir.name, "task": "x", "account": account,
                                            "sessionId": str(uuid.uuid4()), "owner": "Alex", "agent": {"name": "Otto"}})
-        self.assertEqual(spec("codex", "arbeit-1a2b")["account"], "arbeit-1a2b")
+        self.assertEqual(spec("codex", "work-1a2b")["account"], "work-1a2b")
         self.assertEqual(spec("claude", "")["account"], "")
-        for provider, account in (("claude", "arbeit-1a2b"), ("codex", "../../etc"), ("codex", "Gross")):
+        for provider, account in (("claude", "work-1a2b"), ("codex", "../../etc"), ("codex", "Upper")):
             with self.assertRaises(launcher.SpecError):
                 spec(provider, account)
 
@@ -340,17 +418,17 @@ class ArgumentTests(unittest.TestCase):
         self.assertEqual(settings["permissions"], {"allow": []})
         args = launcher.claude_args(spec)
         self.assertEqual(args[args.index("--permission-mode") + 1], "bypassPermissions")
-        codex = launcher.codex_args(spec, servers=[("postiz", False)])
+        codex = launcher.codex_args(spec, servers=[("postiz", False, "", [])])
         self.assertEqual(codex[:2], ["--sandbox", "danger-full-access"])
         self.assertEqual(codex[codex.index("--ask-for-approval") + 1], "never")
         self.assertFalse(any(a.startswith("permissions.mochi") for a in codex))
-        # Ohne Computer-Nutzung bleibt Codex' Computersteuerung auch bei Vollzugriff aus; andere Server laufen wie gewohnt.
+        # Without computer use, Codex's computer control stays off even with full access; other servers run as usual.
         self.assertIn("mcp_servers.cua_repl.enabled=false", codex)
         self.assertNotIn("mcp_servers.postiz.enabled=false", codex)
         both = make_spec(self.dir.name, fullAccess=True, computerUse=True)
         self.assertFalse(any(a.startswith("mcp_servers") for a in launcher.codex_args(both)))
-        self.assertIn("Vollzugriff", launcher.build_prompt(spec))
-        # Ohne die Angabe bleibt alles beim Alten.
+        self.assertIn("full access", launcher.build_prompt(spec))
+        # Without the flag everything stays as it was.
         normal = make_spec(self.dir.name, canEdit=True)
         self.assertIn("sandbox", launcher.build_claude_settings(normal, home="/Users/test"))
         self.assertNotIn("danger-full-access", launcher.codex_args(normal))
@@ -368,19 +446,34 @@ class ArgumentTests(unittest.TestCase):
         on = make_spec(self.dir.name, computerUse=True)
         self.assertIn("--chrome", launcher.claude_args(on))
         self.assertIn("mcp__claude-in-chrome", launcher.build_claude_settings(on, home="/Users/test")["permissions"]["allow"])
-        genuine = "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl"
-        servers = [("cua_repl", True, genuine), ("postiz", False, "")]
-        kept = launcher.codex_args(on, servers=servers)
-        self.assertNotIn("mcp_servers.cua_repl.enabled=false", kept)
-        self.assertIn("mcp_servers.postiz.enabled=false", kept)
-        self.assertIn("mcp_servers.cua_repl.enabled=false", launcher.codex_args(off, servers=servers))
-        # Ein gleichnamiger Server mit fremdem Befehl oder aus der Projektkonfiguration bleibt aus.
-        fake = [("cua_repl", True, "/bin/sh")]
-        self.assertIn("mcp_servers.cua_repl.enabled=false", launcher.codex_args(make_spec(self.dir.name, computerUse=True), servers=fake))
-        config = Path(self.dir.name) / ".codex"
-        config.mkdir()
-        (config / "config.toml").write_text('[mcp_servers.cua_repl]\ncommand = "/bin/sh"\n')
-        self.assertIn("mcp_servers.cua_repl.enabled=false", launcher.codex_args(make_spec(self.dir.name, computerUse=True), servers=servers))
+        genuine = launcher.COMPUTER_APP + "/Contents/Resources/cua_node/bin/node_repl"
+        servers = [("cua_repl", True, genuine, ["--require-browser-access"]), ("postiz", False, "", [])]
+        off_flag = "mcp_servers.cua_repl.enabled=false"
+
+        def fresh():
+            return make_spec(self.dir.name, computerUse=True)
+        with mock.patch.object(launcher, "signed_by_openai", return_value=True):
+            kept = launcher.codex_args(on, servers=servers)
+            self.assertNotIn(off_flag, kept)
+            self.assertIn("mcp_servers.postiz.enabled=false", kept)
+            self.assertIn(off_flag, launcher.codex_args(off, servers=servers))
+            # A server of the same name stays off when its program lies elsewhere, sits in the user's folder,
+            # or is the genuine program pointed at a script of someone's choosing.
+            for command, arguments in (("/bin/sh", []), (str(Path.home() / ".codex/computer-use/node_repl"), []),
+                                       (genuine, ["/tmp/evil.mjs"]), (genuine, ["--eval=x", "y"]), ("", [])):
+                self.assertIn(off_flag, launcher.codex_args(fresh(), servers=[("cua_repl", True, command, arguments)]), command)
+            # A link out of the app does not make a foreign program genuine.
+            link = Path(self.dir.name) / "node_repl"
+            link.symlink_to("/bin/sh")
+            self.assertFalse(launcher.trusted_computer_server("cua_repl", str(link), [], self.dir.name))
+            config = Path(self.dir.name) / ".codex"
+            config.mkdir()
+            (config / "config.toml").write_text('[mcp_servers.cua_repl]\ncommand = "/bin/sh"\n')
+            self.assertIn(off_flag, launcher.codex_args(fresh(), servers=servers))
+            (config / "config.toml").unlink()
+        # The right place is not enough: the app must also carry OpenAI's signature.
+        with mock.patch.object(launcher, "signed_by_openai", return_value=False):
+            self.assertIn(off_flag, launcher.codex_args(fresh(), servers=servers))
         routine = launcher.validate_spec({"provider": "claude", "project": self.dir.name, "task": "x", "unattended": True,
                                           "sessionId": str(uuid.uuid4()), "owner": "Alex", "agent": {"name": "Mira", "computerUse": True}})
         self.assertFalse(routine["agent"]["computerUse"])

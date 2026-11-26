@@ -1,0 +1,12 @@
+{
+  "name": "mochi-squad-whatsapp",
+  "private": true,
+  "version": "1.0.0",
+  "description": "WhatsApp link for Mochi Squad (linked device, \"Message yourself\" chat only)",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@whiskeysockets/baileys": "7.0.0-rc14"
+  }
+}

@@ -1,11 +1,15 @@
-"""Lokaler MCP-Server für den Koordinator. Die App besitzt Projekte, Agenten und Sitzungen; dieser Prozess
-übersetzt nur zwischen MCP über HTTP (127.0.0.1, zufälliger Port, Bearer-Token) und der App (stdin/stdout).
+"""Local MCP server for the coordinators. The app owns projects, agents and sessions; this process only
+translates between MCP over HTTP (127.0.0.1, random port, bearer token) and the app (stdin/stdout).
 
-Protokoll mit der App:
-  App → stdin, erste Zeile: Token (mindestens 32 Zeichen)
+Every coordinator session gets its own token, so the app knows which session is calling and judges a request by
+that session's rights, not by anyone else's.
+
+Protocol with the app:
   stdout: {"ready": true, "port": <port>}
-  stdout: {"id": "...", "tool": "...", "args": {...}}   Werkzeugaufruf
-  App → stdin: {"id": "...", "result": {...}}            Antwort
+  app → stdin: {"grant": "<token>", "caller": "<session id>"}   a session may call from now on
+  app → stdin: {"revoke": "<token>"}                            the session ended
+  stdout: {"id": "...", "tool": "...", "args": {...}, "caller": "<session id>"}   tool call
+  app → stdin: {"id": "...", "result": {...}}                   answer
 """
 import hmac
 import json
@@ -17,6 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 MAX_BODY = 128_000
 MAX_ARG = 24_000
+MIN_TOKEN = 32
 ANSWER_TIMEOUT = 90
 
 
@@ -40,26 +45,37 @@ TOOLS = dict([
 
 
 def valid_arguments(name, args):
-    """Nur bekannte Werkzeuge mit genau den verlangten, nicht leeren Text-Argumenten."""
+    """Only known tools with exactly the required, non-empty text arguments."""
     schema = TOOLS.get(name, {}).get("inputSchema") if isinstance(name, str) else None
     return bool(schema) and isinstance(args, dict) and set(args) == set(schema["required"]) and all(
         isinstance(v, str) and v.strip() and len(v) <= MAX_ARG and "\x00" not in v for v in args.values())
 
 
 class Relay:
-    """Reicht Werkzeugaufrufe an die App weiter und wartet auf die passende Antwort."""
+    """Passes tool calls on to the app and waits for the matching answer. Also keeps the tokens the app granted."""
 
     def __init__(self, out):
         self.out = out
         self.lock = threading.Lock()
         self.waiting = {}
+        self.grants = {}
 
-    def call(self, name, args, timeout=ANSWER_TIMEOUT):
+    def caller(self, header):
+        """Session id behind an Authorization header, or None. Every token is compared in constant time."""
+        given, found = header.encode(), None
+        with self.lock:
+            grants = list(self.grants.items())
+        for token, caller in grants:
+            if hmac.compare_digest(given, b"Bearer " + token.encode()):
+                found = caller
+        return found
+
+    def call(self, name, args, caller="", timeout=ANSWER_TIMEOUT):
         ident = uuid.uuid4().hex
         box = queue.Queue(maxsize=1)
         with self.lock:
             self.waiting[ident] = box
-            self.out.write(json.dumps({"id": ident, "tool": name, "args": args}) + "\n")
+            self.out.write(json.dumps({"id": ident, "tool": name, "args": args, "caller": caller}) + "\n")
             self.out.flush()
         try:
             return box.get(timeout=timeout)
@@ -70,9 +86,19 @@ class Relay:
                 self.waiting.pop(ident, None)
 
     def answer(self, line):
-        """Eine Antwortzeile der App zustellen. Fehlerhafte Zeilen werden ignoriert."""
+        """Handle one line from the app: a grant, a revocation or an answer. Faulty lines are ignored."""
         try:
             message = json.loads(line)
+            if isinstance(message, dict) and "grant" in message:
+                token, caller = message["grant"], message.get("caller")
+                if not (isinstance(token, str) and len(token) >= MIN_TOKEN and isinstance(caller, str) and caller):
+                    return False
+                with self.lock:
+                    self.grants[token] = caller
+                return True
+            if isinstance(message, dict) and "revoke" in message:
+                with self.lock:
+                    return self.grants.pop(message["revoke"], None) is not None
             ident, result = message["id"], message["result"]
         except (ValueError, KeyError, TypeError):
             return False
@@ -87,8 +113,8 @@ class Relay:
         return True
 
 
-def handle_rpc(call, relay):
-    """JSON-RPC-Nachricht → (HTTP-Status, Antwort oder None)."""
+def handle_rpc(call, relay, caller=""):
+    """JSON-RPC message → (HTTP status, answer or None)."""
     if not isinstance(call, dict) or call.get("jsonrpc") != "2.0":
         return 400, None
     method, reply = call.get("method"), {"jsonrpc": "2.0", "id": call.get("id")}
@@ -104,7 +130,7 @@ def handle_rpc(call, relay):
     elif method == "tools/call":
         params = call.get("params") if isinstance(call.get("params"), dict) else {}
         name, args = params.get("name"), params.get("arguments", {})
-        answer = relay.call(name, args) if valid_arguments(name, args) else {"error": "Invalid tool arguments"}
+        answer = relay.call(name, args, caller) if valid_arguments(name, args) else {"error": "Invalid tool arguments"}
         reply["result"] = {"content": [{"type": "text", "text": json.dumps(answer, ensure_ascii=False)}],
                            "isError": "error" in answer}
     else:
@@ -131,12 +157,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         port = self.server.server_address[1]
-        # Kein Browser (Origin) und kein fremder Hostname (DNS-Rebinding); Token in konstanter Zeit vergleichen.
+        # No browser (Origin) and no foreign host name (DNS rebinding); tokens are compared in constant time.
         if self.path != "/mcp":
             return self.send(404)
         if self.headers.get("Host") not in {f"127.0.0.1:{port}", f"localhost:{port}"} or self.headers.get("Origin"):
             return self.send(403)
-        if not hmac.compare_digest(self.headers.get("Authorization", "").encode(), self.server.auth):
+        caller = self.server.relay.caller(self.headers.get("Authorization", ""))
+        if caller is None:
             return self.send(401)
         try:
             length = int(self.headers.get("Content-Length", ""))
@@ -148,14 +175,13 @@ class Handler(BaseHTTPRequestHandler):
             call = json.loads(self.rfile.read(length))
         except ValueError:
             return self.send(400)
-        status, reply = handle_rpc(call, self.server.relay)
+        status, reply = handle_rpc(call, self.server.relay, caller)
         self.send(status, reply)
 
 
-def serve(token, inp=sys.stdin, out=sys.stdout):
+def serve(inp=sys.stdin, out=sys.stdout):
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     server.daemon_threads = True
-    server.auth = ("Bearer " + token).encode()
     server.relay = Relay(out)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     out.write(json.dumps({"ready": True, "port": server.server_address[1]}) + "\n")
@@ -169,10 +195,7 @@ def serve(token, inp=sys.stdin, out=sys.stdout):
 
 
 def main():
-    token = sys.stdin.readline().strip()
-    if len(token) < 32:
-        raise SystemExit("Token fehlt.")
-    serve(token)
+    serve()
 
 
 if __name__ == "__main__":

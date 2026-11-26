@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-// Erzeugt das App-Icon aus dem Mochi des Koordinators:  tools/make-icon.sh
+// Creates the app icon from the coordinator's Mochi:  tools/make-icon.sh
 @main struct MakeIcon {
     @MainActor static func main() {
         let out = URL(fileURLWithPath: CommandLine.arguments[1])

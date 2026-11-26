@@ -1,6 +1,6 @@
 #!/bin/bash
-# Führt alle Tests aus: Swift (Swift Testing) und die Python-Helfer.
-# Ohne Xcode liegt das Test-Framework bei den Befehlszeilenwerkzeugen; die nötigen Pfade werden dann ergänzt.
+# Runs all tests: Swift (Swift Testing) and the Python helpers.
+# Without Xcode the test framework lives with the command line tools; the paths it needs are then added.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 flags=()

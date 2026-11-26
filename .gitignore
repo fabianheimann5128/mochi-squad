@@ -10,3 +10,6 @@ DerivedData/
 # Python
 __pycache__/
 *.pyc
+
+# Node (WhatsApp helper, installed on demand into the app data)
+node_modules/

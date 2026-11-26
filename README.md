@@ -5,43 +5,44 @@
 <h1 align="center">Mochi Squad</h1>
 
 <p align="center">
-  <b>Dein Team aus KI-Agenten auf dem Mac.</b><br>
-  Claude Code und Codex als benannte Agenten, die für dich arbeiten, miteinander reden und nach Plan laufen.<br>
-  Mit deinem bestehenden Claude- oder ChatGPT-Abo, ohne API-Schlüssel.
+  <b>Your team of AI agents on the Mac.</b><br>
+  Claude Code and Codex as named agents that work for you, talk to each other and run on a schedule.<br>
+  With your existing Claude or ChatGPT subscription, no API keys.
 </p>
 
 <p align="center">
   <a href="https://github.com/fabianheimann5128/mochi-squad/actions/workflows/ci.yml"><img src="https://github.com/fabianheimann5128/mochi-squad/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <img src="https://img.shields.io/badge/macOS-14%2B-black" alt="macOS 14+">
-  <img src="https://img.shields.io/badge/Swift-5.9%2B-orange" alt="Swift">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/Lizenz-Apache--2.0-blue" alt="Apache-2.0"></a>
+  <img src="https://img.shields.io/badge/Swift-6.0%2B-orange" alt="Swift 6.0+">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="Apache-2.0"></a>
 </p>
-
-> 🇬🇧 **Mochi Squad** is a native macOS app that turns Claude Code and Codex into a squad of named agents: chat with them, let them collaborate in a team chat, schedule routines, and keep control over what each one may do. It uses your existing Claude or ChatGPT subscription. The UI is German for now; translations are welcome.
 
 ![Mochi Squad](docs/screenshot.png)
 
-## Was es kann
+## What it does
 
-- **Agenten nach deinen Vorstellungen.** Name, Job, Aufgaben, Charakter, Anbieter (Claude Code oder Codex), Modell und Denktiefe legst du frei fest. Jeder Agent bekommt seinen eigenen Mochi.
-- **Ein Koordinator.** Er kennt über eingebaute Werkzeuge den Stand aller Projekte und Agenten und verteilt Aufträge für dich.
-- **Chat statt Terminal.** Jede Sitzung läuft im echten Client. Du siehst sie als Chat und kannst jederzeit in die Konsole wechseln. Rückfragen des Clients beantwortest du per Klick. Bilder und Dateien hängst du per Klick oder Ziehen an, diktieren geht über das Mikrofon.
-- **Team-Chat.** Schreib einfach los: Ohne Anrede antwortet dein Koordinator, mit `@Name` holst du einen bestimmten Agenten dazu. Alle lesen den Verlauf mit und können selbst Kollegen einbeziehen.
-- **Computer-Ansicht.** Sieh live, woran ein Agent arbeitet und welche Dateien er zuletzt angefasst hat.
-- **Computer bedienen.** Auf Wunsch steuert ein Codex-Agent Programme und Browser, ein Claude-Agent den Chrome-Browser.
-- **Mehrere ChatGPT-Abos.** Lege in den Einstellungen weitere Abos an und wähle je Agent, mit welchem er arbeitet. Jedes Abo hat seine eigene Anmeldung.
-- **Routinen.** Aufträge zu festen Zeiten über die Zeitplanung von macOS, auch wenn die App geschlossen ist.
-- **Klare Rechte.** Drei Stufen je Agent: nur lesen, im Projekt ändern oder Vollzugriff. In den ersten beiden läuft der Agent in einer Sandbox mit gesperrten Zugangsdaten; Vollzugriff schaltest du bewusst ein. Details in [SECURITY.md](SECURITY.md).
+- **Agents the way you want them.** You choose name, job, tasks, character, provider (Claude Code or Codex), model and reasoning depth. Every agent gets its own Mochi.
+- **A coordinator.** Through built-in tools it knows the state of all projects and agents and hands out work for you. It runs with Claude Code or Codex.
+- **Chat instead of terminal.** Every session runs in the real client. You see it as a chat and can switch to the console at any time. You answer the client's questions with a click, attach images and files, and dictate through the microphone.
+- **Team chat.** Just write: without a mention your coordinator answers, with `@name` you bring in a specific agent, with `@all` everyone. Agents can bring in colleagues themselves.
+- **From your phone.** Connect Telegram or WhatsApp and write to your team chat on the go; the answers come back to the messenger.
+- **Computer view.** Watch live what an agent is working on and which files it touched last.
+- **Operate the computer.** If you allow it, a Codex agent controls apps and the browser, a Claude agent the Chrome browser.
+- **Several ChatGPT plans.** Add more plans in Settings and choose per agent which one it works with.
+- **Routines.** Tasks at fixed times through the macOS scheduler, even when the app is closed.
+- **Clear rights.** Three levels per agent: read only, edit in project, or full access. In the first two the agent runs in a sandbox with locked credentials; full access is something you switch on deliberately. Details in [SECURITY.md](SECURITY.md).
+- **English and German.** The interface comes in both languages. Agents answer in whatever language you write to them.
 
-## Voraussetzungen
+## Requirements
 
-- macOS 14 (Sonoma) oder neuer
-- Xcode-Befehlszeilenwerkzeuge: `xcode-select --install` (Xcode selbst ist nicht nötig)
-- Mindestens eines dieser Programme mit Abo:
-  - [Claude Code](https://docs.claude.com/claude-code) mit Claude Pro oder Max
-  - [Codex CLI](https://developers.openai.com/codex/cli) mit ChatGPT Plus oder Pro (ist auch in der ChatGPT-App für den Mac enthalten)
+- macOS 14 (Sonoma) or newer
+- Xcode command line tools with Swift 6 or newer: `xcode-select --install` (Xcode itself is not needed)
+- At least one of these programs with a subscription; one is enough, every agent can run on either:
+  - [Claude Code](https://docs.claude.com/claude-code) with Claude Pro or Max
+  - [Codex CLI](https://developers.openai.com/codex/cli) with ChatGPT Plus or Pro (also included in the ChatGPT app for Mac)
+- Optional, only for the WhatsApp link: [Node.js](https://nodejs.org) 20 or newer
 
-## Installation
+## Install
 
 ```bash
 git clone https://github.com/fabianheimann5128/mochi-squad.git
@@ -49,51 +50,73 @@ cd mochi-squad
 ./setup.sh
 ```
 
-`setup.sh` prüft die Voraussetzungen, baut die App, legt sie nach `~/Applications/Mochi Squad.app` und öffnet sie. Der erste Bau dauert ein paar Minuten.
+`setup.sh` checks the requirements, builds the app, puts it into `~/Applications/Mochi Squad.app` and opens it. The first build takes a few minutes. To update, quit the app, pull, and run `./setup.sh` again.
 
-## Erste Schritte
+## First steps
 
-Beim ersten Start führt dich Mochi Squad in drei Schritten durch die Einrichtung:
+On first launch Mochi Squad guides you through setup in three steps:
 
-1. **Name.** Wie du heißt und wie dein Koordinator heißen soll.
-2. **Projekt.** Der Ordner, in dem deine Agenten arbeiten. Vorgeschlagen wird `~/Mochi Squad`; du kannst jeden anderen wählen.
-3. **Anmelden.** Ein Klick öffnet die Anmeldung von Claude Code oder Codex mit deinem Abo.
+1. **Language and name.** English or German, what you are called and what your coordinator should be called.
+2. **Project.** The folder your agents work in. `~/Mochi Squad` is suggested; you can choose any other.
+3. **Sign in.** One click opens the sign-in of Claude Code or Codex with your subscription.
 
-Danach wartet dein Koordinator. Weitere Agenten legst du über **+** an: Vorlage wählen oder alles selbst festlegen. Im Team-Chat sprichst du sie mit `@Name` an.
+After that your coordinator is waiting. You add more agents with **+**, one question per page. In the team chat you address them with `@name`.
 
-## Wo liegen meine Daten?
+### Telegram and WhatsApp
 
-Alles bleibt auf deinem Mac.
+Both are set up in Settings under **Messengers** and connect your phone with the team chat of one project.
 
-| Was | Wo |
+- **Telegram** uses a bot you create yourself in @BotFather. You paste its token, press Start on your phone and confirm your account. Only that account can write to the bot afterwards. This is Telegram's official bot interface.
+- **WhatsApp** links this Mac as a device of your own account, like WhatsApp Web, and uses only your "Message yourself" chat. There is no official way to do this for private accounts: the link uses the unofficial [Baileys](https://github.com/WhiskeySockets/Baileys) library, WhatsApp's terms do not allow it, and there is a small risk that WhatsApp blocks a number for it. It needs Node.js.
+
+By default, agents with full access or computer use cannot be reached through a messenger; you can allow that in Settings.
+
+## Where is my data?
+
+Mochi Squad stores everything it keeps on your Mac and runs no server of its own. What leaves your Mac:
+
+- **Your tasks and the files your agents read** go to Anthropic or OpenAI, through Claude Code or Codex, exactly as when you use those programs directly.
+- **Dictation** stays on the Mac where macOS offers on-device recognition; otherwise Apple processes the audio.
+- **Messengers**, if you connect them: what you write and what your team answers there travels through Telegram or WhatsApp.
+
+| What | Where |
 |---|---|
-| Einstellungen, Agenten, Routinen, Team-Chat | `~/Library/Application Support/Mochi Squad/` |
-| Verläufe der Agenten | bei Claude Code (`~/.claude`) bzw. Codex (`~/.codex`) |
-| Anmeldung deiner Abos | im jeweiligen Programm; Mochi Squad speichert keine Zugangsdaten |
-| Zeitpläne der Routinen | `~/Library/LaunchAgents/dev.mochisquad.app.routine.*.plist` |
+| Settings, agents, routines, team chat | `~/Library/Application Support/Mochi Squad/` |
+| Chat histories of the agents | with Claude Code (`~/.claude`) or Codex (`~/.codex`) |
+| Sign-in and histories of **extra** ChatGPT plans | `~/Library/Application Support/Mochi Squad/accounts/` |
+| Sign-in of your main subscriptions | in the respective program; Mochi Squad stores no credentials of them |
+| Telegram bot token | in your macOS keychain |
+| WhatsApp session | `~/Library/Application Support/Mochi Squad/messengers/` |
+| Files you attach to a message | in the project, under `.mochi-squad/attachments` |
+| Schedules of the routines | `~/Library/LaunchAgents/dev.mochisquad.app.routine.*.plist` |
 
-Zum Zurücksetzen beendest du die App, löschst den Ordner `~/Library/Application Support/Mochi Squad` und, falls du Routinen angelegt hast, die Dateien `~/Library/LaunchAgents/dev.mochisquad.app.routine.*.plist`.
+### Resetting
 
-## Entwicklung
+Quit the app, delete the folder `~/Library/Application Support/Mochi Squad` and, if you created routines, the files `~/Library/LaunchAgents/dev.mochisquad.app.routine.*.plist`.
+
+This removes settings, agents, routines and the team chat. It also removes the sign-ins **and chat histories of extra ChatGPT plans** and the WhatsApp session, because they live in that folder. The histories of your main Claude and ChatGPT sign-ins and the files you attached in your projects stay where they are. Unlink WhatsApp in Settings first so the device disappears from your account; a Telegram token stays in the keychain until you remove Telegram in Settings.
+
+## Development
 
 ```bash
-swift build          # bauen
-./tools/test.sh      # alle Tests (Swift und Python)
-./install.sh         # nach ~/Applications installieren
+swift build          # build
+./tools/test.sh      # all tests (Swift and Python)
+./install.sh         # install to ~/Applications
 ```
 
-| Pfad | Inhalt |
+| Path | Content |
 |---|---|
-| `Sources/MochiSquad/Core` | Datenmodell und Speicherung |
-| `Sources/MochiSquad/Sessions` | Sitzungen, Agenten-Post, Team-Chat, Routinen, Werkzeugserver |
-| `Sources/MochiSquad/UI` | Oberfläche und Mochi-Avatare |
-| `scripts/` | Python-Helfer (nur Standardbibliothek): Start der Clients, Rechte, Verläufe, Routinen |
-| `Tests/` | Swift- und Python-Tests |
+| `Sources/MochiSquad/Core` | Data model, storage, language |
+| `Sources/MochiSquad/Sessions` | Sessions, agent post, team chat, routines, tool server, messengers |
+| `Sources/MochiSquad/UI` | Interface and Mochi avatars |
+| `scripts/` | Python helpers (standard library only): starting the clients, rights, histories, routines, Telegram |
+| `scripts/whatsapp/` | Node helper for the optional WhatsApp link |
+| `Tests/` | Swift and Python tests |
 
-Mehr dazu in [CONTRIBUTING.md](CONTRIBUTING.md).
+More in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Lizenz und Dank
+## License and thanks
 
-Apache License 2.0, siehe [LICENSE](LICENSE). Die Farbwelt der Oberfläche ist an [Rakazo](https://github.com/elie222/rakazo) (Apache-2.0) angelehnt; die Mochis sind eigene Figuren, das Terminal kommt von [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) (MIT); Einzelheiten in [NOTICE](NOTICE).
+Apache License 2.0, see [LICENSE](LICENSE). The colour scheme of the interface is modelled on [Rakazo](https://github.com/elie222/rakazo) (Apache-2.0); the Mochis are characters of their own; the terminal comes from [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) (MIT). The way messengers are connected follows [Nod](https://github.com/n8n-io/nod). Details in [NOTICE](NOTICE).
 
-Mochi Squad ist ein unabhängiges Projekt und kein Produkt von Anthropic, OpenAI oder Rakazo. „Claude“ und „ChatGPT“ sind Marken ihrer Inhaber.
+Mochi Squad is an independent project and not a product of Anthropic, OpenAI, Telegram, Meta or Rakazo. "Claude", "ChatGPT", "Telegram" and "WhatsApp" are trademarks of their owners.

@@ -1,6 +1,6 @@
-"""Liest die Verläufe von Claude Code und Codex eines Projekts direkt aus deren Dateien, ohne sie zu kopieren.
+"""Reads the histories of Claude Code and Codex for a project straight from their files, without copying them.
 
-Ausgabe ist JSON auf stdout; die App ruft die Unterbefehle list, read, thread und activity auf.
+Output is JSON on stdout; the app calls the subcommands list, read, thread and activity.
 """
 import json
 import os
@@ -14,23 +14,28 @@ import common
 from context import codex_record
 
 
+SESSION_LINES = (common.SESSION_LINE,) + common.LEGACY_SESSION_LINES
+
+
 def user_text(text):
     if not isinstance(text, str):
         return ""
-    # Mehrzeilige Einfügungen verpackt Claude Code in <pasted_content>; für den Chat zählt nur der Inhalt.
+    # Claude Code wraps multi-line pastes in <pasted_content>; only the content counts for the chat.
     text = re.sub(r"</?pasted_content[^>]*>", "", text).strip()
-    # Startprompt von Mochi Squad: Im Chat erscheint nur der Auftrag, nicht das Briefing.
-    if text.startswith("Sitzung ") and "\n" in text and common.BRIEFING_MARK in text.split("\n", 2)[1]:
+    # First prompt of Mochi Squad: the chat shows only the task, not the briefing.
+    if text.startswith(SESSION_LINES) and "\n" in text and common.BRIEFING_MARK in text.split("\n", 2)[1]:
         text = text.split("\n", 1)[1]
-    if text.startswith(common.BRIEFING_MARK) and common.TASK_MARK in text:
-        return text.split(common.TASK_MARK, 1)[1].strip()
+    if text.startswith(common.BRIEFING_MARK):
+        for mark in (common.TASK_MARK,) + common.LEGACY_TASK_MARKS:
+            if mark in text:
+                return text.split(mark, 1)[1].strip()
     if text.lstrip().startswith(("<local-command-", "<command-name>", "<system-reminder>", "<task-notification>", "<teammate-message", "<cross-session-message", "# AGENTS.md instructions")):
         return ""
     return text.strip()
 
 
 def codex_item(item):
-    """(Rolle, Text) einer Nutzer- oder Agentennachricht aus Codex' item_completed, sonst ("", "")."""
+    """(role, text) of a user or agent message from Codex's item_completed, otherwise ("", "")."""
     if not isinstance(item, dict) or item.get("type") not in ("UserMessage", "AgentMessage"):
         return "", ""
     parts = item.get("content") or []
@@ -84,7 +89,7 @@ def list_chats(project):
                     if row.get("type") == "custom-title":
                         title = row.get("customTitle") or title
                 items.append(dict(id=path.stem, path=str(path), provider="claude",
-                                  title=title or " ".join(first.split())[:100] or "Claude-Sitzung",
+                                  title=title or " ".join(first.split())[:100] or "Claude session",
                                   modified=path.stat().st_mtime))
         except OSError:
             continue
@@ -94,7 +99,7 @@ def list_chats(project):
 
 
 def codex_threads(db_root, project):
-    """Chats eines Codex-Ordners für ein Projekt, aus der neuesten lesbaren Datenbank."""
+    """Chats of a Codex folder for a project, from the newest readable database."""
     for dbfile in sorted(db_root.glob("state_*.sqlite"), key=lambda p: p.stat().st_mtime, reverse=True):
         items = []
         try:
@@ -103,8 +108,8 @@ def codex_threads(db_root, project):
                 for ident, path, title, first, updated in rows:
                     if not path or not Path(path).is_file():
                         continue
-                    label = user_text(title) or user_text(first) or "Codex-Sitzung"
-                    if (first or "").startswith("Sitzung "):
+                    label = user_text(title) or user_text(first) or "Codex session"
+                    if (first or "").startswith(SESSION_LINES):
                         label = user_text(first)
                     items.append(dict(id=ident, path=path, provider="codex", title=" ".join(label.split())[:120], modified=updated))
             return items
@@ -113,17 +118,27 @@ def codex_threads(db_root, project):
     return []
 
 
+# For the first page of a long history only the end of the file is read; enough for a few dozen messages.
+TAIL_BYTES = 4 * 1024 * 1024
+
+
 def read(path, provider, offset, count):
+    """Messages from `offset` on, at most the last `count`. A first read (offset 0) of a long file starts near
+    its end instead of parsing everything for one page; `older` then says that more exists."""
     result = deque(maxlen=count)
     total, stats = 0, {}
     with open(path, "rb") as f:
-        f.seek(offset)
+        size = os.fstat(f.fileno()).st_size
+        skipped = offset == 0 and size > TAIL_BYTES and count * 40_000 <= TAIL_BYTES
+        f.seek(size - TAIL_BYTES if skipped else offset)
+        if skipped:
+            f.readline()
         for pos, row in records(f):
             kind = row.get("type")
             role, text = "", ""
             if provider == "claude":
                 if kind == "attachment" and (row.get("attachment") or {}).get("type") == "queued_command" and not row.get("isSidechain"):
-                    # Während der Arbeit zugestellte Nachricht: zählt wie eine Nutzerzeile.
+                    # Message delivered while the agent worked: counts like a user line.
                     queued = user_text((row.get("attachment") or {}).get("prompt"))
                     if queued:
                         result.append(dict(id=pos, role="user", text=queued, timestamp=row.get("timestamp") or ""))
@@ -165,19 +180,19 @@ def read(path, provider, offset, count):
                     if role == "user":
                         text = user_text(text)
                 elif kind == "event_msg" and payload.get("type") == "item_completed":
-                    # Neuere Codex-Versionen melden Nachrichten als abgeschlossene Elemente.
+                    # Newer Codex versions report messages as completed items.
                     role, text = codex_item(payload.get("item"))
             if isinstance(text, str) and text.strip():
                 result.append(dict(id=pos, role=role, text=text.strip(), timestamp=row.get("timestamp") or ""))
                 total += 1
-        return dict(messages=list(result), position=f.tell(), older=total > count, usage=stats)
+        return dict(messages=list(result), position=f.tell(), older=total > count or skipped, usage=stats)
 
 
 
 def activity(path, provider):
     """Recent public updates and tool names. Read a bounded tail even for long-running jobs."""
     events = deque(maxlen=14)
-    modern = False  # Codex mit item_completed: Befehle kommen von dort
+    modern = False  # Codex with item_completed: commands come from there
     with open(path, "rb") as f:
         f.seek(max(0, os.fstat(f.fileno()).st_size - 512 * 1024))
         if f.tell():
@@ -196,7 +211,7 @@ def activity(path, provider):
                     elif block.get("type") == "tool_use":
                         args = block.get("input") or {}
                         filename = args.get("file_path") or args.get("path")
-                        name = block.get("name", "Werkzeug")
+                        name = block.get("name", "tool")
                         add(i, name + (" · " + Path(filename).name if isinstance(filename,str) else ""), filename if isinstance(filename,str) else None)
             elif provider == "codex":
                 item = row.get("payload") or {}
@@ -209,14 +224,14 @@ def activity(path, provider):
                         add(0, codex_item(done)[1])
                     elif done.get("type") == "CommandExecution":
                         command = done.get("command")
-                        add(0, "Befehl · " + (command[-1] if isinstance(command, list) and command else str(command or ""))[:160])
+                        add(0, "$ " + (command[-1] if isinstance(command, list) and command else str(command or ""))[:160])
                 elif row.get("type") == "response_item" and item.get("type") in ("function_call","custom_tool_call") and not modern:
-                    add(0, item.get("name") or "Werkzeug")
+                    add(0, item.get("name") or "tool")
     return list(events)
 
 
 def thread(paths, count):
-    """Frühere Sitzungen eines Agenten als ein Verlauf: zeitlich geordnet, Kopien aus Fortsetzungen nur einmal."""
+    """Earlier sessions of an agent as one history: in time order, copies from continuations only once."""
     merged, seen, older = [], set(), False
     for path in paths:
         provider = "codex" if path.startswith(str(common.codex_home())) or "/rollout-" in path else "claude"
@@ -234,7 +249,7 @@ def thread(paths, count):
     older = older or len(merged) > count
     merged = merged[-count:]
     for index, line in enumerate(merged):
-        line["id"] = -(1000 + index)  # eigene Nummern, damit sie nicht mit Dateipositionen kollidieren
+        line["id"] = -(1000 + index)  # own numbers so that they do not collide with file positions
     return dict(messages=merged, position=0, older=older, usage={})
 
 

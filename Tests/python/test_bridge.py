@@ -12,10 +12,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 import bridge  # noqa: E402
 
 TOKEN = "t" * 40
+CALLER = "11111111-2222-3333-4444-555555555555"
 
 
 class FakeApp:
-    """Spielt die App: liest Werkzeugaufrufe des Servers und antwortet darauf."""
+    """Plays the app: reads the server's tool calls and answers them."""
 
     def __init__(self):
         self.to_server_r, self.to_server_w = io.StringIO(), None
@@ -41,7 +42,7 @@ class FakeApp:
                         return data
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    raise AssertionError("keine passende Zeile")
+                    raise AssertionError("no matching line")
                 self.cond.wait(remaining)
 
 
@@ -76,13 +77,22 @@ class BridgeTests(unittest.TestCase):
     def setUp(self):
         self.app = FakeApp()
         self.inp = BlockingInput()
-        self.thread = threading.Thread(target=bridge.serve, args=(TOKEN, self.inp, self.app), daemon=True)
+        self.thread = threading.Thread(target=bridge.serve, args=(self.inp, self.app), daemon=True)
         self.thread.start()
         self.port = self.app.wait_line(lambda d: d.get("ready"))["port"]
+        self.inp.push(json.dumps({"grant": TOKEN, "caller": CALLER}) + "\n")
+        self.wait_until(lambda: self.post({"jsonrpc": "2.0", "id": 0, "method": "ping"})[0] == 200)
 
     def tearDown(self):
         self.inp.close()
         self.thread.join(5)
+
+    def wait_until(self, check, timeout=5):
+        deadline = time.monotonic() + timeout
+        while not check():
+            if time.monotonic() > deadline:
+                raise AssertionError("condition not met in time")
+            time.sleep(0.02)
 
     def post(self, body, headers=None, raw=None):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
@@ -111,13 +121,14 @@ class BridgeTests(unittest.TestCase):
 
     def test_rejects_oversized_and_invalid_bodies(self):
         self.assertEqual(self.post(None, raw=b"x" * (bridge.MAX_BODY + 1))[0], 413)
-        self.assertEqual(self.post(None, raw=b"{kaputt")[0], 400)
+        self.assertEqual(self.post(None, raw=b"{broken")[0], 400)
         self.assertEqual(self.post({"id": 1, "method": "ping"})[0], 400)
 
     def test_tool_call_round_trip_through_app(self):
         def answer():
             call = self.app.wait_line(lambda d: d.get("tool") == "list_projects")
-            self.inp.push("keine json-zeile\n")
+            self.assertEqual(call["caller"], CALLER)
+            self.inp.push("not a json line\n")
             self.inp.push(json.dumps({"id": call["id"], "result": {"projects": []}}) + "\n")
         threading.Thread(target=answer, daemon=True).start()
         status, reply = self.post({"jsonrpc": "2.0", "id": 7, "method": "tools/call",
@@ -131,6 +142,27 @@ class BridgeTests(unittest.TestCase):
                                    "params": {"name": "list_agents", "arguments": {"project": "", "x": "y"}}})
         self.assertTrue(reply["result"]["isError"])
         self.assertFalse(any("list_agents" in line for line in self.app.lines))
+
+
+    def test_every_session_has_its_own_token(self):
+        """A second session is told apart by its token, short tokens are refused, and a revoked token stops working."""
+        other, second = "o" * 40, "99999999-2222-3333-4444-555555555555"
+        self.inp.push(json.dumps({"grant": other, "caller": second}) + "\n")
+        self.inp.push(json.dumps({"grant": "short", "caller": second}) + "\n")
+        ping = {"jsonrpc": "2.0", "id": 1, "method": "ping"}
+        self.wait_until(lambda: self.post(ping, {"Authorization": "Bearer " + other})[0] == 200)
+        self.assertEqual(self.post(ping, {"Authorization": "Bearer short"})[0], 401)
+
+        def answer():
+            call = self.app.wait_line(lambda d: d.get("tool") == "list_jobs")
+            self.inp.push(json.dumps({"id": call["id"], "result": {"caller": call["caller"]}}) + "\n")
+        threading.Thread(target=answer, daemon=True).start()
+        _, reply = self.post({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "list_jobs", "arguments": {}}},
+                             {"Authorization": "Bearer " + other})
+        self.assertEqual(json.loads(reply["result"]["content"][0]["text"]), {"caller": second})
+        self.inp.push(json.dumps({"revoke": other}) + "\n")
+        self.wait_until(lambda: self.post(ping, {"Authorization": "Bearer " + other})[0] == 401)
+        self.assertEqual(self.post(ping)[0], 200)
 
 
 class ValidationTests(unittest.TestCase):

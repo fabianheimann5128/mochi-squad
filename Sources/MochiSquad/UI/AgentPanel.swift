@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Rechte Spalte: Computer des Agenten, seine Routinen und der Kontext der Sitzung.
+/// Right column: the agent's computer, its routines and the session's context.
 struct AgentPanel: View {
     let agent: Agent
     @Binding var tab: PanelTab
@@ -15,7 +15,7 @@ struct AgentPanel: View {
             HStack(spacing: 4) {
                 ForEach(PanelTab.allCases) { item in
                     Button { tab = item } label: {
-                        Text(item.rawValue).font(.system(size: 12.5, weight: tab == item ? .semibold : .regular))
+                        Text(item.title).font(.system(size: 12.5, weight: tab == item ? .semibold : .regular))
                             .foregroundStyle(tab == item ? Desk.text : Desk.dim)
                             .padding(.horizontal, 11).frame(height: 28)
                             .background { if tab == item { Capsule().fill(Desk.selected) } }
@@ -26,7 +26,7 @@ struct AgentPanel: View {
                 Button(action: close) {
                     Image(systemName: "xmark").font(.system(size: 12, weight: .medium)).foregroundStyle(Desk.dim)
                         .frame(width: 28, height: 28).contentShape(Rectangle())
-                }.buttonStyle(.plain).help("Spalte ausblenden")
+                }.buttonStyle(.plain).help(t("Hide column", "Spalte ausblenden"))
             }.padding(.horizontal, 14).frame(height: 60)
             ScrollView {
                 Group {
@@ -43,7 +43,7 @@ struct AgentPanel: View {
 
 // MARK: Computer
 
-/// Ein Bildschirmfenster, in dem man dem Agenten bei der Arbeit zusieht.
+/// A screen window in which you watch the agent at work.
 private struct ComputerView: View {
     let agent: Agent
     let session: AgentSession?
@@ -53,11 +53,11 @@ private struct ComputerView: View {
         if let session { Live(agent: agent, session: session, openProcesses: openProcesses).id(session.id) }
         else {
             VStack(alignment: .leading, spacing: 16) {
-                Screen(title: "Computer von " + agent.name, status: ("schläft", Desk.dim)) {
+                Screen(title: t("\(agent.name)'s computer", "Computer von \(agent.name)"), status: (t("asleep", "schläft"), Desk.dim)) {
                     VStack(spacing: 8) {
                         Image(systemName: "moon.zzz").font(.system(size: 24, weight: .light)).foregroundStyle(Desk.dim)
-                        Text("Schläft").font(.system(size: 13, weight: .semibold))
-                        Text("Wacht auf, sobald \(agent.name) einen Auftrag bekommt.").font(.system(size: 11.5)).foregroundStyle(Desk.dim)
+                        Text(t("Asleep", "Schläft")).font(.system(size: 13, weight: .semibold))
+                        Text(t("Wakes up as soon as \(agent.name) gets a task.", "Wacht auf, sobald \(agent.name) einen Auftrag bekommt.")).font(.system(size: 11.5)).foregroundStyle(Desk.dim)
                             .multilineTextAlignment(.center).padding(.horizontal, 20)
                     }
                 }
@@ -74,7 +74,7 @@ private struct ComputerView: View {
 
         var body: some View {
             VStack(alignment: .leading, spacing: 16) {
-                Screen(title: "Computer von " + agent.name, status: status) {
+                Screen(title: t("\(agent.name)'s computer", "Computer von \(agent.name)"), status: status) {
                     VStack(alignment: .leading, spacing: 5) {
                         Text("~/" + session.project.lastPathComponent + " · " + session.provider.title)
                             .font(.system(size: 10.5, design: .monospaced)).foregroundStyle(Color.white.opacity(0.38)).lineLimit(1)
@@ -85,14 +85,14 @@ private struct ComputerView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(12)
                 }
                 HStack(spacing: 8) {
-                    Button { NSWorkspace.shared.open(session.project) } label: { Label("Im Finder", systemImage: "folder") }.buttonStyle(.pill)
-                    Button(action: openProcesses) { Label("Prozesse", systemImage: "list.bullet.rectangle") }.buttonStyle(.pill)
+                    Button { NSWorkspace.shared.open(session.project) } label: { Label(t("In Finder", "Im Finder"), systemImage: "folder") }.buttonStyle(.pill)
+                    Button(action: openProcesses) { Label(t("Processes", "Prozesse"), systemImage: "list.bullet.rectangle") }.buttonStyle(.pill)
                 }
                 TimelineView(.periodic(from: session.started, by: 1)) { moment in
-                    Facts(agent: agent, extra: session.isRunning ? ("Läuft seit", clock(moment.date.timeIntervalSince(session.started))) : ("Status", session.status))
+                    Facts(agent: agent, extra: session.isRunning ? (t("Running for", "Läuft seit"), clock(moment.date.timeIntervalSince(session.started))) : ("Status", session.status))
                 }
                 if !files.isEmpty {
-                    Text("Zuletzt bearbeitet").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Desk.dim)
+                    Text(t("Recently edited", "Zuletzt bearbeitet")).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Desk.dim)
                     ForEach(files, id: \.path) { url in
                         Button { NSWorkspace.shared.activateFileViewerSelecting([url]) } label: {
                             HStack(spacing: 10) {
@@ -101,7 +101,7 @@ private struct ComputerView: View {
                                 Text(url.lastPathComponent).font(.system(size: 13)).lineLimit(1).truncationMode(.middle)
                                 Spacer(minLength: 0)
                             }.contentShape(Rectangle())
-                        }.buttonStyle(.plain).help("Im Finder zeigen")
+                        }.buttonStyle(.plain).help(t("Show in Finder", "Im Finder zeigen"))
                     }
                 }
             }
@@ -124,8 +124,8 @@ private struct ComputerView: View {
 
         private var status: (String, Color) {
             if !session.isRunning { return (session.status.lowercased(), Desk.dim) }
-            if session.prompt != nil { return ("wartet auf dich", Desk.warning) }
-            return session.working ? ("arbeitet", Desk.success) : ("bereit", Desk.dim)
+            if session.prompt != nil { return (t("waiting for you", "wartet auf dich"), Desk.warning) }
+            return session.working ? (t("working", "arbeitet"), Desk.success) : (t("ready", "bereit"), Desk.dim)
         }
 
         private func recentFiles(_ events: [ActivityEvent]) -> [URL] {
@@ -169,22 +169,22 @@ private struct ComputerView: View {
         @EnvironmentObject private var settings: SettingsStore
         var body: some View {
             VStack(alignment: .leading, spacing: 9) {
-                line("Arbeitsordner", URL(fileURLWithPath: agent.project).lastPathComponent)
-                line("Anbieter", agent.provider.title)
+                line(t("Working folder", "Arbeitsordner"), URL(fileURLWithPath: agent.project).lastPathComponent)
+                line(t("Provider", "Anbieter"), agent.provider.title)
                 HStack {
-                    Text("Modell").foregroundStyle(Desk.dim)
+                    Text(t("Model", "Modell")).foregroundStyle(Desk.dim)
                     Spacer(minLength: 6)
-                    Picker("Modell", selection: Binding(get: { agent.model }, set: { model in
-                        agents.update(agent.id) { $0.model = model; if !$0.provider.efforts(for: model).contains($0.effort) { $0.effort = "" } }
+                    Picker(t("Model", "Modell"), selection: Binding(get: { agent.model }, set: { model in
+                        agents.update(agent.id) { $0.model = model; if !$0.efforts.contains($0.effort) { $0.effort = "" } }
                     })) {
-                        ForEach(agent.provider.models, id: \.self) { Text($0).tag($0) }
+                        ForEach(agent.models, id: \.self) { Text($0).tag($0) }
                     }.labelsHidden().fixedSize().controlSize(.small)
                 }.font(.system(size: 12.5))
-                if let account = settings.accounts.first(where: { $0.id == agent.account }) { line("ChatGPT-Abo", account.name) }
+                if let account = settings.accounts.first(where: { $0.id == agent.account }) { line(t("ChatGPT plan", "ChatGPT-Abo"), account.name) }
                 HStack {
-                    Text("Zugriff").foregroundStyle(Desk.dim)
+                    Text(t("Access", "Zugriff")).foregroundStyle(Desk.dim)
                     Spacer(minLength: 6)
-                    Picker("Zugriff", selection: Binding(get: { agent.access }, set: { level in
+                    Picker(t("Access", "Zugriff"), selection: Binding(get: { agent.access }, set: { level in
                         agents.update(agent.id) { $0.access = level }
                         if let changed = agents.agent(agent.id) { manager.settle(changed) }
                     })) {
@@ -195,25 +195,27 @@ private struct ComputerView: View {
                     Text(Agent.Access.full.note).font(.system(size: 11.5)).foregroundStyle(Desk.warning).fixedSize(horizontal: false, vertical: true)
                 }
                 HStack {
-                    Text("Computer bedienen").foregroundStyle(Desk.dim)
+                    Text(t("Operate computer", "Computer bedienen")).foregroundStyle(Desk.dim)
                     Spacer(minLength: 6)
-                    Toggle("Computer bedienen", isOn: Binding(get: { agent.computerUse == true }, set: { on in
+                    Toggle(t("Operate computer", "Computer bedienen"), isOn: Binding(get: { agent.computerUse == true }, set: { on in
                         agents.update(agent.id) { $0.computerUse = on ? true : nil }
                         if let changed = agents.agent(agent.id) { manager.settle(changed) }
                     }))
                         .toggleStyle(.switch).controlSize(.mini).labelsHidden()
                 }.font(.system(size: 12.5))
                 if agent.computerUse == true {
-                    Text(agent.provider == .claude ? "Steuert den Chrome-Browser über Claude in Chrome." : "Steuert Programme und Browser über die Computersteuerung von Codex.")
+                    Text(agent.provider == .claude ? t("Controls the Chrome browser through Claude in Chrome.", "Steuert den Chrome-Browser über Claude in Chrome.")
+                         : t("Controls apps and the browser through Codex's computer control.", "Steuert Programme und Browser über die Computersteuerung von Codex."))
                         .font(.system(size: 11.5)).foregroundStyle(Desk.dim).fixedSize(horizontal: false, vertical: true)
                 }
-                // Was beim Start einer Sitzung festgelegt wurde, gilt bis zu ihrem Ende; ein Neustart wendet Änderungen sofort an.
+                // What was fixed at the start of a session applies until it ends; a restart applies changes at once.
                 if let live = manager.liveSession(for: agent.id), live.signature != agent.sessionSignature {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Die laufende Sitzung arbeitet noch mit den alten Einstellungen." + (agent.provider == .codex ? " Codex beginnt beim Neustart einen neuen Chat." : ""))
+                        Text(t("The running session still works with the old settings.", "Die laufende Sitzung arbeitet noch mit den alten Einstellungen.")
+                             + (agent.provider == .codex ? t(" Codex starts a new chat on restart.", " Codex beginnt beim Neustart einen neuen Chat.") : ""))
                             .font(.system(size: 11.5)).foregroundStyle(Desk.dim)
                             .fixedSize(horizontal: false, vertical: true)
-                        Button("Sitzung neu starten") { manager.restart(agent) }.buttonStyle(.pill)
+                        Button(t("Restart session", "Sitzung neu starten")) { manager.restart(agent) }.buttonStyle(.pill)
                     }
                 }
                 if let extra { line(extra.0, extra.1) }
@@ -235,7 +237,7 @@ func clock(_ seconds: TimeInterval) -> String {
         : String(format: "%02d:%02d", total / 60, total % 60)
 }
 
-// MARK: Kontext
+// MARK: Context
 
 private struct ContextView: View {
     let agent: Agent
@@ -245,10 +247,11 @@ private struct ContextView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Kontext von " + agent.name).font(.system(size: 13, weight: .semibold)).foregroundStyle(Desk.dim)
+            Text(t("\(agent.name)'s context", "Kontext von \(agent.name)")).font(.system(size: 13, weight: .semibold)).foregroundStyle(Desk.dim)
             if let session { Live(session: session, fallback: transcript.usage) } else { UsageNumbers(usage: transcript.usage) }
-            Button(action: openConnectors) { Label("Konnektoren verwalten", systemImage: "puzzlepiece.extension") }.buttonStyle(.pill).padding(.top, 6)
-            Text("Konnektoren sind Dienste (MCP-Server), die deine Agenten nutzen dürfen. Sie werden im jeweiligen Client eingerichtet.")
+            Button(action: openConnectors) { Label(t("Manage connectors", "Konnektoren verwalten"), systemImage: "puzzlepiece.extension") }.buttonStyle(.pill).padding(.top, 6)
+            Text(t("Connectors are services (MCP servers) your agents may use. They are set up in the respective client.",
+                   "Konnektoren sind Dienste (MCP-Server), die deine Agenten nutzen dürfen. Sie werden im jeweiligen Client eingerichtet."))
                 .font(.system(size: 12)).foregroundStyle(Desk.dim).fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -267,7 +270,7 @@ private struct UsageNumbers: View {
             if let percent = usage.percent ?? usage.used.flatMap({ used in usage.limit.map { 100 * Double(used) / Double(max(1, $0)) } }) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(percent.formatted(.number.precision(.fractionLength(0))) + " %").font(.system(size: 26, weight: .semibold).monospacedDigit())
-                    Text("genutzt").font(.system(size: 15)).foregroundStyle(Desk.dim)
+                    Text(t("used", "genutzt")).font(.system(size: 15)).foregroundStyle(Desk.dim)
                 }
                 GeometryReader { bar in
                     ZStack(alignment: .leading) {
@@ -276,13 +279,13 @@ private struct UsageNumbers: View {
                     }
                 }.frame(height: 4)
             }
-            if let model = usage.model { line("Modell", model) }
-            if let used = usage.used { line(usage.limit == nil ? "Letzte Anfrage" : "Token belegt", used.formatted()) }
-            if let limit = usage.limit { line("Kontextfenster", limit.formatted()) }
-            if let five = usage.five { line("5-Stunden-Limit", five.formatted(.number.precision(.fractionLength(0))) + " %") }
-            if let week = usage.week { line("Wochenlimit", week.formatted(.number.precision(.fractionLength(0))) + " %") }
+            if let model = usage.model { line(t("Model", "Modell"), model) }
+            if let used = usage.used { line(usage.limit == nil ? t("Last request", "Letzte Anfrage") : t("Tokens in use", "Token belegt"), used.formatted()) }
+            if let limit = usage.limit { line(t("Context window", "Kontextfenster"), limit.formatted()) }
+            if let five = usage.five { line(t("5-hour limit", "5-Stunden-Limit"), five.formatted(.number.precision(.fractionLength(0))) + " %") }
+            if let week = usage.week { line(t("Weekly limit", "Wochenlimit"), week.formatted(.number.precision(.fractionLength(0))) + " %") }
             if usage.used == nil && usage.model == nil {
-                Text("Die Auslastung erscheint mit der ersten Antwort des Agenten.").font(.system(size: 12.5)).foregroundStyle(Desk.dim)
+                Text(t("Usage appears with the agent's first answer.", "Die Auslastung erscheint mit der ersten Antwort des Agenten.")).font(.system(size: 12.5)).foregroundStyle(Desk.dim)
             }
         }.padding(14).frame(maxWidth: .infinity, alignment: .leading).background(Desk.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
@@ -295,17 +298,17 @@ private struct UsageNumbers: View {
     }
 }
 
-// MARK: Routinen
+// MARK: Routines
 
-/// Routinen eines Agenten: Auftrag, Zeitpunkt, Testlauf und Ablaufprotokoll.
+/// An agent's routines: task, time, test run and run log.
 private struct RoutinePanel: View {
     let agent: Agent
     @EnvironmentObject private var store: RoutineStore
     @State private var draft: Routine?
-    /// Kennung der Routine, deren Testlauf gerade läuft, und wie viele Läufe sie davor hatte.
+    /// Id of the routine whose test run is in progress, and when it was started.
     @State private var testing: (id: String, since: Date)?
     @State private var confirmDelete = false
-    private let days = [(1, "Mo"), (2, "Di"), (3, "Mi"), (4, "Do"), (5, "Fr"), (6, "Sa"), (7, "So")]
+    private var days: [(Int, String)] { (1...7).map { ($0, Routine.dayNames[$0]) } }
 
     private var saved: [Routine] { store.routines(for: agent.id) }
     private var isNew: Bool { draft.map { d in !saved.contains { $0.id == d.id } } ?? false }
@@ -318,7 +321,7 @@ private struct RoutinePanel: View {
                         Button { draft = routine } label: {
                             HStack(spacing: 10) {
                                 Image(systemName: "clock").font(.system(size: 12)).foregroundStyle(Desk.dim)
-                                Text(routine.rhythm + " um " + routine.time).font(.system(size: 13, weight: .medium))
+                                Text(routine.rhythm + t(" at ", " um ") + routine.time).font(.system(size: 13, weight: .medium))
                                 Spacer()
                                 Circle().fill(routine.active ? Desk.success : Desk.faint).frame(width: 6, height: 6)
                             }.padding(.horizontal, 10).frame(height: 36)
@@ -329,13 +332,14 @@ private struct RoutinePanel: View {
                 }
             }
             if let shown { form(shown) } else {
-                Text("Keine Routine").font(.system(size: 15, weight: .semibold))
-                Text("\(agent.name) arbeitet bisher nur auf Zuruf. Eine Routine läuft zur festen Zeit über macOS, auch wenn Mochi Squad geschlossen ist.")
+                Text(t("No routine", "Keine Routine")).font(.system(size: 15, weight: .semibold))
+                Text(t("So far \(agent.name) only works when asked. A routine runs at a fixed time through macOS, even when Mochi Squad is closed.",
+                       "\(agent.name) arbeitet bisher nur auf Zuruf. Eine Routine läuft zur festen Zeit über macOS, auch wenn Mochi Squad geschlossen ist."))
                     .font(.system(size: 12.5)).foregroundStyle(Desk.dim).fixedSize(horizontal: false, vertical: true)
             }
             if !isNew {
                 Button { var fresh = Routine(agent: agent); fresh.active = true; draft = fresh } label: {
-                    Label("Neue Routine", systemImage: "plus").font(.system(size: 13, weight: .medium))
+                    Label(t("New routine", "Neue Routine"), systemImage: "plus").font(.system(size: 13, weight: .medium))
                         .frame(maxWidth: .infinity).frame(height: 40)
                         .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Desk.edge) }
                         .contentShape(Rectangle())
@@ -345,55 +349,60 @@ private struct RoutinePanel: View {
         .onChange(of: agent.id) { _, _ in draft = nil }
     }
 
-    /// Die bearbeitete Routine: der Entwurf, sonst die erste gespeicherte.
+    /// The routine being edited: the draft, otherwise the first saved one.
     private var shown: Routine? { draft ?? saved.first }
 
     @ViewBuilder private func form(_ routine: Routine) -> some View {
         let stored = saved.first { $0.id == routine.id }
-        let changed = stored != routine
+        // Only what the user edits here counts as a change; agent details are refreshed by the store on every save.
+        let changed = stored?.plan != routine.plan
         let ready = !routine.task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         HStack(spacing: 8) {
             Toggle("", isOn: Binding(get: { routine.active }, set: { on in
                 var copy = routine; copy.active = on
                 draft = copy
-                if stored != nil, ready { store.save(copy) }
+                if stored != nil, ready { store.save(copy, agent: agent) }
             })).labelsHidden().toggleStyle(.switch).controlSize(.small)
-            Text(routine.active ? "Aktiv" : "Pausiert").font(.system(size: 13))
+            Text(routine.active ? t("Active", "Aktiv") : t("Paused", "Pausiert")).font(.system(size: 13))
             Spacer()
             if let stored {
-                Button("Löschen") { confirmDelete = true }.buttonStyle(.pill)
-                    .confirmationDialog("Routine löschen?", isPresented: $confirmDelete) {
-                        Button("Routine löschen", role: .destructive) { store.remove(stored); draft = nil }
-                        Button("Abbrechen", role: .cancel) {}
+                Button(t("Delete", "Löschen")) { confirmDelete = true }.buttonStyle(.pill)
+                    .confirmationDialog(t("Delete routine?", "Routine löschen?"), isPresented: $confirmDelete) {
+                        Button(t("Delete routine", "Routine löschen"), role: .destructive) { store.remove(stored); draft = nil }
+                        Button(t("Cancel", "Abbrechen"), role: .cancel) {}
                     }
                 let running = testing?.id == stored.id
-Button(running ? "Läuft …" : "Testlauf") {
+                Button(running ? t("Running …", "Läuft …") : t("Test run", "Testlauf")) {
                     if store.runNow(stored) { testing = (stored.id, Date()) } else { testing = nil }
                 }
-                .buttonStyle(.pill).help("Jetzt einmal ausführen").disabled(running)
-                // Solange der Testlauf läuft, öfter ins Protokoll sehen. Frei wird der Knopf, sobald ein Lauf seit dem Klick
-                // im Protokoll steht, spätestens nach 15 Minuten.
+                .buttonStyle(.pill).help(t("Run once now", "Jetzt einmal ausführen")).disabled(running)
+                // While the test run is in progress, look into the log more often. The button frees up as soon as a run
+                // since the click is in the log, at the latest after the three hours a run may take.
                 .task(id: testing?.id) {
                     while let current = testing, !Task.isCancelled {
                         try? await Task.sleep(for: .seconds(2))
                         store.readRuns()
                         let done = store.runs(for: current.id).contains { Timestamp.date($0.start).map { $0 >= current.since.addingTimeInterval(-2) } ?? false }
-                        if done || Date().timeIntervalSince(current.since) > 900 { testing = nil }
+                        if done || Date().timeIntervalSince(current.since) > 3 * 3600 + 60 { testing = nil }
                     }
                 }
             }
         }
-        label("Auftrag")
+        if routine.active, let issue = store.scheduleIssues[routine.id] {
+            Label(issue, systemImage: "exclamationmark.triangle.fill").font(.system(size: 12)).foregroundStyle(Desk.warning)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        label(t("Task", "Auftrag"))
         TextEditor(text: Binding(get: { routine.task }, set: { var c = routine; c.task = $0; draft = c }))
             .font(.system(size: 13.5)).scrollContentBackground(.hidden).padding(.horizontal, 7).padding(.vertical, 8)
             .frame(minHeight: 96, maxHeight: 160).field()
             .overlay(alignment: .topLeading) {
                 if routine.task.isEmpty {
-                    Text("Was soll \(agent.name) jedes Mal tun?").font(.system(size: 13.5)).foregroundStyle(.tertiary)
+                    Text(t("What should \(agent.name) do each time?", "Was soll \(agent.name) jedes Mal tun?")).font(.system(size: 13.5)).foregroundStyle(.tertiary)
                         .padding(.horizontal, 12).padding(.vertical, 8).allowsHitTesting(false)
                 }
             }
-        label("Wann")
+        label(t("When", "Wann"))
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "clock").foregroundStyle(Desk.dim)
@@ -423,27 +432,27 @@ Button(running ? "Läuft …" : "Testlauf") {
             }
         }.padding(12).overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Desk.edge) }
         Toggle(isOn: Binding(get: { routine.allowWeb }, set: { var c = routine; c.allowWeb = $0; draft = c })) {
-            Text("Darf im Internet suchen und Seiten lesen").font(.system(size: 12.5))
+            Text(t("May search the web and read pages", "Darf im Internet suchen und Seiten lesen")).font(.system(size: 12.5))
         }.toggleStyle(.checkbox)
         HStack {
-            Button(stored == nil ? "Routine anlegen" : "Speichern") {
+            Button(stored == nil ? t("Create routine", "Routine anlegen") : t("Save", "Speichern")) {
                 var copy = routine
                 copy.task = copy.task.trimmingCharacters(in: .whitespacesAndNewlines)
-                store.save(copy); draft = copy
+                store.save(copy, agent: agent); draft = copy
             }.buttonStyle(.primaryPill).disabled(!changed || !ready).opacity(changed && ready ? 1 : 0.45)
-            if stored == nil { Button("Verwerfen") { draft = nil }.buttonStyle(.pill) }
+            if stored == nil { Button(t("Discard", "Verwerfen")) { draft = nil }.buttonStyle(.pill) }
         }
         if let stored {
             let runs = Array(store.runs(for: stored.id).reversed().prefix(10))
-            Text("Ablaufprotokoll").font(.system(size: 15, weight: .semibold)).padding(.top, 10)
-            if runs.isEmpty { Text("Noch kein Lauf. „Testlauf“ startet die Routine sofort.").font(.system(size: 12.5)).foregroundStyle(Desk.dim) }
+            Text(t("Run log", "Ablaufprotokoll")).font(.system(size: 15, weight: .semibold)).padding(.top, 10)
+            if runs.isEmpty { Text(t("No run yet. “Test run” starts the routine right away.", "Noch kein Lauf. „Testlauf“ startet die Routine sofort.")).font(.system(size: 12.5)).foregroundStyle(Desk.dim) }
             ForEach(runs) { run in
                 VStack(alignment: .leading, spacing: 3) {
                     HStack {
                         Text(Timestamp.date(run.start).map { $0.formatted(.dateTime.day().month(.abbreviated).hour().minute()) } ?? run.start)
                             .font(.system(size: 13).monospacedDigit())
                         Spacer()
-                        Text(run.code == 0 ? "fertig" : "Fehler \(run.code ?? -1)").font(.system(size: 12))
+                        Text(run.code == 0 ? t("done", "fertig") : run.code == 75 ? t("skipped", "übersprungen") : t("error \(run.code ?? -1)", "Fehler \(run.code ?? -1)")).font(.system(size: 12))
                             .foregroundStyle(run.code == 0 ? Desk.dim : Desk.danger)
                     }
                     if let output = run.output, !output.isEmpty {

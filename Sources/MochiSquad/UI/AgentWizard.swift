@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Neuen Agenten anlegen, Schritt für Schritt: je Seite eine Frage, mit Eingabetaste geht es weiter.
+/// Create a new agent, step by step: one question per page, Return moves on.
 struct AgentWizard: View {
     @State var agent: Agent
     let save: (Agent) -> Void
@@ -13,7 +13,7 @@ struct AgentWizard: View {
     private enum Step: Int, CaseIterable { case name, job, tasks, manner, engine, rights }
     private static let names = ["Mira", "Otto", "Juna", "Finn", "Lia", "Nico", "Ida", "Theo", "Emil", "Nora"]
 
-    /// Weiter geht es erst, wenn die Frage der Seite beantwortet ist.
+    /// It only moves on once the page's question is answered.
     private var canContinue: Bool {
         func filled(_ text: String) -> Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         switch step {
@@ -21,8 +21,8 @@ struct AgentWizard: View {
         case .job: return filled(agent.job)
         case .tasks: return filled(agent.instructions)
         case .manner: return filled(agent.persona)
-        // Kennt Codex seine Modelle noch nicht (frische Installation), geht es mit dessen Vorgabe weiter.
-        case .engine: return !agent.model.isEmpty || agent.provider.models.isEmpty
+        // If Codex does not know its models yet (fresh install), it goes on with Codex's own default.
+        case .engine: return !agent.model.isEmpty || agent.models.isEmpty
         case .rights: return true
         }
     }
@@ -47,45 +47,47 @@ struct AgentWizard: View {
             }.padding(.bottom, 14).accessibilityHidden(true)
             Rectangle().fill(Desk.rule).frame(height: 1)
             HStack(spacing: 10) {
-                Button("Abbrechen") { dismiss() }.buttonStyle(.pill).keyboardShortcut(.cancelAction)
+                Button(t("Cancel", "Abbrechen")) { dismiss() }.buttonStyle(.pill).keyboardShortcut(.cancelAction)
                 Spacer()
-                if step != .name { Button("Zurück") { go(-1) }.buttonStyle(.pill) }
-                Button(step == .rights ? "Mochi anlegen" : "Weiter") { step == .rights ? finish() : go(1) }
+                if step != .name { Button(t("Back", "Zurück")) { go(-1) }.buttonStyle(.pill) }
+                Button(step == .rights ? t("Create Mochi", "Mochi anlegen") : t("Continue", "Weiter")) { step == .rights ? finish() : go(1) }
                     .buttonStyle(.primaryPill).keyboardShortcut(.defaultAction).disabled(!canContinue).opacity(canContinue ? 1 : 0.5)
             }.padding(.horizontal, 22).padding(.vertical, 16)
         }
         .frame(width: 520)
         .onAppear {
-            // Vorschlag, der im Projekt noch frei ist.
+            // A suggestion that is still free in the project.
             if agent.name.isEmpty { agent.name = Self.names.filter { !taken.contains($0.lowercased()) }.randomElement() ?? "" }
             focus = .name
         }
     }
 
-    // MARK: Schritte
+    // MARK: Steps
 
     private var name: some View {
         VStack(spacing: 14) {
-            question("Wie soll dein Mochi heißen?", "Mit diesem Namen sprichst du ihn im Team-Chat an.")
+            question(t("What should your Mochi be called?", "Wie soll dein Mochi heißen?"),
+                     t("You address it by this name in the team chat.", "Mit diesem Namen sprichst du ihn im Team-Chat an."))
             TextField("Name", text: $agent.name).textFieldStyle(.plain).font(.system(size: 15)).multilineTextAlignment(.center)
                 .focused($focus, equals: .name).padding(.horizontal, 14).frame(width: 240, height: 40).field(12)
             if nameTaken {
-                Text("Diesen Namen gibt es in diesem Projekt schon. Im Team-Chat wäre unklar, wer gemeint ist.")
+                Text(Self.nameTakenText)
                     .font(.system(size: 12.5)).foregroundStyle(Desk.warning).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
             }
-            Button { agent.avatar = MochiLook.random().key } label: { Label("Aussehen würfeln", systemImage: "dice") }.buttonStyle(.pill)
+            Button { agent.avatar = MochiLook.random().key } label: { Label(t("Shuffle look", "Aussehen würfeln"), systemImage: "dice") }.buttonStyle(.pill)
         }
     }
 
     private var job: some View {
         VStack(spacing: 14) {
-            question("Wie ist \(shownName)s Jobbezeichnung?", "Tipp eine eigene ein oder nimm einen Vorschlag.")
-            TextField("z. B. Researcherin, Entwickler, Lektor", text: $agent.job).textFieldStyle(.plain).font(.system(size: 15))
+            question(t("What is \(shownName)'s job title?", "Wie ist \(shownName)s Jobbezeichnung?"),
+                     t("Type your own or take a suggestion.", "Tipp eine eigene ein oder nimm einen Vorschlag."))
+            TextField(Self.jobPlaceholder, text: $agent.job).textFieldStyle(.plain).font(.system(size: 15))
                 .multilineTextAlignment(.center).focused($focus, equals: .job).padding(.horizontal, 14).frame(width: 320, height: 40).field(12)
             HStack(spacing: 6) {
-                ForEach(AgentTemplate.all.filter { !$0.job.isEmpty }) { template in
+                ForEach(AgentTemplate.all) { template in
                     Button {
-                        // Ein Vorschlag bringt passende Aufgaben und Rechte mit; beides lässt sich in den nächsten Schritten ändern.
+                        // A suggestion brings fitting tasks and rights along; both can be changed in the next steps.
                         agent.job = template.job; agent.instructions = template.instructions; agent.canEdit = template.canEdit
                     } label: { Label(template.job, systemImage: template.symbol) }.buttonStyle(.pill)
                 }
@@ -95,7 +97,8 @@ struct AgentWizard: View {
 
     private var tasks: some View {
         VStack(spacing: 14) {
-            question("Was ist \(shownName)s Aufgabe?", "Wiederkehrende Aufgaben legst du später als Routinen fest.")
+            question(t("What is \(shownName)'s task?", "Was ist \(shownName)s Aufgabe?"),
+                     t("Recurring tasks are set up later as routines.", "Wiederkehrende Aufgaben legst du später als Routinen fest."))
             TextEditor(text: $agent.instructions).font(.system(size: 14)).scrollContentBackground(.hidden).focused($focus, equals: .tasks)
                 .padding(.horizontal, 9).padding(.vertical, 8).frame(height: 130).field(10)
         }
@@ -103,56 +106,58 @@ struct AgentWizard: View {
 
     private var manner: some View {
         VStack(spacing: 14) {
-            question("Wie soll \(shownName) sich verhalten?", "Ein paar Stichworte zu Ton und Arbeitsweise genügen.")
-            TextField("z. B. gründlich und skeptisch, trockener Humor", text: $agent.persona).textFieldStyle(.plain).font(.system(size: 15))
+            question(t("How should \(shownName) behave?", "Wie soll \(shownName) sich verhalten?"),
+                     t("A few keywords on tone and way of working are enough.", "Ein paar Stichworte zu Ton und Arbeitsweise genügen."))
+            TextField(t("e.g. thorough and sceptical, dry humour", "z. B. gründlich und skeptisch, trockener Humor"), text: $agent.persona).textFieldStyle(.plain).font(.system(size: 15))
                 .multilineTextAlignment(.center).focused($focus, equals: .manner).padding(.horizontal, 14).frame(width: 360, height: 40).field(12)
         }
     }
 
     private var engine: some View {
         VStack(spacing: 16) {
-            question("Welchen Anbieter und welches Modell soll \(shownName) haben?", "Beide laufen über dein bestehendes Abo. Du kannst das jederzeit ändern.")
+            question(t("Which provider and model should \(shownName) use?", "Welchen Anbieter und welches Modell soll \(shownName) haben?"),
+                     t("Both run on your existing subscription. You can change this at any time.", "Beide laufen über dein bestehendes Abo. Du kannst das jederzeit ändern."))
             PillPicker(selection: Binding(get: { agent.provider }, set: { agent.provider = $0; agent.model = ""; agent.effort = ""; agent.account = nil }),
                        options: Provider.allCases.map { ($0, $0.vendor + " · " + $0.title) })
             HStack(spacing: 8) {
                 Picker("", selection: $agent.model) {
-                    Text("Modell wählen").tag("")
-                    ForEach(agent.provider.models, id: \.self) { Text($0).tag($0) }
+                    Text(t("Choose a model", "Modell wählen")).tag("")
+                    ForEach(agent.models, id: \.self) { Text($0).tag($0) }
                 }.labelsHidden().fixedSize()
-                    .onChange(of: agent.model) { _, model in if !agent.provider.efforts(for: model).contains(agent.effort) { agent.effort = "" } }
+                    .onChange(of: agent.model) { _, _ in if !agent.efforts.contains(agent.effort) { agent.effort = "" } }
                 Picker("", selection: $agent.effort) {
-                    Text("Denktiefe automatisch").tag("")
-                    ForEach(agent.provider.efforts(for: agent.model), id: \.self) { Text($0).tag($0) }
+                    Text(Self.autoEffort).tag("")
+                    ForEach(agent.efforts, id: \.self) { Text($0).tag($0) }
                 }.labelsHidden().fixedSize()
             }
             if agent.provider == .codex, !settings.accounts.isEmpty {
                 HStack(spacing: 8) {
-                    Text("ChatGPT-Abo").font(.system(size: 13)).foregroundStyle(Desk.dim)
-                    Picker("", selection: Binding(get: { agent.account ?? "" }, set: { agent.account = $0.isEmpty ? nil : $0 })) {
-                        Text("Haupt-Abo").tag("")
+                    Text(t("ChatGPT plan", "ChatGPT-Abo")).font(.system(size: 13)).foregroundStyle(Desk.dim)
+                    Picker("", selection: Binding(get: { agent.account ?? "" }, set: { agent.account = $0.isEmpty ? nil : $0; agent.model = "" })) {
+                        Text(Self.mainPlan).tag("")
                         ForEach(settings.accounts) { Text($0.name).tag($0.id) }
                     }.labelsHidden().fixedSize()
                 }
             }
-            Text("Wähle ein Modell. Die Denktiefe kann auf automatisch bleiben.").font(.system(size: 12.5)).foregroundStyle(Desk.dim)
+            Text(t("Choose a model. The reasoning depth can stay on automatic.", "Wähle ein Modell. Die Denktiefe kann auf automatisch bleiben.")).font(.system(size: 12.5)).foregroundStyle(Desk.dim)
         }
     }
 
     private var rights: some View {
         VStack(spacing: 16) {
-            question("Was darf \(shownName)?", "Das kannst du später jederzeit umstellen.")
+            question(t("What may \(shownName) do?", "Was darf \(shownName)?"), t("You can change this at any time later.", "Das kannst du später jederzeit umstellen."))
             PillPicker(selection: $agent.access, options: Agent.Access.allCases.map { ($0, $0.title) })
             Text(agent.access.note).font(.system(size: 12.5)).foregroundStyle(agent.access == .full ? Desk.warning : Desk.dim)
                 .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
-            Toggle(agent.provider == .claude ? "Darf den Chrome-Browser bedienen" : "Darf Programme und Browser bedienen",
+            Toggle(Self.computerUseLabel(agent.provider),
                    isOn: Binding(get: { agent.computerUse == true }, set: { agent.computerUse = $0 ? true : nil }))
                 .toggleStyle(.checkbox).font(.system(size: 13))
         }
     }
 
-    // MARK: Hilfen
+    // MARK: Helpers
 
-    /// Namen der anderen Agenten im Projekt, kleingeschrieben (für den Namensvorschlag).
+    /// Names of the other agents in the project, lowercased (for the name suggestion).
     private var taken: Set<String> {
         Set(agents.agents(in: URL(fileURLWithPath: agent.project)).filter { $0.id != agent.id }.map { $0.name.lowercased() })
     }
@@ -160,7 +165,20 @@ struct AgentWizard: View {
 
     private var shownName: String {
         let trimmed = agent.name.trimmingCharacters(in: .whitespaces)
-        return trimmed.isEmpty ? "dein Agent" : trimmed
+        return trimmed.isEmpty ? t("your agent", "dein Agent") : trimmed
+    }
+
+    // Texts shared with the editor.
+    static var nameTakenText: String {
+        t("This name already exists in this project. In the team chat it would be unclear who is meant.",
+          "Diesen Namen gibt es in diesem Projekt schon. Im Team-Chat wäre unklar, wer gemeint ist.")
+    }
+    static var jobPlaceholder: String { t("e.g. researcher, developer, editor", "z. B. Researcherin, Entwickler, Lektor") }
+    static var autoEffort: String { t("Reasoning depth: automatic", "Denktiefe automatisch") }
+    static var mainPlan: String { t("Main plan", "Haupt-Abo") }
+    static func computerUseLabel(_ provider: Provider) -> String {
+        provider == .claude ? t("May operate the Chrome browser", "Darf den Chrome-Browser bedienen")
+            : t("May operate apps and the browser", "Darf Programme und Browser bedienen")
     }
 
     private func go(_ delta: Int) {

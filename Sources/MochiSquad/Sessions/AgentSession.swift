@@ -1,7 +1,7 @@
 import AppKit
 import SwiftTerm
 
-/// Eine Rückfrage des Clients in der Konsole, etwa die Freigabe eines Befehls, mit ihren Antworten.
+/// A question the client asks in the console, such as approving a command, with its answers.
 struct ClientPrompt: Equatable {
     struct Option: Equatable, Identifiable {
         let key, label: String
@@ -9,12 +9,12 @@ struct ClientPrompt: Equatable {
     }
     let context: [String]
     let options: [Option]
-    /// Bei Menüs ohne Nummern: Position der markierten Zeile; gewählt wird mit Pfeiltasten und Return.
+    /// For menus without numbers: position of the marked line; chosen with arrow keys and Return.
     var marked: Int?
 }
 
-/// Was eine Sitzung zum Start braucht. Wird als spec.json für launcher.py geschrieben.
-/// Pfade stehen bewusst nicht darin: Der Starter leitet sie aus dem Sitzungsordner ab.
+/// What a session needs to start. Written as spec.json for launcher.py.
+/// Paths are deliberately not part of it: the launcher derives them from the session folder.
 struct SessionSpec: Encodable {
     struct AgentPart: Encodable {
         let name, job, instructions, persona, model, effort: String
@@ -25,9 +25,11 @@ struct SessionSpec: Encodable {
     let task: String
     let sessionId: String
     let owner: String
+    /// Interface language: the fallback when the language of a message is unclear.
+    let language: String
     let agent: AgentPart
     let team: [String]
-    /// Weiteres ChatGPT-Abo oder leer für die normale Anmeldung.
+    /// Extra ChatGPT subscription, or empty for the regular sign-in.
     let account: String
     let postEnabled = true
     var parentChat: String?
@@ -38,6 +40,7 @@ struct SessionSpec: Encodable {
         self.task = task
         sessionId = sessionID.uuidString.lowercased()
         self.owner = owner
+        language = L10n.language.rawValue
         self.agent = AgentPart(name: agent.name, job: agent.jobTitle, instructions: agent.instructions, persona: agent.persona,
                                model: agent.model, effort: agent.effort, canEdit: agent.canEdit, isCoordinator: agent.isCoordinator,
                                fullAccess: agent.fullAccess == true, computerUse: agent.computerUse == true)
@@ -51,25 +54,27 @@ enum LaunchError: LocalizedError {
     case resourcesMissing, startFailed
     var errorDescription: String? {
         switch self {
-        case .resourcesMissing: return "Der App fehlen Bestandteile. Installiere Mochi Squad bitte neu."
-        case .startFailed: return "Die Sitzung konnte nicht gestartet werden."
+        case .resourcesMissing: return t("Parts of the app are missing. Please install Mochi Squad again.", "Der App fehlen Bestandteile. Installiere Mochi Squad bitte neu.")
+        case .startFailed: return t("The session could not be started.", "Die Sitzung konnte nicht gestartet werden.")
         }
     }
 }
 
-/// Eine laufende Agenten-Sitzung im eingebetteten Terminal.
+/// A running agent session in the embedded terminal.
 @MainActor final class AgentSession: NSObject, Identifiable, ObservableObject {
     let id = UUID()
     let agentID: UUID
-    /// Zugriffsstufe, mit der diese Sitzung gestartet wurde; sie gilt, bis die Sitzung endet.
+    /// Access level this session was started with; it applies until the session ends.
     let access: Agent.Access
-    /// Die Sitzung wurde mit Computer-Nutzung gestartet.
+    /// The session was started with computer use.
     let computerUse: Bool
-    /// Der Client endete mit einem Fehler.
+    /// Extra ChatGPT subscription this session was started with; nil for the regular sign-in.
+    let account: String?
+    /// The client ended with an error.
     private(set) var failed = false
-    /// Einstellungen des Agenten beim Start (siehe Agent.sessionSignature).
+    /// The agent's settings at start (see Agent.sessionSignature).
     let signature: String
-    /// Der Starter wartet in der Konsole auf eine Anmeldung beim Client.
+    /// The launcher waits in the console for a sign-in to the client.
     @Published private(set) var needsLogin = false
     let project: URL
     let provider: Provider
@@ -78,23 +83,23 @@ enum LaunchError: LocalizedError {
     let terminal = LocalProcessTerminalView(frame: NSRect(x: 0, y: 0, width: 640, height: 440))
 
     @Published private(set) var usage = Usage()
-    @Published private(set) var status = "Wird gestartet"
+    @Published private(set) var status = t("Starting", "Wird gestartet")
     @Published private(set) var isRunning = false
-    /// Der Client schreibt gerade in seinen Verlauf, arbeitet also.
+    /// The client is writing to its history right now, so it is working.
     @Published private(set) var working = false
-    /// Gesetzt, solange der Client in der Konsole auf eine Auswahl wartet.
+    /// Set while the client waits for a choice in the console.
     @Published private(set) var prompt: ClientPrompt?
     @Published var replyDraft = ""
     private(set) var endedAt: Date?
 
-    /// Agenten-Post: (Empfänger, Text) → Rückmeldung für den Absender.
+    /// Agent post: (recipient, text) → receipt for the sender.
     var onPost: ((String, String) -> String)?
-    /// Neuer Verlauf erkannt (Pfad der Verlaufsdatei).
+    /// New history detected (path of the history file).
     var onJournal: ((String) -> Void)?
 
-    /// Startdaten und Statusdatei. In den App-Daten, die Agenten weder lesen noch beschreiben dürfen.
+    /// Launch data and status file. Inside the app data, which agents may neither read nor write.
     private let folder: URL
-    /// Postausgang: der einzige Ort außerhalb des Projekts, den die Sandbox dieser Sitzung beschreiben darf.
+    /// Outbox: the only place outside the project this session's sandbox may write to.
     private let outbox: URL
     private var watcher: Process?
     private var timer: Timer?
@@ -106,6 +111,7 @@ enum LaunchError: LocalizedError {
         access = agent.access
         signature = agent.sessionSignature
         computerUse = agent.computerUse == true
+        account = agent.provider == .codex ? agent.account : nil
         self.project = project
         provider = agent.provider
         self.task = task
@@ -122,7 +128,7 @@ enum LaunchError: LocalizedError {
         terminal.nativeForegroundColor = NSColor(white: 0.93, alpha: 1)
     }
 
-    /// Startet den Client über launcher.py. `tools` sind Konfiguration und Token des Werkzeugservers für den Koordinator.
+    /// Starts the client through launcher.py. `tools` are configuration and token of the tool server for a coordinator.
     func launch(spec: SessionSpec, tools: (config: String, token: String)?) throws {
         guard let launcher = AppPaths.script("launcher") else { throw LaunchError.resourcesMissing }
         let specFile = folder.appendingPathComponent("spec.json")
@@ -131,7 +137,7 @@ enum LaunchError: LocalizedError {
             if let tools { try JSONFile.write(Data(tools.config.utf8), to: folder.appendingPathComponent("mcp.json")) }
         } catch { throw LaunchError.startFailed }
 
-        var env = ProcessInfo.processInfo.environment
+        var env = AppPaths.helperEnvironment()
         for key in env.keys where key.hasPrefix("CLAUDE_CODE_") || key.hasPrefix("CLAUDE_AGENT_SDK_") || key.hasPrefix("CLAUDE_PREVIEW_")
             || ["CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT", "ANTHROPIC_BASE_URL"].contains(key) {
             env[key] = nil
@@ -139,31 +145,31 @@ enum LaunchError: LocalizedError {
         env["TERM"] = "xterm-256color"
         env["COLORTERM"] = "truecolor"
         env["LANG"] = env["LANG"] ?? "en_US.UTF-8"
-        // Das Token steht nur in der Umgebung des Koordinators, nicht in einer Datei.
+        // The token exists only in the coordinator's environment, not in a file.
         env[ToolBridge.tokenVariable] = tools?.token
         terminal.startProcess(executable: AppPaths.python.path, args: ["-B", launcher.path, "run", specFile.path],
                               environment: env.map { $0.key + "=" + $0.value }, currentDirectory: project.path)
         guard terminal.process.running else { throw LaunchError.startFailed }
         isRunning = true
-        status = "Aktiv"
+        status = t("Active", "Aktiv")
         if provider == .codex, let monitor = AppPaths.script("context") {
             let process = Process()
             process.executableURL = AppPaths.python
             process.arguments = ["-B", monitor.path, "codex", folder.appendingPathComponent("context.json").path, project.path,
                                  spec.sessionId, String(getpid())]
-            // Der Beobachter liest den Verlauf im Ordner des gewählten Abos.
+            // The watcher reads the history in the chosen subscription's folder.
             if let home = AppPaths.accountHome(spec.account) {
                 process.environment = ProcessInfo.processInfo.environment.merging(["CODEX_HOME": home.path]) { $1 }
             }
             if (try? process.run()) != nil { watcher = process }
         }
-        // .common: läuft auch, während der Nutzer scrollt oder ein Menü offen hat.
+        // .common: also runs while the user scrolls or has a menu open.
         let timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in Task { @MainActor in self?.tick() } }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
     }
 
-    /// Sichtbarer Text der Konsole, höchstens die letzten `lines` nicht leeren Zeilen.
+    /// Visible text of the console, at most the last `lines` non-empty lines.
     func screenText(lines: Int = 40) -> String {
         let screen = terminal.getTerminal()
         let rows = (0..<screen.rows).map { (screen.getLine(row: $0)?.translateToString(trimRight: true) ?? "").replacingOccurrences(of: "\u{0}", with: " ") }
@@ -173,7 +179,7 @@ enum LaunchError: LocalizedError {
     private func tick() {
         if let data = AppPaths.readSmallFile(folder.appendingPathComponent("context.json")),
            var next = try? JSONDecoder().decode(Usage.self, from: data) {
-            // Nur echte Verläufe des Clients übernehmen; alles andere wird verworfen.
+            // Accept only real histories of the client; anything else is dropped.
             if let path = next.historyPath, !Self.isJournal(path) { next.historyPath = usage.historyPath }
             if let path = next.historyPath, path != usage.historyPath { onJournal?(path) }
             if next != usage { usage = next }
@@ -183,17 +189,17 @@ enum LaunchError: LocalizedError {
         if now != working { working = now }
         let ask = isRunning ? TerminalPromptScanner.scan(terminal) : nil
         if ask != prompt { prompt = ask }
-        // Solange noch kein Verlauf existiert, kann der Starter an der Anmeldung hängen.
-        let login = isRunning && usage.historyPath == nil && screenText().contains("musst du dich einmal bei")
+        // While no history exists yet, the launcher may be waiting at the sign-in (see launcher.LOGIN_NOTICE).
+        let login = isRunning && usage.historyPath == nil && screenText().contains("MOCHI-SIGN-IN")
         if login != needsLogin { needsLogin = login }
         collectPost()
     }
 
-    /// Nur Verlaufsdateien in den Ordnern der Clients zählen (Verweise aufgelöst).
+    /// Only history files in the clients' folders count (links resolved).
     nonisolated static func isJournal(_ path: String) -> Bool {
         let resolved = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
         let env = ProcessInfo.processInfo.environment
-        // Auch die Codex-Ordner weiterer ChatGPT-Abos zählen dazu.
+        // The Codex folders of extra ChatGPT subscriptions count as well.
         let roots = [(env["CLAUDE_CONFIG_DIR"] ?? NSHomeDirectory() + "/.claude") + "/projects", (env["CODEX_HOME"] ?? NSHomeDirectory() + "/.codex"),
                      AppPaths.support.appendingPathComponent("accounts/codex").path]
         return resolved.hasSuffix(".jsonl") && roots.contains {
@@ -201,7 +207,7 @@ enum LaunchError: LocalizedError {
         }
     }
 
-    /// Holt Briefe aus dem Postausgang. Der Absender steht fest: Nur diese Sitzung kann dort schreiben.
+    /// Collects letters from the outbox. The sender is certain: only this session can write there.
     private func collectPost() {
         guard let onPost, let names = try? FileManager.default.contentsOfDirectory(atPath: outbox.path) else { return }
         for name in names.sorted().prefix(20) where name.hasPrefix("out-") && name.hasSuffix(".json") {
@@ -210,7 +216,7 @@ enum LaunchError: LocalizedError {
             let receipt = outbox.appendingPathComponent(String(name.dropLast(5)) + ".result")
             guard let data = AppPaths.readSmallFile(file), let letter = try? JSONDecoder().decode([String: String].self, from: data),
                   let to = letter["to"] else {
-                try? Data("Nicht zugestellt: Die Nachricht ist zu groß oder unlesbar.".utf8).write(to: receipt, options: .atomic)
+                try? Data("Not delivered: the message is too large or unreadable.".utf8).write(to: receipt, options: .atomic)
                 continue
             }
             try? Data(onPost(to, letter["text"] ?? "").utf8).write(to: receipt, options: .atomic)
@@ -223,8 +229,8 @@ enum LaunchError: LocalizedError {
         prompt = nil
         endedAt = Date()
         failed = exitCode != 0
-        status = exitCode == 0 ? "Beendet" : "Unterbrochen"
-        // Der Client schreibt seine letzten Zeilen kurz nach dem Ende; danach aufräumen.
+        status = exitCode == 0 ? t("Finished", "Beendet") : t("Interrupted", "Unterbrochen")
+        // The client writes its last lines shortly after the end; clean up after that.
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(2.5))
             self?.tick()
@@ -239,23 +245,44 @@ enum LaunchError: LocalizedError {
         watcher = nil
     }
 
-    /// Beendet den Client und entfernt alle Dateien der Sitzung.
+    /// Ends the client and removes all files of the session. The client leads its own process group, so the
+    /// signal reaches its helpers too; whatever is still alive after a moment is killed, so that a session
+    /// closed to take rights away is really gone.
     func end() {
-        if terminal.process.running { terminal.terminate() }
+        let pid = terminal.process.shellPid
+        if terminal.process.running {
+            terminal.terminate()
+            if pid > 1 {
+                killpg(pid, SIGTERM)
+                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 3) {
+                    // Signal 0 only asks whether anyone in the group is left.
+                    if killpg(pid, 0) == 0 { killpg(pid, SIGKILL) }
+                }
+            }
+        }
         stopObserving()
         if endedAt == nil { endedAt = Date() }
         try? FileManager.default.removeItem(at: folder)
         try? FileManager.default.removeItem(at: outbox)
     }
 
-    /// Beantwortet die offene Rückfrage des Clients.
+    /// Answers the client's open question. The console is read again first: if the client shows a different
+    /// question by now, nothing is sent and the card updates instead, so a click never confirms something
+    /// the user has not seen.
     func answer(_ option: ClientPrompt.Option) {
         guard isRunning, let ask = prompt, ask.options.contains(option) else { return }
+        guard let current = TerminalPromptScanner.scan(terminal), current == ask else {
+            prompt = TerminalPromptScanner.scan(terminal)
+            return
+        }
         if let marked = ask.marked, option.key.hasPrefix("pos:"), let target = Int(option.key.dropFirst(4)) {
             terminal.send(txt: String(repeating: target >= marked ? "\u{1b}[B" : "\u{1b}[A", count: abs(target - marked)))
             Task { @MainActor [weak self] in
                 try? await Task.sleep(for: .milliseconds(150))
-                self?.terminal.send(txt: "\r")
+                // Return only if the same menu is still there and the mark sits on the chosen line.
+                guard let self, self.isRunning, let now = TerminalPromptScanner.scan(self.terminal),
+                      now.options == ask.options, now.marked == target else { return }
+                self.terminal.send(txt: "\r")
             }
         } else {
             terminal.send(txt: option.key)
@@ -263,12 +290,12 @@ enum LaunchError: LocalizedError {
         prompt = nil
     }
 
-    /// Wahr, solange eine eben eingefügte Nachricht noch auf ihr Return wartet.
+    /// True while a message that was just pasted still waits for its Return.
     var submitPending: Bool { pendingSubmit.map { Date().timeIntervalSince($0) < 1.2 } ?? false }
 
-    /// Fügt Text in die leere Eingabezeile des Clients ein und schickt ihn ab. Falsch, wenn die Eingabe nicht frei ist.
+    /// Pastes text into the client's empty input line and submits it. False if the input is not free.
     func send(_ text: String) -> Bool {
-        // Steht gerade ein Auswahlmenü im Terminal, würde das Return eine Rückfrage bestätigen.
+        // If a menu is on screen right now, the Return would confirm a question.
         guard isRunning, !submitPending, TerminalPromptScanner.scan(terminal) == nil else { return false }
         let screen = terminal.getTerminal()
         let cursor = screen.getCursorLocation()
@@ -298,7 +325,7 @@ extension AgentSession: LocalProcessTerminalViewDelegate {
     nonisolated func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
 }
 
-/// Erkennt Auswahlmenüs des Clients auf dem sichtbaren Konsolenbild.
+/// Detects the client's menus on the visible console screen.
 enum TerminalPromptScanner {
     private static let optionLine = try! Regex(#"([❯›>]\s*)?(\d)[.)]\s+(\S.*)"#, as: (Substring, Substring?, Substring, Substring).self)
 
@@ -312,12 +339,12 @@ enum TerminalPromptScanner {
         return parse(lines)
     }
 
-    /// Steht vor dem Cursor nur das Eingabezeichen des Clients? Leere Terminalzellen kommen als NUL statt als Leerzeichen.
+    /// Is only the client's prompt character in front of the cursor? Empty terminal cells arrive as NUL, not as spaces.
     static func isInputPrompt(_ beforeCursor: String) -> Bool {
         ["❯", "›", ">"].contains(beforeCursor.trimmingCharacters(in: CharacterSet.whitespaces.union(CharacterSet(charactersIn: "\u{0}"))))
     }
 
-    /// Nummerierte Zeilen ab 1, eine davon markiert (❯ oder ›); sonst ein Menü ohne Nummern mit „Enter to confirm“.
+    /// Numbered lines from 1, one of them marked (❯ or ›); otherwise a menu without numbers with "Enter to confirm".
     static func parse(_ lines: [String]) -> ClientPrompt? {
         var options = [ClientPrompt.Option](), first = -1, marked = false
         for (index, line) in lines.enumerated() {

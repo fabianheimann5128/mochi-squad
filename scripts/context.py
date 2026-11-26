@@ -1,8 +1,8 @@
-"""Nutzungsdaten einer Agenten-Sitzung (Modell, Kontext, Limits) für die App.
+"""Usage data of an agent session (model, context, limits) for the app.
 
-  context.py claude <context.json>                         Statuszeile von Claude Code (Daten über stdin)
-  context.py codex  <context.json> <ordner> <id> <app-pid> beobachtet den Verlauf einer Codex-Sitzung
-  context.py bind   <context.json> <ereignis-json>         Codex-Benachrichtigung: Thread-ID merken
+  context.py claude <context.json>                          status line of Claude Code (data on stdin)
+  context.py codex  <context.json> <folder> <id> <app-pid>  watches the history of a Codex session
+  context.py bind   <context.json> <event-json>             Codex notification: remember the thread id
 """
 import json
 import os
@@ -15,7 +15,7 @@ from pathlib import Path
 
 
 def publish(path, data):
-    """Atomar und auch bei gleichzeitigen Aufrufen sicher: jede Schreibung nutzt eine eigene Temp-Datei."""
+    """Atomic and safe with concurrent calls: every write uses its own temp file."""
     fd, temp = tempfile.mkstemp(dir=path.parent, prefix=".context-", suffix=".tmp")
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         json.dump(data, handle)
@@ -42,6 +42,7 @@ def claude(path, data):
 
 
 def locate_rollout(project, marker, thread_id=None):
+    """(history file, model) of the Codex session whose first message contains `marker`, or None."""
     home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
     db_dir = Path(os.environ.get("CODEX_SQLITE_HOME", home))
     for file in sorted(db_dir.glob("state_*.sqlite"), key=lambda p: p.stat().st_mtime, reverse=True):

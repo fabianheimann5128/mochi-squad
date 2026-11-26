@@ -1,16 +1,16 @@
 import SwiftUI
 
-/// Design-Tokens (dunkles Thema, an Rakazos packages/ui-tokens angelehnt, siehe NOTICE).
+/// Design tokens (dark theme, modelled on Rakazo's packages/ui-tokens, see NOTICE).
 enum Desk {
     static func rgb(_ red: Double, _ green: Double, _ blue: Double) -> Color {
         Color(.sRGB, red: red / 255, green: green / 255, blue: blue / 255)
     }
     static let canvas = rgb(10, 10, 10)          // --background
     static let card = rgb(35, 35, 35)            // --card, --muted
-    static let incoming = card                   // Antwortblase
-    static let bubble = rgb(47, 107, 255)        // eigene Nachrichten: kräftiges Blau
-    static let pillSelected = rgb(62, 62, 62)    // gewählte Pille in Umschaltern
-    static let relayed = rgb(28, 40, 72)         // weitergeleitete Nachricht
+    static let incoming = card                   // reply bubble
+    static let bubble = rgb(47, 107, 255)        // own messages: strong blue
+    static let pillSelected = rgb(62, 62, 62)    // selected pill in pickers
+    static let relayed = rgb(28, 40, 72)         // relayed message
     static let dialog = rgb(22, 22, 22)          // --dialog
     static let glass = rgb(44, 44, 46)           // --glass-fill
     static let glassStroke = Color(white: 0.99).opacity(0.15)
@@ -33,7 +33,7 @@ enum Desk {
     static func panelWidth(_ width: CGFloat) -> CGFloat { min(420, max(300, width * 0.25)).rounded() }
 }
 
-/// Knopf als Pille. `primary` ist weiß wie Rakazos Hauptknöpfe.
+/// Button as a pill. `primary` is white like Rakazo's main buttons.
 struct PillButtonStyle: ButtonStyle {
     var primary = false
     func makeBody(configuration: Configuration) -> some View {
@@ -52,7 +52,7 @@ extension ButtonStyle where Self == PillButtonStyle {
     static var primaryPill: PillButtonStyle { PillButtonStyle(primary: true) }
 }
 
-/// Umschalter aus grauen Pillen in einer Kapsel.
+/// Picker made of grey pills inside a capsule.
 struct PillPicker<Value: Hashable>: View {
     @Binding var selection: Value
     let options: [(Value, String)]
@@ -72,7 +72,7 @@ struct PillPicker<Value: Hashable>: View {
     }
 }
 
-/// Runder Knopf links in der Eingabe.
+/// Round button on the left of the composer.
 struct RoundGlyph: View {
     let name: String
     var body: some View {
@@ -82,7 +82,7 @@ struct RoundGlyph: View {
     }
 }
 
-/// Senden-Knopf rechts in der Eingabe.
+/// Send button on the right of the composer.
 struct SendGlyph: View {
     @Environment(\.isEnabled) private var enabled
     var body: some View {
@@ -92,7 +92,7 @@ struct SendGlyph: View {
     }
 }
 
-/// Mittige graue Zeile, z. B. „Heute 9:40“ oder ein Hinweis im Team-Chat.
+/// Centred grey line, e.g. "Today 9:40" or a notice in the team chat.
 struct NoticeLine: View {
     let text: String
     var body: some View {
@@ -101,7 +101,7 @@ struct NoticeLine: View {
     }
 }
 
-/// „schreibt …“ als drei wandernde Punkte in einer Antwortblase.
+/// "is typing …" as three travelling dots in a reply bubble.
 struct TypingBubble: View {
     let name: String
     @Environment(\.accessibilityReduceMotion) private var still
@@ -114,11 +114,11 @@ struct TypingBubble: View {
                 }
             }.padding(.horizontal, 16).padding(.vertical, 13)
                 .background(Desk.incoming, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        }.accessibilityLabel(name + " schreibt")
+        }.accessibilityLabel(t(name + " is typing", name + " schreibt"))
     }
 }
 
-/// Schwebende Pille in Glasoptik (Titel im Chatkopf).
+/// Floating pill with a glass look (title in the chat header).
 struct GlassPill<Content: View>: View {
     @ViewBuilder let content: () -> Content
     var body: some View {
@@ -130,20 +130,20 @@ struct GlassPill<Content: View>: View {
 }
 
 extension View {
-    /// Eingabe als Kapsel: rechts Senden, links ein runder Knopf.
+    /// Composer as a capsule: send on the right, a round button on the left.
     func composerCapsule() -> some View {
         padding(.leading, 12).padding(.trailing, 10).padding(.vertical, 10).frame(minHeight: 52)
             .background(Desk.card, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
             .overlay { RoundedRectangle(cornerRadius: 26, style: .continuous).strokeBorder(Desk.edge).allowsHitTesting(false) }
     }
 
-    /// Eingabefeld oder Karte mit Rahmen.
+    /// Input field or card with a border.
     func field(_ radius: CGFloat = 10, fill: Color = Desk.card) -> some View {
         background(fill, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
             .overlay { RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(Desk.edge).allowsHitTesting(false) }
     }
 
-    /// Dialogfläche: --dialog, Pillen-Knöpfe, dunkles Schema.
+    /// Dialog surface: --dialog, pill buttons, dark scheme.
     func dialogStyle() -> some View {
         buttonStyle(.pill).tint(Desk.accent).preferredColorScheme(.dark).foregroundStyle(Desk.text).background(Desk.dialog)
     }

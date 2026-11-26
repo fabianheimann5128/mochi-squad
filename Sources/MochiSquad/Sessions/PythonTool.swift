@@ -5,14 +5,14 @@ enum PythonToolError: LocalizedError {
     case failed(String)
     var errorDescription: String? {
         switch self {
-        case .missingScript(let name): return "Der Helfer \(name).py fehlt im App-Bundle."
-        case .failed(let name): return "Der Helfer \(name).py ist fehlgeschlagen."
+        case .missingScript(let name): return t("The helper \(name).py is missing from the app bundle.", "Der Helfer \(name).py fehlt im App-Bundle.")
+        case .failed(let name): return t("The helper \(name).py failed.", "Der Helfer \(name).py ist fehlgeschlagen.")
         }
     }
 }
 
-/// Startet einen Python-Helfer aus dem App-Bundle und liest seine JSON-Ausgabe.
-/// Gelesen wird auf einer eigenen Warteschlange, damit kein Thread von Swift Concurrency blockiert; Abbruch beendet den Prozess.
+/// Starts a Python helper from the app bundle and reads its JSON output.
+/// Reading happens on its own queue so that no Swift Concurrency thread blocks; cancelling ends the process.
 enum PythonTool {
     private static let queue = DispatchQueue(label: "mochi.python-tool", qos: .utility, attributes: .concurrent)
 
@@ -25,6 +25,7 @@ enum PythonTool {
         let process = Process()
         process.executableURL = AppPaths.python
         process.arguments = ["-B", tool.path] + args
+        process.environment = AppPaths.helperEnvironment()
         let output = Pipe()
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice

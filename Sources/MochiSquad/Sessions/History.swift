@@ -1,6 +1,6 @@
 import Foundation
 
-/// Ein gespeicherter Chat eines Clients (aus history.py list).
+/// A saved chat of a client (from history.py list).
 struct ChatEntry: Decodable, Identifiable, Hashable {
     let id, path, provider, title: String
     let modified: Double
@@ -19,7 +19,7 @@ struct ChatPage: Decodable {
     let usage: Usage
 }
 
-/// Nutzungsdaten einer Sitzung (aus der Statuszeile oder dem Verlauf).
+/// Usage data of a session (from the status line or the history).
 struct Usage: Decodable, Equatable {
     var model: String?
     var historyPath: String?
@@ -27,13 +27,13 @@ struct Usage: Decodable, Equatable {
     var percent, five, week: Double?
 }
 
-/// Ereignis aus history.py activity: was ein Agent zuletzt getan hat.
+/// Event from history.py activity: what an agent did last.
 struct ActivityEvent: Decodable, Identifiable, Equatable {
     let id, stamp, text: String
     let file: String?
 }
 
-/// Liste der gespeicherten Chats eines Projekts. Getrennt vom offenen Verlauf, damit die Seitenleiste nicht bei jeder neuen Zeile neu zeichnet.
+/// List of a project's saved chats. Separate from the open history so the sidebar does not redraw with every new line.
 @MainActor final class ChatIndex: ObservableObject {
     @Published private(set) var entries = [ChatEntry]()
 
@@ -43,7 +43,7 @@ struct ActivityEvent: Decodable, Identifiable, Equatable {
     }
 }
 
-/// Verlauf des geöffneten Chats. Neue Zeilen werden inkrementell gelesen und einmal zu Blasen aufbereitet.
+/// History of the open chat. New lines are read incrementally and prepared as bubbles once.
 @MainActor final class TranscriptStore: ObservableObject {
     @Published private(set) var bubbles = [Bubble]()
     @Published private(set) var lineCount = 0
@@ -65,7 +65,7 @@ struct ActivityEvent: Decodable, Identifiable, Equatable {
         older = false; usage = Usage(); issue = nil; limit = 40; busy = false; loading = false
     }
 
-    /// Lädt neue Zeilen von `path`. `earlier` sind ältere Verläufe desselben Agenten, die davor erscheinen.
+    /// Loads new lines from `path`. `earlier` are older histories of the same agent that appear before it.
     func load(_ path: String, provider: Provider, earlier: [String] = [], more: Bool = false) async {
         if file != path { reset(); file = path }
         guard !busy else { return }
@@ -95,17 +95,17 @@ struct ActivityEvent: Decodable, Identifiable, Equatable {
             }
             position = page.position
             if page.usage.used != nil { usage = page.usage } else if let model = page.usage.model { usage.model = model }
-            // Beim Anhängen nur die neuen Zeilen aufbereiten; die fertigen Blasen bleiben unverändert.
+            // When appending, prepare only the new lines; finished bubbles stay untouched.
             if initial { bubbles = Bubble.make(from: lines) } else { bubbles += Bubble.make(from: page.messages, after: previous) }
             lineCount = lines.count
             lastLine = lines.last
             issue = nil
         } catch {
-            if generation == token { issue = "Der Verlauf konnte nicht geladen werden." }
+            if generation == token { issue = t("The history could not be loaded.", "Der Verlauf konnte nicht geladen werden.") }
         }
     }
 
-    /// Fortsetzungen enthalten Kopien des alten Verlaufs: gleiche Rolle, Zeit und Text zählen nur einmal.
+    /// Continuations contain copies of the old history: same role, time and text count only once.
     static func merge(_ before: [ChatLine], _ current: [ChatLine]) -> [ChatLine] {
         func key(_ line: ChatLine) -> String { line.role + "|" + line.timestamp + "|" + String(line.text.prefix(200)) }
         let known = Set(current.map(key))

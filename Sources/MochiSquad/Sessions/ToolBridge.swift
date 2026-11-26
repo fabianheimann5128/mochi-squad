@@ -1,28 +1,45 @@
 import Foundation
 import Security
 
-/// Startet bridge.py, den lokalen MCP-Server für den Koordinator, und beantwortet dessen Werkzeugaufrufe.
-/// Das Token gilt für die Laufzeit der App, der Port wechselt mit jedem Start des Servers; stirbt der Prozess,
-/// startet er mit wachsender Pause neu.
+/// Starts bridge.py, the local MCP server for the coordinators, and answers its tool calls.
+/// Every coordinator session gets its own token, so each call arrives with the session that made it.
+/// The port changes with every start of the server; if the process dies, it restarts with a growing pause.
 @MainActor final class ToolBridge: ObservableObject {
-    typealias Handler = @MainActor (String, [String: String]) async -> [String: Any]
+    /// (tool, arguments, id of the calling session) → result.
+    typealias Handler = @MainActor (String, [String: String], UUID?) async -> [String: Any]
 
     @Published private(set) var port: Int?
-    /// Name der Umgebungsvariable, über die der Koordinator sein Token bekommt.
+    /// Name of the environment variable through which a coordinator gets its token.
     static let tokenVariable = "MOCHI_TOKEN"
-    let token = ToolBridge.makeToken()
+    /// Tokens in use: token → session.
+    private var grants = [String: UUID]()
     private var process: Process?
     private var input: FileHandle?
     private var runner: Task<Void, Never>?
 
-    /// MCP-Konfiguration für eine Koordinator-Sitzung oder nil, solange der Server nicht bereit ist.
-    /// Sie enthält kein Geheimnis: Der Client setzt das Token aus seiner Umgebung ein.
+    /// MCP configuration for a coordinator session, or nil while the server is not ready.
+    /// It holds no secret: the client inserts the token from its environment.
     var mcpConfig: String? {
         guard let port else { return nil }
         let config: [String: Any] = ["mcpServers": ["mochi": [
             "type": "http", "url": "http://127.0.0.1:\(port)/mcp",
             "headers": ["Authorization": "Bearer ${\(Self.tokenVariable)}"]]]]
         return (try? JSONSerialization.data(withJSONObject: config)).flatMap { String(data: $0, encoding: .utf8) }
+    }
+
+    /// A fresh token that identifies `session` to the server until it is revoked.
+    func grant(to session: UUID) -> String {
+        let token = Self.makeToken()
+        grants[token] = session
+        send(["grant": token, "caller": session.uuidString])
+        return token
+    }
+
+    func revoke(session: UUID) {
+        for (token, owner) in grants where owner == session {
+            grants[token] = nil
+            send(["revoke": token])
+        }
     }
 
     func start(_ handler: @escaping Handler) {
@@ -33,7 +50,7 @@ import Security
                 let began = Date()
                 await self.runOnce(handler)
                 if Task.isCancelled { break }
-                // Lief der Server eine Weile, war es kein Startfehler: Pause zurücksetzen.
+                // If the server ran for a while, it was no startup failure: reset the pause.
                 pause = Date().timeIntervalSince(began) > 60 ? 1 : min(pause * 2, 60)
                 try? await Task.sleep(for: .seconds(pause))
             }
@@ -57,17 +74,19 @@ import Security
         do { try process.run() } catch { return }
         self.process = process
         input = stdin.fileHandleForWriting
-        write(token)
         defer { port = nil; input = nil; if process.isRunning { process.terminate() } }
         do {
             for try await line in stdout.fileHandleForReading.bytes.lines {
                 guard let event = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any] else { continue }
                 if event["ready"] as? Bool == true, let port = event["port"] as? Int {
+                    // A restarted server knows no tokens yet: hand it those of the sessions that still run.
+                    for (token, session) in grants { send(["grant": token, "caller": session.uuidString]) }
                     self.port = port
                 } else if let id = event["id"] as? String, let name = event["tool"] as? String {
                     let args = event["args"] as? [String: String] ?? [:]
+                    let caller = (event["caller"] as? String).flatMap(UUID.init)
                     Task { [weak self] in
-                        let result = await handler(name, args)
+                        let result = await handler(name, args, caller)
                         self?.answer(id, result)
                     }
                 }
@@ -76,23 +95,19 @@ import Security
     }
 
     private func answer(_ id: String, _ result: [String: Any]) {
-        guard JSONSerialization.isValidJSONObject(result),
-              let data = try? JSONSerialization.data(withJSONObject: ["id": id, "result": result]),
-              let text = String(data: data, encoding: .utf8) else {
-            write(#"{"id":"\#(id)","result":{"error":"Ungültige Antwort"}}"#)
-            return
-        }
-        write(text)
+        guard JSONSerialization.isValidJSONObject(result) else { return send(["id": id, "result": ["error": "Invalid answer"]]) }
+        send(["id": id, "result": result])
     }
 
-    private func write(_ line: String) {
-        try? input?.write(contentsOf: Data((line + "\n").utf8))
+    private func send(_ message: [String: Any]) {
+        guard let data = try? JSONSerialization.data(withJSONObject: message) else { return }
+        try? input?.write(contentsOf: data + Data("\n".utf8))
     }
 
     private static func makeToken() -> String {
         var bytes = [UInt8](repeating: 0, count: 32)
         guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
-            // Ohne sicheren Zufall gibt es kein vorhersagbares Ersatz-Token.
+            // Without secure randomness there is no predictable stand-in token.
             return UUID().uuidString + UUID().uuidString
         }
         return bytes.map { String(format: "%02x", $0) }.joined()

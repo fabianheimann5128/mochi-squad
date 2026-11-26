@@ -2,16 +2,16 @@ import AVFoundation
 import Speech
 import SwiftUI
 
-/// Spracheingabe: nimmt über das Mikrofon auf, schreibt die erkannten Wörter laufend ins Eingabefeld
-/// und liefert den Pegel für die Anzeige.
+/// Speech input: records through the microphone, writes the recognised words into the input field as they come
+/// and provides the level for the display.
 @MainActor final class SpeechInput: ObservableObject {
     static let bars = 24
     @Published private(set) var listening = false
-    /// Jüngste Pegel von 0 bis 1, der neueste zuletzt.
+    /// Latest levels from 0 to 1, the newest last.
     @Published private(set) var levels = [CGFloat](repeating: 0, count: SpeechInput.bars)
     @Published var issue: String?
 
-    /// Reicht den Ton an die gerade laufende Erkennung weiter; der Abgriff läuft auf einem Audio-Thread.
+    /// Passes the audio on to the recognition in progress; the tap runs on an audio thread.
     private final class Feed: @unchecked Sendable {
         private let lock = NSLock()
         private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -24,28 +24,39 @@ import SwiftUI
     private let feed = Feed()
     private var recognizer: SFSpeechRecognizer?
     private var task: SFSpeechRecognitionTask?
-    /// Zählt Aufnahmen und Abschnitte: Ergebnisse älterer Abschnitte werden verworfen.
+    /// Counts recordings and segments: results of older segments are discarded.
     private var round = 0
-    /// Text, der vor dem laufenden Abschnitt schon im Feld stand.
+    /// Text that was already in the field before the current segment.
     private var committed = ""
-    /// Was die Erkennung zuletzt ins Feld geschrieben hat; weicht das Feld davon ab, hat der Nutzer getippt.
+    /// What the recognition wrote into the field last; if the field differs, the user typed.
     private var written = ""
     private var peak: CGFloat = 0
     private var lastLevel = Date.distantPast
 
+    /// The start the user asked for last. A stop clears it, so a permission answer that arrives late
+    /// (after the user left the chat or the app) cannot switch the microphone on.
+    private var wanted: UUID?
+
     func toggle(text: Binding<String>) {
-        if listening { stop() } else { start(text) }
+        if listening || wanted != nil { stop() } else { start(text) }
     }
 
     private func start(_ text: Binding<String>) {
         issue = nil
+        let request = UUID()
+        wanted = request
         SFSpeechRecognizer.requestAuthorization { status in
             AVCaptureDevice.requestAccess(for: .audio) { granted in
                 Task { @MainActor in
+                    guard self.wanted == request else { return }
+                    self.wanted = nil
                     guard status == .authorized, granted else {
-                        self.issue = "Erlaube Mochi Squad in den Systemeinstellungen unter „Datenschutz & Sicherheit“ das Mikrofon und die Spracherkennung."
+                        self.issue = t("Allow Mochi Squad to use the microphone and speech recognition in System Settings under “Privacy & Security”.",
+                                       "Erlaube Mochi Squad in den Systemeinstellungen unter „Datenschutz & Sicherheit“ das Mikrofon und die Spracherkennung.")
                         return
                     }
+                    // Recording starts only in front of the user's eyes.
+                    guard NSApp.isActive, !NSApp.isHidden else { return }
                     self.begin(text)
                 }
             }
@@ -54,12 +65,13 @@ import SwiftUI
 
     private func begin(_ text: Binding<String>) {
         guard !listening else { return }
-        guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "de-DE")) ?? SFSpeechRecognizer(), recognizer.isAvailable else {
-            issue = "Die Spracherkennung ist gerade nicht verfügbar."
+        // Dictation follows the interface language; if that is not offered, the system's language.
+        guard let recognizer = SFSpeechRecognizer(locale: L10n.language.locale) ?? SFSpeechRecognizer(), recognizer.isAvailable else {
+            issue = t("Speech recognition is not available right now.", "Die Spracherkennung ist gerade nicht verfügbar.")
             return
         }
         let input = engine.inputNode, format = input.outputFormat(forBus: 0)
-        guard format.sampleRate > 0 else { issue = "Es wurde kein Mikrofon gefunden."; return }
+        guard format.sampleRate > 0 else { issue = t("No microphone was found.", "Es wurde kein Mikrofon gefunden."); return }
         self.recognizer = recognizer
         committed = text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
         written = text.wrappedValue
@@ -73,7 +85,7 @@ import SwiftUI
             engine.prepare()
             try engine.start()
         } catch {
-            issue = "Das Mikrofon ließ sich nicht starten."
+            issue = t("The microphone could not be started.", "Das Mikrofon ließ sich nicht starten.")
             input.removeTap(onBus: 0)
             return
         }
@@ -81,8 +93,8 @@ import SwiftUI
         recognize(into: text)
     }
 
-    /// Startet einen Erkennungsabschnitt. Nach einer Sprechpause schließt die Erkennung ihn ab; dann beginnt der nächste,
-    /// ohne dass die Aufnahme unterbrochen wird.
+    /// Starts a recognition segment. After a pause in speech the recognition completes it; then the next begins
+    /// without interrupting the recording.
     private func recognize(into text: Binding<String>) {
         guard listening, let recognizer else { return }
         round += 1
@@ -90,7 +102,7 @@ import SwiftUI
         task?.cancel()
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
-        // Wo möglich, bleibt die Erkennung auf dem Mac.
+        // Where possible, recognition stays on the Mac.
         if recognizer.supportsOnDeviceRecognition { request.requiresOnDeviceRecognition = true }
         feed.set(request)
         task = recognizer.recognitionTask(with: request) { [weak self] result, error in
@@ -98,8 +110,8 @@ import SwiftUI
             let final = result?.isFinal == true, failed = error != nil
             Task { @MainActor in
                 guard let self, self.round == current else { return }
-                // Hat der Nutzer zwischendurch getippt, zählt sein Text als Grundlage für alles Weitere.
-                // Der laufende Abschnitt steckt dann schon im Feld; ein frischer Abschnitt liefert nur noch Neues.
+                // If the user typed in between, their text is the basis for everything that follows.
+                // The current segment is then already in the field; a fresh segment delivers only what is new.
                 if text.wrappedValue != self.written {
                     self.committed = text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
                     self.written = text.wrappedValue
@@ -119,8 +131,10 @@ import SwiftUI
         }
     }
 
-    /// Beendet die Aufnahme. Der Text im Feld bleibt, spätere Ergebnisse der Erkennung werden nicht mehr übernommen.
+    /// Ends the recording, or cancels a start that still waits for permission. The text in the field stays,
+    /// later results of the recognition are no longer taken over.
     func stop() {
+        wanted = nil
         guard listening else { return }
         listening = false
         round += 1
@@ -133,7 +147,7 @@ import SwiftUI
         levels = [CGFloat](repeating: 0, count: Self.bars)
     }
 
-    /// Höchstens etwa 16 neue Balken je Sekunde: ruhig genug fürs Auge, schnell genug für die Stimme.
+    /// At most about 16 new bars per second: calm enough for the eye, fast enough for the voice.
     private func push(_ level: CGFloat) {
         guard listening else { return }
         peak = max(peak, level)
@@ -148,7 +162,7 @@ import SwiftUI
         before.isEmpty ? spoken : spoken.isEmpty ? before : before + " " + spoken
     }
 
-    /// Lautstärke eines Tonpuffers von 0 bis 1 (Effektivwert, für Sprache gespreizt).
+    /// Loudness of an audio buffer from 0 to 1 (RMS, spread for speech).
     nonisolated static func level(of buffer: AVAudioPCMBuffer) -> CGFloat {
         guard let samples = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return 0 }
         var sum: Float = 0
@@ -159,7 +173,7 @@ import SwiftUI
     nonisolated static func scaled(rms: Float) -> CGFloat { CGFloat(min(1, max(0, rms * 14))) }
 }
 
-/// Pegelanzeige: weiche Balken, die mit der Stimme ausschlagen.
+/// Level display: soft bars that move with the voice.
 struct Waveform: View {
     let levels: [CGFloat]
     var body: some View {
@@ -175,7 +189,7 @@ struct Waveform: View {
     }
 }
 
-/// Mikrofonknopf mit Pegelanzeige. Die erkannten Wörter laufen direkt in `draft`.
+/// Microphone button with level display. The recognised words go straight into `draft`.
 struct MicControl: View {
     @Binding var draft: String
     @StateObject private var speech = SpeechInput()
@@ -192,17 +206,17 @@ struct MicControl: View {
                     .frame(width: 32, height: 32).background(speech.listening ? Desk.accent : Desk.card, in: Circle())
                     .overlay { Circle().strokeBorder(speech.listening ? Color.clear : Desk.edge) }.contentShape(Circle())
             }
-            .buttonStyle(.plain).help(speech.listening ? "Aufnahme beenden" : "Nachricht einsprechen")
-            .accessibilityLabel(speech.listening ? "Aufnahme beenden" : "Nachricht einsprechen")
+            .buttonStyle(.plain).help(speech.listening ? t("Stop recording", "Aufnahme beenden") : t("Dictate a message", "Nachricht einsprechen"))
+            .accessibilityLabel(speech.listening ? t("Stop recording", "Aufnahme beenden") : t("Dictate a message", "Nachricht einsprechen"))
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: speech.listening)
         .popover(isPresented: Binding(get: { speech.issue != nil }, set: { if !$0 { speech.issue = nil } }), arrowEdge: .top) {
             Text(speech.issue ?? "").font(.system(size: 13)).frame(width: 280).padding(14)
         }
-        // Wird das Feld geleert (gesendet), endet die Aufnahme; sonst käme der Text gleich wieder hinein.
+        // When the field is emptied (sent), the recording ends; otherwise the text would come right back.
         .onChange(of: draft) { _, text in if text.isEmpty { speech.stop() } }
         .onDisappear { speech.stop() }
-        // Das Mikrofon bleibt nie offen, wenn die App ausgeblendet wird oder in den Hintergrund geht.
+        // The microphone never stays open when the app is hidden or goes to the background.
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in speech.stop() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didHideNotification)) { _ in speech.stop() }
     }

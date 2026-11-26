@@ -1,20 +1,22 @@
 import Foundation
 
-/// Verwaltet alle laufenden Sitzungen und die Zusammenarbeit der Agenten: Agenten-Post, Team-Chat,
-/// wartende Nachrichten und die Werkzeuge des Koordinators. Die Oberfläche beobachtet nur.
+/// Manages all running sessions and the collaboration of the agents: agent post, team chat,
+/// waiting messages and the coordinator's tools. The interface only observes.
 @MainActor final class SessionManager: ObservableObject {
     enum Handover { case delivered(AgentSession), queued(AgentSession), started(AgentSession), failed(String) }
 
     nonisolated static let maxRunning = 8
     nonisolated static let relayLimit = 24
     nonisolated static let relayWindow: TimeInterval = 1800
+    /// Longest task text handed to one recipient of a team message.
+    nonisolated static let teamTextLimit = 8000
 
     @Published private(set) var sessions = [AgentSession]()
-    /// Wer im Team-Chat eines Projekts gerade schreibt (Namen).
+    /// Who is writing in a project's team chat right now (names).
     @Published private(set) var teamTyping = [String: [String]]()
-    /// Fehlermeldung für den Nutzer.
+    /// Error message for the user.
     @Published var notice: String?
-    /// Sitzungen, die die Oberfläche gerade zeigt, werden nicht aufgeräumt.
+    /// Sessions the interface is showing are not cleaned up.
     var pinned = Set<UUID>()
 
     let agents: AgentStore
@@ -26,7 +28,6 @@ import Foundation
     private var feeds = [UUID: TeamFeed]()
     private var waiting = [WaitingPost]()
     private var relays = [String: [Date]]()
-    private var lastTeamTargets = [String: [UUID]]()
     private var loops = [Task<Void, Never>]()
 
     init(agents: AgentStore, settings: SettingsStore, routines: RoutineStore, team: TeamLog) {
@@ -38,11 +39,11 @@ import Foundation
 
     func start() {
         guard loops.isEmpty else { return }
-        bridge.start { [weak self] name, args in await self?.tool(name, args) ?? ["error": "Mochi Squad wird beendet."] }
+        bridge.start { [weak self] name, args, caller in await self?.tool(name, args, caller: caller) ?? ["error": "Mochi Squad is quitting."] }
         loops = [
             Task { [weak self] in await self?.every(.seconds(2)) { await $0.pumpTeam() } },
             Task { [weak self] in await self?.every(.seconds(3)) { $0.retryWaiting() } },
-            Task { [weak self] in await self?.every(.seconds(10)) { $0.prune() } },
+            Task { [weak self] in await self?.every(.seconds(10)) { $0.prune(); SaveGuard.retry() } },
         ]
     }
 
@@ -62,7 +63,7 @@ import Foundation
         }
     }
 
-    // MARK: Sitzungen
+    // MARK: Sessions
 
     func liveSession(for agent: UUID) -> AgentSession? { sessions.last { $0.agentID == agent && $0.isRunning } }
     func latestSession(for agent: UUID) -> AgentSession? { sessions.last { $0.agentID == agent } }
@@ -73,22 +74,24 @@ import Foundation
         let project = URL(fileURLWithPath: agent.project, isDirectory: true)
         guard FileManager.default.fileExists(atPath: project.path) else { throw SessionError.projectMissing }
         guard runningCount < Self.maxRunning else { throw SessionError.tooMany }
+        let session = try AgentSession(agent: agent, project: project, task: task)
         var tools: (config: String, token: String)?
         if agent.isCoordinator {
-            guard let config = bridge.mcpConfig else { throw SessionError.toolsNotReady }
-            tools = (config, bridge.token)
+            guard let config = bridge.mcpConfig else { session.end(); throw SessionError.toolsNotReady }
+            // An own token per session: the tool server then knows which coordinator is asking.
+            tools = (config, bridge.grant(to: session.id))
         }
-        let session = try AgentSession(agent: agent, project: project, task: task)
         let team = agents.agents(in: project).filter { !$0.isCoordinator && $0.id != agent.id && mayReach(agent, $0) }
             .map { "\($0.name) (\($0.jobTitle))" }
         let spec = SessionSpec(agent: agent, project: project, task: task, sessionID: session.id, owner: settings.value.owner,
                                team: team, parentChat: parentChat)
         session.onPost = { [weak self, weak session] to, text in
-            guard let self, let session else { return "Sitzung beendet." }
+            guard let self, let session else { return "Session ended." }
             return self.deliver(from: session, to: to, text: text)
         }
         session.onJournal = { [weak self] path in self?.agents.remember(journal: path, for: agent.id) }
         do { try session.launch(spec: spec, tools: tools) } catch {
+            bridge.revoke(session: session.id)
             session.end()
             throw error
         }
@@ -97,65 +100,83 @@ import Foundation
         return session
     }
 
-    /// Startet die Sitzung eines Agenten neu, damit geändertes Modell oder geänderte Rechte sofort gelten. Claude-Agenten machen im selben Chat weiter.
+    /// Restarts an agent's session so that a changed model or changed rights apply at once. Claude agents continue
+    /// in the same chat. Messages that were waiting for the old session go to the new one.
     func restart(_ agent: Agent) {
-        if let live = liveSession(for: agent.id) { close(live) }
-        // Nur Claude-Agenten setzen ihren Chat fort; Codex beginnt einen neuen.
-        let task = "Deine Einstellungen wurden gerade geändert (Modell: \(agent.model), Zugriff: \(agent.access.title)). Bestätige das kurz in einem Satz"
-            + (agent.provider == .claude ? " und mach dann dort weiter, wo wir waren." : ".")
+        if let live = liveSession(for: agent.id) { close(live, keepWaiting: true) }
+        // Only Claude agents continue their chat; Codex begins a new one.
+        let task = "Your settings were just changed (model: \(agent.model), access: \(agent.access.rawValue)). Confirm that briefly in one sentence"
+            + (agent.provider == .claude ? " and then carry on where we were." : ".")
         do { try launch(agent, task: task, parentChat: resumableChat(for: agent)) } catch { notice = error.localizedDescription }
     }
 
-    /// Nach einer Änderung am Agenten: Hat er jetzt weniger Rechte als seine laufende Sitzung, endet sie sofort.
+    /// After a change to the agent: if it now has fewer rights than its running session, that session ends at once.
     func settle(_ agent: Agent) {
         guard let live = liveSession(for: agent.id) else { return }
         let lessAccess = agent.access.rank < live.access.rank, noComputer = live.computerUse && agent.computerUse != true
         guard lessAccess || noComputer else { return }
         close(live)
-        notice = "Die laufende Sitzung von \(agent.name) wurde beendet, damit die geringeren Rechte sofort gelten."
+        notice = t("\(agent.name)'s running session was ended so that the reduced rights apply at once.",
+                   "Die laufende Sitzung von \(agent.name) wurde beendet, damit die geringeren Rechte sofort gelten.")
     }
 
-    func close(_ session: AgentSession) {
-        waiting.removeAll { $0.session == session.id }
+    /// Ends and forgets a session. Messages still waiting for it are not dropped silently: the user is told,
+    /// unless `keepWaiting` says that a new session of the same agent takes them over.
+    func close(_ session: AgentSession, keepWaiting: Bool = false) {
+        if !keepWaiting {
+            let lost = waiting.filter { $0.session == session.id }
+            waiting.removeAll { $0.session == session.id }
+            if !lost.isEmpty, let agent = agents.agent(session.agentID) {
+                let text = t("\(lost.count == 1 ? "A message" : "\(lost.count) messages") for \(agent.name) had not been delivered yet when the session was closed. Send \(lost.count == 1 ? "it" : "them") again if still needed.",
+                             "\(lost.count == 1 ? "Eine Nachricht" : "\(lost.count) Nachrichten") an \(agent.name) \(lost.count == 1 ? "war" : "waren") noch nicht zugestellt, als die Sitzung geschlossen wurde. Schick sie bei Bedarf noch einmal.")
+                if lost.contains(where: { RelayedMessage.parseTeam($0.message) != nil }) { team.notice(text, project: agent.project) } else { notice = text }
+            }
+        }
         feeds[session.id] = nil
         pinned.remove(session.id)
+        bridge.revoke(session: session.id)
         session.end()
         sessions.removeAll { $0.id == session.id }
     }
 
-    /// Beendete Sitzungen nach kurzer Zeit freigeben, sofern die Oberfläche sie nicht zeigt.
-    /// Hält macOS davon ab, die ausgeblendete App zu drosseln, solange Sitzungen laufen.
+    /// Closes every session that was started with the given ChatGPT subscription, whatever its agent is set to now.
+    func closeSessions(using account: String) {
+        sessions.filter { $0.account == account }.forEach { close($0) }
+    }
+
+    /// Keeps macOS from throttling the hidden app while sessions are running.
     private var activity: NSObjectProtocol?
     private func keepAwake() {
         if runningCount > 0, activity == nil {
-            activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep], reason: "Agenten arbeiten")
+            activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep], reason: "Agents are working")
         } else if runningCount == 0, let held = activity {
             ProcessInfo.processInfo.endActivity(held)
             activity = nil
         }
     }
 
+    /// Releases ended sessions after a short while, unless the interface is showing them.
     private func prune() {
         keepAwake()
         let stale = sessions.filter { s in
             !s.isRunning && !pinned.contains(s.id) && (s.endedAt.map { Date().timeIntervalSince($0) > 20 } ?? false)
         }
-        stale.forEach(close)
+        stale.forEach { close($0, keepWaiting: true) }
     }
 
-    /// Chat-ID des letzten Verlaufs eines Claude-Agenten, um dort weiterzumachen.
+    /// Chat id of a Claude agent's latest history, to continue there.
     func resumableChat(for agent: Agent) -> String? {
         guard agent.provider == .claude else { return nil }
-        // Nur Verläufe von Claude Code lassen sich fortsetzen; nach einem Anbieterwechsel liegen auch Codex-Verläufe in der Liste.
+        // Only Claude Code histories can be continued; after a provider switch the list holds Codex histories too.
         return agent.journals.reversed().lazy
             .filter { FileManager.default.fileExists(atPath: $0) }
             .map { URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent }
             .first { UUID(uuidString: $0) != nil }
     }
 
-    // MARK: Agenten-Post
+    // MARK: Agent post
 
-    /// Übergibt eine Nachricht an die laufende Sitzung eines Agenten oder startet ihn damit.
+    /// Hands a message to an agent's running session or starts the agent with it.
     func hand(_ message: String, to agent: Agent) -> Handover {
         if let live = liveSession(for: agent.id) {
             if live.send(message) { return .delivered(live) }
@@ -166,15 +187,15 @@ import Foundation
         catch { return .failed(error.localizedDescription) }
     }
 
-    /// Wer wem zuletzt geschrieben hat (Empfänger → Absender → Zeitpunkt), damit Antworten immer möglich bleiben.
+    /// Who wrote to whom last (recipient → sender → time), so that answers always stay possible.
     private var contacts = [UUID: [UUID: Date]]()
 
-    /// Darf `sender` von sich aus `target` ansprechen? Ein Agent mit Vollzugriff oder Computer-Nutzung nimmt Aufträge nur von
-    /// Kollegen mit denselben Rechten an; sonst könnte ein eingeschränkter Agent über ihn mehr anstoßen, als er selbst darf.
-    /// Antworten an jemanden, der einem in der letzten halben Stunde geschrieben hat, gehen immer.
+    /// May `sender` address `target` on its own? An agent with full access or computer use takes tasks only from
+    /// colleagues with the same rights; otherwise a restricted agent could trigger more through it than it may itself.
+    /// Answers to someone who wrote within the last half hour always go through.
     func mayReach(_ sender: Agent, _ target: Agent, replies: Bool = true) -> Bool {
         if replies, let asked = contacts[sender.id]?[target.id], Date().timeIntervalSince(asked) < 1800 { return true }
-        // Es zählt, was die laufende Sitzung des Absenders darf, nicht was inzwischen eingestellt ist.
+        // What counts is what the sender's running session may do, not what is configured by now.
         let live = liveSession(for: sender.id)
         let senderFull = sender.access == .full && (live.map { $0.access == .full } ?? true)
         let senderComputer = sender.computerUse == true && (live.map(\.computerUse) ?? true)
@@ -183,35 +204,39 @@ import Foundation
         return full && computer
     }
 
-    /// Nachricht eines Agenten an einen anderen benannten Agenten desselben Projekts.
+    private func sameName(_ a: String, _ b: String) -> Bool { a.compare(b, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }
+
+    /// Message from one agent to another named agent of the same project. The receipts are read by agents
+    /// and therefore always in English.
     func deliver(from origin: AgentSession, to name: String, text: String) -> String {
-        // Der Koordinator ist für Agenten nicht erreichbar: Über seine Werkzeuge könnten sie sonst mehr anstoßen, als sie selbst dürfen.
+        // The coordinator cannot be reached by agents: through its tools they could trigger more than they may themselves.
         let sender = agents.agent(origin.agentID)
         let colleagues = agents.agents(in: origin.project).filter { !$0.isCoordinator && $0.id != origin.agentID }
         let people = colleagues.filter { other in sender.map { mayReach($0, other) } ?? false }
-        if let blocked = colleagues.first(where: { $0.name.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }),
-           !people.contains(blocked) {
-            return "\(blocked.name) hat Vollzugriff oder bedient den Computer und ist für dich nicht direkt erreichbar. Bitte \(settings.value.owner), die Nachricht weiterzugeben."
+        if let blocked = colleagues.first(where: { sameName($0.name, name) }), !people.contains(blocked) {
+            return "\(blocked.name) has full access or operates the computer and cannot be reached by you directly. Ask \(settings.value.owner) to pass the message on."
         }
         let roster = people.map { "\($0.name) (\($0.jobTitle))" }.joined(separator: ", ")
-        if name == "?" { return roster.isEmpty ? "Keine weiteren Agenten in diesem Projekt." : "Erreichbar: " + roster }
-        guard let target = people.first(where: { $0.name.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }) else {
-            return "Kein Agent namens „\(name)“. Erreichbar: " + roster
+        if name == "?" { return roster.isEmpty ? "No other agents in this project." : "Reachable: " + roster }
+        guard let target = people.first(where: { sameName($0.name, name) }) else {
+            return "No agent named \"\(name)\". Reachable: " + roster
         }
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !body.isEmpty else { return "Die Nachricht ist leer." }
-        guard allowRelays(1, project: origin.project.path) else { return "Das Limit von \(Self.relayLimit) Agenten-Nachrichten je halbe Stunde ist erreicht. Fasse den Stand im Chat zusammen." }
+        guard !body.isEmpty else { return "The message is empty." }
+        guard allowRelays(1, project: origin.project.path) else {
+            return "The limit of \(Self.relayLimit) agent messages per half hour is reached. Summarise the state in the chat."
+        }
         contacts[target.id, default: [:]][origin.agentID] = Date()
         let message = RelayedMessage.postPrefix + (sender?.name ?? "Agent") + " (" + (sender?.jobTitle ?? "") + "): " + String(body.prefix(12_000))
         switch hand(message, to: target) {
-        case .delivered: return "Zugestellt an \(target.name). Die Antwort erscheint als neue Nachricht in deinem Chat."
-        case .queued: return "\(target.name) arbeitet gerade. Die Nachricht wird zugestellt, sobald die Eingabe frei ist."
-        case .started: return "\(target.name) wurde mit deiner Nachricht gestartet."
+        case .delivered: return "Delivered to \(target.name). The answer will appear as a new message in your chat."
+        case .queued: return "\(target.name) is busy. The message will be delivered as soon as the input is free; if the session is closed before that, it is lost."
+        case .started: return "\(target.name) was started with your message."
         case .failed(let reason): return reason
         }
     }
 
-    /// Weitergaben sind je Projekt begrenzt, damit ein gesprächiges Team andere Projekte nicht ausbremst.
+    /// Relays are limited per project so that a talkative team does not slow other projects down.
     private func allowRelays(_ count: Int, project: String) -> Bool {
         let now = Date()
         var log = (relays[project] ?? []).filter { now.timeIntervalSince($0) <= Self.relayWindow }
@@ -221,7 +246,7 @@ import Foundation
         return true
     }
 
-    /// Wartende Nachrichten zustellen, sobald die Eingabe des Empfängers frei ist.
+    /// Deliver waiting messages as soon as the recipient's input is free.
     private func retryWaiting() {
         guard !waiting.isEmpty else { return }
         let pending = waiting
@@ -234,67 +259,88 @@ import Foundation
             }
             if Date().timeIntervalSince(item.since) > 900 {
                 feeds[item.session]?.answered = true
-                tell("Eine Nachricht an \(agent?.name ?? "einen Agenten") konnte 15 Minuten lang nicht zugestellt werden.")
+                tell(t("A message for \(agent?.name ?? "an agent") could not be delivered for 15 minutes.",
+                       "Eine Nachricht an \(agent?.name ?? "einen Agenten") konnte 15 Minuten lang nicht zugestellt werden."))
             } else if let live = sessions.first(where: { $0.id == item.session }), live.isRunning {
                 if !live.send(item.message) { waiting.append(item) }
             } else if let agent {
+                // The session is gone (ended or restarted): the agent's current or a fresh session takes the message.
                 let result = hand(item.message, to: agent)
                 if forTeam { track(result, agent: agent) } else if case .failed(let reason) = result { tell(agent.name + ": " + reason) }
             }
         }
     }
 
-    // MARK: Team-Chat
+    // MARK: Team chat
 
-    func sendToTeam(_ text: String, project: URL) {
+    /// A message of the user to the team. `via` names the messenger it arrived through, nil for the app itself.
+    func sendToTeam(_ text: String, project: URL, via: String? = nil) {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { return }
-        team.append(TeamLine(kind: .user, text: body), project: project.path)
-        relay(body, from: nil, project: project)
+        team.append(TeamLine(kind: .user, text: body, via: via), project: project.path)
+        relay(body, from: nil, project: project, remote: via != nil)
     }
 
-    /// Leitet eine Team-Nachricht an alle mit @Name Angesprochenen weiter. `origin` ist der schreibende Agent, nil für den Nutzer.
+    /// Passes a team message on to everyone addressed with @name. `origin` is the writing agent, nil for the user.
+    /// `remote` marks a message of the user that came in through a messenger.
     @discardableResult
-    private func relay(_ text: String, from origin: Agent?, project: URL, skip: Set<UUID> = []) -> Set<UUID> {
-        // Den Koordinator ruft nur der Nutzer; Agenten erreichen ihn auch im Team-Chat nicht (siehe deliver).
-        // Kollegen mit Vollzugriff oder Computer-Nutzung ruft ein Agent ohne dieselben Rechte ebenfalls nicht.
+    private func relay(_ text: String, from origin: Agent?, project: URL, skip: Set<UUID> = [], remote: Bool = false) -> Set<UUID> {
+        // Only the user calls the coordinator; agents do not reach it in the team chat either (see deliver).
+        // An agent without the same rights does not call colleagues with full access or computer use.
         let everyone = agents.agents(in: project)
-        let people = everyone.filter { other in
+        var people = everyone.filter { other in
             guard let origin else { return true }
             return other.id != origin.id && !other.isCoordinator && mayReach(origin, other)
         }
         if let origin {
             let dropped = everyone.filter { $0.id != origin.id && !$0.isCoordinator && !people.contains($0) && Mention.contains(text, $0.name) }
             if !dropped.isEmpty {
-                team.notice("\(origin.name) kann \(dropped.map(\.name).joined(separator: ", ")) nicht selbst dazuholen (Vollzugriff oder Computer-Nutzung). Sprich sie bei Bedarf mit @Name an.", project: project.path)
+                let names = dropped.map(\.name).joined(separator: ", ")
+                team.notice(t("\(origin.name) cannot bring in \(names) on its own (full access or computer use). Address them with @name if needed.",
+                              "\(origin.name) kann \(names) nicht selbst dazuholen (Vollzugriff oder Computer-Nutzung). Sprich sie bei Bedarf mit @Name an."),
+                            project: project.path)
+            }
+        } else if remote, !settings.messengers.reachPrivileged {
+            // From a phone, agents with far-reaching rights stay out unless the user switched that on in Settings.
+            let privileged = people.filter { $0.access == .full || $0.computerUse == true }
+            people.removeAll { privileged.contains($0) }
+            let called = privileged.filter { Mention.contains(text, $0.name) }
+            if !called.isEmpty {
+                team.notice(t("\(called.map(\.name).joined(separator: ", ")) can only be reached in the app: agents with full access or computer use are not available through messengers. You can allow it in Settings.",
+                              "\(called.map(\.name).joined(separator: ", ")) ist nur in der App erreichbar: Agenten mit Vollzugriff oder Computer-Nutzung sind über Messenger nicht verfügbar. In den Einstellungen kannst du das erlauben."),
+                            project: project.path)
             }
         }
         var targets = people.filter { Mention.contains(text, $0.name) && !skip.contains($0.id) }
         if origin == nil {
-            // @alle meint wirklich alle, auch den Koordinator. Ohne Anrede geht es weiter mit den zuletzt Angesprochenen, sonst an den Koordinator.
-            if Mention.contains(text, "alle") || Mention.contains(text, "team") { targets = people }
-            if targets.isEmpty { targets = people.filter { (lastTeamTargets[project.path] ?? []).contains($0.id) } }
+            // @all really means everyone, the coordinator included. Without a mention the coordinator answers, every time.
+            if Mention.addressesEveryone(text) { targets = people }
             if targets.isEmpty { targets = people.filter(\.isCoordinator) }
             guard !targets.isEmpty else {
-                team.notice("Sprich einen Agenten mit @Name an.", project: project.path)
+                team.notice(t("Address an agent with @name.", "Sprich einen Agenten mit @Name an."), project: project.path)
                 return []
             }
-            lastTeamTargets[project.path] = targets.map(\.id)
         } else {
             guard !targets.isEmpty else { return [] }
             guard allowRelays(targets.count, project: project.path) else {
-                team.notice("Pause: Die Agenten haben das Limit von \(Self.relayLimit) Weitergaben je halbe Stunde erreicht.", project: project.path)
+                team.notice(t("Pause: the agents reached the limit of \(Self.relayLimit) relays per half hour.",
+                              "Pause: Die Agenten haben das Limit von \(Self.relayLimit) Weitergaben je halbe Stunde erreicht."), project: project.path)
                 return []
             }
+        }
+        if text.count > Self.teamTextLimit {
+            team.notice(t("That message is very long. The agents received its first \(Self.teamTextLimit) characters; put longer material into a file in the project.",
+                          "Diese Nachricht ist sehr lang. Die Agenten haben die ersten \(Self.teamTextLimit) Zeichen bekommen; längeres Material gehört als Datei ins Projekt."),
+                        project: project.path)
         }
         let sender = origin?.name ?? settings.value.owner
         for target in targets {
             if let origin { contacts[target.id, default: [:]][origin.id] = Date() }
-            // Der Verlauf enthält nur Stimmen, die diesen Empfänger auch direkt ansprechen dürften; der Koordinator sieht nur dich.
-            let voices = Set(everyone.filter { $0.id == target.id || (!target.isCoordinator && mayReach($0, target, replies: false)) }.map(\.name))
-            let message = RelayedMessage.teamPrefix + sender + ": " + String(text.prefix(8000))
+            // The context holds only voices that could address this recipient directly; the coordinator sees only the user.
+            let voices = everyone.filter { $0.id == target.id || (!target.isCoordinator && mayReach($0, target, replies: false)) }
+            let message = RelayedMessage.teamPrefix + sender + ": " + String(text.prefix(Self.teamTextLimit))
                 + team.context(project: project.path, owner: settings.value.owner, voices: voices) + RelayedMessage.teamHint
-                + "Antworte kurz für alle im Team-Chat. Mit @Name holst du einen Kollegen dazu, wenn seine Rolle gefragt ist; sonst erwähne niemanden."
+                + "Answer briefly for everyone in the team chat. With @name you bring in a colleague when their role is needed; otherwise mention nobody."
             track(hand(message, to: target), agent: target)
         }
         return Set(targets.map(\.id))
@@ -317,7 +363,7 @@ import Foundation
         }
     }
 
-    /// Liest neue Antworten der Team-Sitzungen aus ihren Verläufen und stellt sie in den Team-Chat.
+    /// Reads new answers of the team sessions from their histories and puts them into the team chat.
     private func pumpTeam() async {
         for session in sessions {
             guard let before = feeds[session.id], let path = session.usage.historyPath,
@@ -337,13 +383,13 @@ import Foundation
             feed.offset = page.position
             feeds[session.id] = feed
             for (text, date) in replies {
-                team.append(TeamLine(kind: .agent, from: agent.name, text: text, date: date), project: agent.project)
+                team.append(TeamLine(kind: .agent, from: agent.name, agent: agent.id, text: text, date: date), project: agent.project)
                 let called = relay(text, from: agent, project: session.project, skip: feeds[session.id]?.called ?? [])
                 feeds[session.id]?.called.formUnion(called)
             }
         }
         feeds = feeds.filter { id, _ in sessions.contains { $0.id == id } }
-        // Eine Teamfrage, auf die nichts mehr kommt, gilt nach zwei Minuten Ruhe als erledigt; sonst zeigte spätere Arbeit „schreibt …“.
+        // A team question that gets no more answers counts as done after two quiet minutes; otherwise later work would show "is typing".
         for session in sessions where !session.working {
             if let feed = feeds[session.id], !feed.answered, Date().timeIntervalSince(feed.asked) > 120 { feeds[session.id]?.answered = true }
         }
@@ -361,14 +407,20 @@ import Foundation
         if typing != teamTyping { teamTyping = typing }
     }
 
-    /// Team-Sitzungen eines Projekts, deren Client gerade auf eine Antwort in der Konsole wartet.
+    /// Team sessions of a project whose client is waiting for an answer in the console right now.
     func teamPrompts(project: URL) -> [AgentSession] {
         sessions.filter { feeds[$0.id] != nil && $0.isRunning && $0.prompt != nil && $0.project == project }
     }
 
-    // MARK: Werkzeuge des Koordinators
+    // MARK: The coordinator's tools
 
-    private func tool(_ name: String, _ args: [String: String]) async -> [String: Any] {
+    /// Answers a tool call. `caller` is the session that made it; every decision about rights is based on that
+    /// session and its agent, never on the coordinator of the project the call is about. Texts are read by agents: English.
+    func tool(_ name: String, _ args: [String: String], caller: UUID?) async -> [String: Any] {
+        guard let session = sessions.first(where: { $0.id == caller && $0.isRunning }),
+              let lead = agents.agent(session.agentID), lead.isCoordinator else {
+            return ["error": "Only a running coordinator session may use these tools."]
+        }
         switch name {
         case "list_projects":
             return ["projects": settings.projects.map { ["path": $0.path, "name": $0.lastPathComponent] }]
@@ -377,12 +429,13 @@ import Foundation
         case "list_jobs":
             return ["jobs": sessions.map { s -> [String: String] in
                 ["id": s.id.uuidString, "agent": agents.agent(s.agentID)?.name ?? "", "project": s.project.path,
-                 "provider": s.provider.title, "state": s.status, "working": s.working ? "yes" : "no", "task": String(s.task.prefix(300))]
+                 "provider": s.provider.title, "state": s.isRunning ? "running" : (s.failed ? "interrupted" : "finished"),
+                 "working": s.working ? "yes" : "no", "task": String(s.task.prefix(300))]
             }]
         default: break
         }
         guard let project = settings.projects.first(where: { $0.path == args["project"] }) else {
-            return ["error": "Unbekanntes Projekt. Nutze einen Pfad aus list_projects."]
+            return ["error": "Unknown project. Use a path from list_projects."]
         }
         let team = agents.agents(in: project).filter { !$0.isCoordinator }
         switch name {
@@ -391,32 +444,32 @@ import Foundation
                                           "instructions": String($0.instructions.prefix(400))] }]
         case "start_named_agent":
             guard let agent = team.first(where: { $0.id.uuidString == args["agent"] }), let task = args["task"] else {
-                return ["error": "Agent nicht gefunden."]
+                return ["error": "Agent not found."]
             }
-            // Der Koordinator liest Verläufe und Aufgaben anderer Agenten. Agenten mit Vollzugriff oder Computer-Nutzung
-            // beauftragt er deshalb nur, wenn er selbst dasselbe darf; sonst bleibt das dem Nutzer vorbehalten.
-            if let lead = agents.coordinator(in: project), !mayReach(lead, agent, replies: false) {
-                return ["error": "\(agent.name) hat Vollzugriff oder bedient den Computer. Solche Aufträge vergibt nur \(settings.value.owner) selbst; bitte darum, \(agent.name) direkt zu schreiben."]
+            // The coordinator reads histories and tasks of other agents. It therefore tasks agents with full access or
+            // computer use only if the calling session may do the same; otherwise that stays with the user.
+            guard mayReach(lead, agent, replies: false) else {
+                return ["error": "\(agent.name) has full access or operates the computer. Only \(settings.value.owner) gives such tasks; ask them to write to \(agent.name) directly."]
             }
-            guard allowRelays(1, project: project.path) else { return ["error": "Limit erreicht: höchstens \(Self.relayLimit) Aufträge je halbe Stunde."] }
-            // Als Nachricht des Koordinators kennzeichnen, damit der Auftrag im Chat nicht wie vom Nutzer getippt aussieht.
-            let sender = (agents.coordinator(in: project)?.name ?? settings.value.coordinatorName) + " (Koordinator)"
-            switch hand(RelayedMessage.postPrefix + sender + ": " + task, to: agent) {
-            case .delivered(let s), .queued(let s), .started(let s): return ["session": s.id.uuidString, "state": s.status]
+            guard allowRelays(1, project: project.path) else { return ["error": "Limit reached: at most \(Self.relayLimit) tasks per half hour."] }
+            // Marked as the coordinator's message so that the task does not look typed by the user in the chat.
+            let from = lead.project == project.path ? lead.name : "\(lead.name), \(URL(fileURLWithPath: lead.project).lastPathComponent)"
+            switch hand(RelayedMessage.postPrefix + from + " (coordinator): " + task, to: agent) {
+            case .delivered(let s), .queued(let s), .started(let s): return ["session": s.id.uuidString, "state": s.isRunning ? "running" : "starting"]
             case .failed(let reason): return ["error": reason]
             }
         case "list_chats", "read_chat":
             guard let rows = try? await PythonTool.run("history", ["list", project.path], as: [ChatEntry].self) else {
-                return ["error": "Die Verläufe sind nicht lesbar."]
+                return ["error": "The histories cannot be read."]
             }
             if name == "list_chats" { return ["chats": rows.prefix(50).map { ["id": $0.id, "provider": $0.provider, "title": $0.title] }] }
             guard let chat = rows.first(where: { $0.id == args["chat"] }),
                   let page = try? await PythonTool.run("history", ["read", chat.path, chat.provider, "0", "16"], as: ChatPage.self) else {
-                return ["error": "Chat nicht gefunden."]
+                return ["error": "Chat not found."]
             }
             return ["older": page.older, "messages": page.messages.map { ["role": $0.role, "text": String($0.text.prefix(6000))] }]
         default:
-            return ["error": "Unbekanntes Werkzeug."]
+            return ["error": "Unknown tool."]
         }
     }
 
@@ -432,8 +485,8 @@ import Foundation
                  "last_update": agent.updated.map(Timestamp.string) ?? ""]
             },
             "routines": routines.routines.filter { $0.project == project.path }.map { routine -> [String: Any] in
-                ["agent": routine.agent.name, "time": routine.time, "days": routine.rhythm, "active": routine.active,
-                 "task": String(routine.task.prefix(200))]
+                ["agent": routine.agent.name, "time": routine.time, "days": routine.days.isEmpty ? "daily" : routine.days.map(String.init).joined(separator: ","),
+                 "active": routine.active, "task": String(routine.task.prefix(200))]
             },
             "recent_routine_runs": routines.runs.filter { $0.project == project.path }.suffix(3).map { run -> [String: Any] in
                 ["agent": run.name ?? "", "start": run.start, "ok": run.code == 0, "summary": String((run.output ?? "").suffix(600))]
@@ -446,21 +499,23 @@ enum SessionError: LocalizedError {
     case projectMissing, tooMany, toolsNotReady
     var errorDescription: String? {
         switch self {
-        case .toolsNotReady: return "Die Werkzeuge des Koordinators starten noch. Versuch es in ein paar Sekunden noch einmal."
-        case .projectMissing: return "Der Projektordner ist nicht erreichbar."
-        case .tooMany: return "Es laufen schon \(SessionManager.maxRunning) Sitzungen. Beende zuerst eine davon."
+        case .toolsNotReady: return t("The coordinator's tools are still starting. Try again in a few seconds.",
+                                      "Die Werkzeuge des Koordinators starten noch. Versuch es in ein paar Sekunden noch einmal.")
+        case .projectMissing: return t("The project folder cannot be reached.", "Der Projektordner ist nicht erreichbar.")
+        case .tooMany: return t("\(SessionManager.maxRunning) sessions are already running. End one of them first.",
+                                "Es laufen schon \(SessionManager.maxRunning) Sitzungen. Beende zuerst eine davon.")
         }
     }
 }
 
-/// Wo eine Team-Sitzung in ihrem Verlauf steht und ob ihre Antworten in den Team-Chat gehören.
+/// Where a team session stands in its history and whether its answers belong in the team chat.
 struct TeamFeed {
     var offset: Int
     var since: Date
     var open = true
     var answered = false
     var asked = Date()
-    /// Kollegen, die der Agent in der laufenden Antwort schon dazugeholt hat.
+    /// Colleagues the agent has already brought in during the current answer.
     var called = Set<UUID>()
 }
 

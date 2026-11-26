@@ -1,9 +1,9 @@
 import SwiftUI
 
-// Mochi-Avatare: eine eigene Figur von Mochi Squad. Ein weich zerfließender Mochi auf dunkler Kachel,
-// dazu Bauformen, Kopfteile, Augen und Extras aus einem Baukasten.
+// Mochi avatars: Mochi Squad's own character. A softly melting mochi on a dark tile,
+// plus builds, head pieces, eyes and extras from a construction kit.
 
-/// Aussehen eines Mochis. Gespeichert als Schlüssel „mochi:<bau>.<kopf>.<augen>.<extra>:<RRGGBB>“.
+/// Look of a mochi. Stored as the key "mochi:<build>.<top>.<eyes>.<extra>:<RRGGBB>".
 struct MochiLook: Equatable, Hashable {
     enum Build: Int, CaseIterable { case classic, tall, chubby, small }
     enum Top: Int, CaseIterable {
@@ -19,11 +19,11 @@ struct MochiLook: Equatable, Hashable {
     var extra = Extra.none
     var hex = "F7F2EA"
 
-    static let palette: [(name: String, hex: String)] = [
-        ("Creme", "F7F2EA"), ("Blau", "4C8DFF"), ("Grün", "3CCB7F"), ("Koralle", "FF6B5E"), ("Sonne", "FFC43D"),
-        ("Violett", "9B7BFF"), ("Türkis", "2CC5B6"), ("Rosa", "FF7EB6"), ("Schiefer", "94A3B8")
-    ]
-    /// Der Mochi des Koordinators und der App: cremefarben mit Katzenohren.
+    static var palette: [(name: String, hex: String)] { [
+        (t("Cream", "Creme"), "F7F2EA"), (t("Blue", "Blau"), "4C8DFF"), (t("Green", "Grün"), "3CCB7F"), (t("Coral", "Koralle"), "FF6B5E"), (t("Sun", "Sonne"), "FFC43D"),
+        (t("Violet", "Violett"), "9B7BFF"), (t("Teal", "Türkis"), "2CC5B6"), (t("Pink", "Rosa"), "FF7EB6"), (t("Slate", "Schiefer"), "94A3B8")
+    ] }
+    /// The mochi of the coordinator and the app: cream-coloured with cat ears.
     static let coordinator = MochiLook(top: .cat)
 
     var key: String { "mochi:\(build.rawValue).\(top.rawValue).\(eyes.rawValue).\(extra.rawValue):\(hex)" }
@@ -32,7 +32,7 @@ struct MochiLook: Equatable, Hashable {
         self.build = build; self.top = top; self.eyes = eyes; self.extra = extra; self.hex = hex
     }
 
-    /// Liest einen gespeicherten Schlüssel. Alles andere (auch alte Schlüssel) ergibt ein festes Aussehen aus dem Text.
+    /// Reads a stored key. Anything else (including old keys) yields a fixed look derived from the text.
     init(key: String) {
         let parts = key.split(separator: ":")
         if parts.count == 3, parts[0] == "mochi" {
@@ -47,7 +47,7 @@ struct MochiLook: Equatable, Hashable {
         self = Self.random(using: &generator)
     }
 
-    /// Zufälliges, aber ausgewogenes Aussehen für einen neuen Agenten.
+    /// Random but balanced look for a new agent.
     static func random<G: RandomNumberGenerator>(using generator: inout G) -> MochiLook {
         MochiLook(build: Build.allCases.randomElement(using: &generator)!,
                   top: Top.allCases.randomElement(using: &generator)!,
@@ -60,7 +60,7 @@ struct MochiLook: Equatable, Hashable {
         return random(using: &generator)
     }
 
-    /// FNV-1a: über Programmstarts hinweg gleich (anders als `hashValue`).
+    /// FNV-1a: stable across program launches (unlike `hashValue`).
     static func stableHash(_ text: String) -> UInt64 {
         text.utf8.reduce(14_695_981_039_346_656_037) { ($0 ^ UInt64($1)) &* 1_099_511_628_211 }
     }
@@ -68,7 +68,7 @@ struct MochiLook: Equatable, Hashable {
     var color: Color { Mochi.color(hex) }
 }
 
-/// Deterministischer Zufall (SplitMix64) für feste Aussehen aus einem Text.
+/// Deterministic randomness (SplitMix64) for fixed looks derived from a text.
 struct SeededGenerator: RandomNumberGenerator {
     private var state: UInt64
     init(seed: UInt64) { state = seed }
@@ -81,10 +81,10 @@ struct SeededGenerator: RandomNumberGenerator {
     }
 }
 
-/// Zeichenformen und Farben der Mochis (Koordinaten 0 … 100: Scheitel bei y = 4, Augen bei 40, Fuß bei `foot`).
+/// Drawing shapes and colours of the mochis (coordinates 0 … 100: crown at y = 4, eyes at 40, foot at `foot`).
 enum Mochi {
     static let foot: CGFloat = 69
-    /// Runder Kopf, der unten weich in einen breiten Fuß zerfließt.
+    /// Round head that softly melts into a wide foot at the bottom.
     static let body: Path = {
         var p = Path()
         p.move(to: CGPoint(x: 50, y: 4))
@@ -109,7 +109,7 @@ enum Mochi {
         let (r, g, b) = rgb(hex)
         return Color(.sRGB, red: min(255, r * factor) / 255, green: min(255, g * factor) / 255, blue: min(255, b * factor) / 255)
     }
-    /// Dunkle Augen, solange sie sich ausreichend vom Körper abheben (Kontrast nach WCAG ≥ 3,5).
+    /// Dark eyes as long as they stand out enough from the body (WCAG contrast ≥ 3.5).
     static func darkEyes(_ hex: String) -> Bool {
         func channel(_ c: Double) -> Double { let s = c / 255; return s <= 0.03928 ? s / 12.92 : pow((s + 0.055) / 1.055, 2.4) }
         let (r, g, b) = rgb(hex)
@@ -118,7 +118,7 @@ enum Mochi {
         return (max(body, ink) + 0.05) / (min(body, ink) + 0.05) >= 3.5
     }
 
-    /// Kopfteile, die mit dem Körper verschmelzen und dieselbe Lichtgestaltung bekommen (Körperkoordinaten).
+    /// Head pieces that merge with the body and get the same lighting (body coordinates).
     static func topShape(_ top: MochiLook.Top) -> Path {
         var p = Path()
         switch top {
@@ -127,7 +127,7 @@ enum Mochi {
             p.addEllipse(in: CGRect(x: 22, y: 6, width: 19, height: 19))
             p.addEllipse(in: CGRect(x: 59, y: 6, width: 19, height: 19))
         case .cat:
-            // Spitze Ohren: außen steil, innen flacher, mit leicht gerundeter Spitze.
+            // Pointed ears: steep on the outside, flatter on the inside, with a slightly rounded tip.
             for side in [-1.0, 1.0] {
                 func at(_ x: Double, _ y: Double) -> CGPoint { CGPoint(x: 50 + side * x, y: y) }
                 p.move(to: at(31, 32))
@@ -164,13 +164,13 @@ enum Mochi {
         return p
     }
 
-    /// Körper und Kopfteil als eine Fläche (echte Vereinigung, unabhängig von der Zeichenrichtung der Teile).
+    /// Body and head piece as one area (true union, independent of the parts' winding direction).
     static func silhouette(_ top: MochiLook.Top) -> Path {
         let extra = topShape(top)
         return extra.isEmpty ? body : body.union(extra)
     }
 
-    /// Kopfbedeckung, die exakt der Kopfkontur folgt: der Körper oberhalb von `cut`, leicht vergrößert wie aufgesetzt.
+    /// Headwear that follows the head contour exactly: the body above `cut`, slightly enlarged as if put on.
     static func headCover(cut: CGFloat, grow: CGFloat = 1.06) -> Path {
         let top = body.intersection(Path(CGRect(x: -30, y: -30, width: 160, height: 30 + cut)))
         return top.applying(CGAffineTransform(translationX: 50, y: cut).scaledBy(x: grow, y: grow).translatedBy(x: -50, y: -cut))
@@ -187,7 +187,7 @@ enum Mochi {
 }
 
 private extension GraphicsContext {
-    /// Elliptischer Radialverlauf, auf `clip` beschnitten (wie SVG-radialGradient mit gradientTransform).
+    /// Elliptical radial gradient, clipped to `clip` (like an SVG radialGradient with gradientTransform).
     func ellipseFill(_ clip: Path, center: CGPoint, rx: CGFloat, ry: CGFloat, radius: CGFloat = 1, stops: [Gradient.Stop]) {
         var c = self
         c.clip(to: clip)
@@ -196,7 +196,7 @@ private extension GraphicsContext {
         c.fill(Path(CGRect(x: -3, y: -3, width: 6, height: 6)),
                with: .radialGradient(Gradient(stops: stops), center: .zero, startRadius: 0, endRadius: radius))
     }
-    /// Radialverlauf in den Maßen der Form (objectBoundingBox): cx, cy, r als Anteile.
+    /// Radial gradient in the shape's dimensions (objectBoundingBox): cx, cy, r as fractions.
     func boxFill(_ shape: Path, cx: CGFloat, cy: CGFloat, r: CGFloat, stops: [Gradient.Stop]) {
         let box = shape.boundingRect
         ellipseFill(shape, center: CGPoint(x: box.minX + cx * box.width, y: box.minY + cy * box.height),
@@ -204,12 +204,12 @@ private extension GraphicsContext {
     }
 }
 
-/// Avatar eines Agenten. Statisch gezeichnet; nur wer gerade arbeitet, atmet und blinzelt (spart Rechenzeit).
+/// Avatar of an agent. Drawn statically; only those currently working breathe and blink (saves CPU time).
 struct MochiAvatar: View {
     let key: String
     let size: CGFloat
     var working = false
-    /// Rund statt als Kachel, für Pillen und Chips.
+    /// Round instead of a tile, for pills and chips.
     var round = false
     @Environment(\.accessibilityReduceMotion) private var still
 
@@ -229,12 +229,12 @@ struct MochiAvatar: View {
     }
 }
 
-/// Eine Mochi-Figur auf ihrer Kachel.
+/// A mochi character on its tile.
 struct MochiCanvas: View, Equatable {
     let look: MochiLook
     var breathe: Double = 0
     var blink: Double = 0
-    /// Ohne Kachel zeichnen, z. B. für das App-Icon mit eigenem Hintergrund.
+    /// Draw without the tile, e.g. for the app icon with its own background.
     var showsPlate = true
     var round = false
 
@@ -262,14 +262,14 @@ struct MochiCanvas: View, Equatable {
         let hex = look.hex
         let base = Mochi.color(hex)
         var body = ctx
-        // Der Fuß schließt mit dem unteren Kachelrand ab und läuft seitlich leicht darüber hinaus; Bauform und Atmen skalieren um den Fuß.
+        // The foot sits flush with the bottom edge of the tile and extends slightly past it at the sides; build and breathing scale around the foot.
         let build = Mochi.buildScale(look.build), size = 1.15
         body.translateBy(x: 50, y: 103)
         body.scaleBy(x: size * build.x * (1 - 0.015 * breathe), y: size * build.y * (1 + 0.035 * breathe))
         body.translateBy(x: -50, y: -Mochi.foot)
         let shape = Mochi.silhouette(look.top)
 
-        // Grundton mit Licht von links oben, dunkle Flanke rechts unten, Glanzfleck und helle Kante.
+        // Base tone with light from the top left, dark flank at the bottom right, gloss spot and bright edge.
         body.boxFill(shape, cx: 0.4, cy: 0.3, r: 0.8, stops: [.init(color: Mochi.color(hex, factor: 1.08), location: 0), .init(color: base, location: 0.45),
                                                               .init(color: Mochi.color(hex, factor: 0.78), location: 1)])
         body.drawLayer { layer in
@@ -403,7 +403,7 @@ struct MochiCanvas: View, Equatable {
         ctx.fill(Path(ellipseIn: CGRect(x: 63.5, y: 13.5, width: 5, height: 5)), with: .color(ribbon))
     }
 
-    /// Kontrastfarbe für Zubehör, damit es sich von jeder Körperfarbe abhebt.
+    /// Contrast colour for accessories so they stand out from any body colour.
     private var accentHex: String {
         switch look.hex {
         case "FF6B5E", "FF7EB6": return "4C8DFF"
@@ -412,10 +412,10 @@ struct MochiCanvas: View, Equatable {
         }
     }
     private var accent: Color { Mochi.color(accentHex) }
-    /// Dunklere, deckende Stufe der Zubehörfarbe (für Schatten und Schirme).
+    /// Darker, opaque shade of the accessory colour (for shadows and visors).
     private var accentShade: Color { Mochi.color(accentHex, factor: 0.72) }
 
-    /// Plastisch schattierte Fläche mit Licht von rechts oben, passend zum Körper.
+    /// Sculpted, shaded surface with light from the top right, matching the body.
     private func solid(_ ctx: GraphicsContext, _ shape: Path, hex: String) {
         ctx.boxFill(shape, cx: 0.62, cy: 0.2, r: 1.0, stops: [
             .init(color: Mochi.color(hex, factor: 1.14), location: 0), .init(color: Mochi.color(hex), location: 0.4),
@@ -423,7 +423,7 @@ struct MochiCanvas: View, Equatable {
         ctx.boxFill(shape, cx: 0.66, cy: 0.16, r: 0.34, stops: [
             .init(color: .white.opacity(0.32), location: 0), .init(color: .white.opacity(0), location: 1)])
     }
-    /// Weicher Schattenwurf eines Accessoires auf den Körper, unterhalb von `y`.
+    /// Soft shadow cast by an accessory onto the body, below `y`.
     private func castShadow(_ ctx: GraphicsContext, below y: CGFloat, depth: CGFloat = 7) {
         var clipped = ctx
         clipped.clip(to: Mochi.body)
@@ -438,7 +438,7 @@ struct MochiCanvas: View, Equatable {
         switch look.top {
         case .sprout: drawSprout(&ctx)
         case .headphones:
-            // Bügel folgt der Kopfkontur mit etwas Abstand; Muscheln sitzen auf Augenhöhe am Rand.
+            // Headband follows the head contour with a small gap; ear cups sit at eye level on the edge.
             let outline = Mochi.body.applying(CGAffineTransform(translationX: 50, y: 40).scaledBy(x: 1.075, y: 1.075).translatedBy(x: -50, y: -40))
             var band = ctx
             band.clip(to: Path(CGRect(x: -30, y: -30, width: 160, height: 64)))
@@ -453,7 +453,7 @@ struct MochiCanvas: View, Equatable {
             let cap = Mochi.headCover(cut: 17)
             let box = cap.boundingRect
             castShadow(ctx, below: 17)
-            // Schirm zeigt nach rechts vorn und liegt unter der Kappe.
+            // Visor points to the front right and lies beneath the cap.
             var visor = Path()
             visor.move(to: CGPoint(x: 52, y: 14))
             visor.addCurve(to: CGPoint(x: box.maxX + 17, y: 19.5), control1: CGPoint(x: 68, y: 12.5), control2: CGPoint(x: box.maxX + 12, y: 14.5))
@@ -471,7 +471,7 @@ struct MochiCanvas: View, Equatable {
             let box = hat.boundingRect
             castShadow(ctx, below: 21)
             solid(ctx, hat, hex: accentHex)
-            // Strickrippen
+            // Knit ribs
             var ribs = ctx
             ribs.clip(to: hat)
             for x in stride(from: box.minX + 5, to: box.maxX, by: 6.5) {
@@ -528,7 +528,7 @@ struct MochiCanvas: View, Equatable {
         }
     }
 
-    /// Schal um die Stelle, an der der Kopf in den Fuß übergeht, mit Knoten und losem Ende.
+    /// Scarf around the spot where the head merges into the foot, with a knot and a loose end.
     private func drawScarf(_ ctx: inout GraphicsContext) {
         var clipped = ctx
         clipped.clip(to: Mochi.body)
@@ -593,7 +593,7 @@ struct MochiCanvas: View, Equatable {
     }
 }
 
-/// Gruppenbild aus bis zu drei Mochis, nebeneinander ohne Überlappung.
+/// Group picture of up to three mochis, side by side without overlap.
 struct GroupAvatar: View {
     let keys: [String]
     let size: CGFloat

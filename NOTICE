@@ -13,3 +13,10 @@ It includes or adapts the following third-party work:
 2. SwiftTerm (https://github.com/migueldeicaza/SwiftTerm), MIT License,
    Copyright (c) 2019-2026 Miguel de Icaza and contributors. Its license is shipped inside the app
    bundle as SwiftTerm-LICENSE.txt.
+
+The optional WhatsApp link downloads Baileys (https://github.com/WhiskeySockets/Baileys, MIT License) and its
+dependencies from the npm registry onto the user's Mac when the user sets it up. Baileys is not part of this
+repository or of the app bundle. The way Telegram and WhatsApp are connected follows the approach of Nod
+(https://github.com/n8n-io/nod, Apache License 2.0); no code of Nod is included.
+
+Mochi Squad is not affiliated with or endorsed by Anthropic, OpenAI, Telegram, WhatsApp or Meta.

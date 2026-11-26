@@ -1,28 +1,26 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Mochi Squad nimmt deine Stimme auf, wenn du eine Nachricht einsprichst.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Mochi Squad wandelt deine gesprochene Nachricht in Text um.</string>
-	<key>CFBundleDevelopmentRegion</key>
-	<string>de</string>
+	<key>CFBundleDevelopmentRegion</key><string>en</string>
 	<key>CFBundleLocalizations</key>
 	<array>
+		<string>en</string>
 		<string>de</string>
 	</array>
-<key>CFBundleName</key><string>Mochi Squad</string>
-<key>CFBundleDisplayName</key><string>Mochi Squad</string>
-<key>CFBundleIdentifier</key><string>dev.mochisquad.app</string>
-<key>CFBundleExecutable</key><string>MochiSquad</string>
-<key>CFBundleIconFile</key><string>AppIcon</string>
-<key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleVersion</key><string>1</string>
-<key>CFBundleShortVersionString</key><string>0.1.0</string>
-<key>LSMinimumSystemVersion</key><string>14.0</string>
-<key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
-<key>NSHighResolutionCapable</key><true/>
-<key>NSDocumentsFolderUsageDescription</key><string>Mochi Squad öffnet die Projektordner, die du für deine Agenten auswählst.</string>
-<key>NSDesktopFolderUsageDescription</key><string>Mochi Squad öffnet die Projektordner, die du für deine Agenten auswählst.</string>
-<key>NSDownloadsFolderUsageDescription</key><string>Mochi Squad öffnet die Projektordner, die du für deine Agenten auswählst.</string>
+	<key>CFBundleName</key><string>Mochi Squad</string>
+	<key>CFBundleDisplayName</key><string>Mochi Squad</string>
+	<key>CFBundleIdentifier</key><string>dev.mochisquad.app</string>
+	<key>CFBundleExecutable</key><string>MochiSquad</string>
+	<key>CFBundleIconFile</key><string>AppIcon</string>
+	<key>CFBundlePackageType</key><string>APPL</string>
+	<key>CFBundleVersion</key><string>2</string>
+	<key>CFBundleShortVersionString</key><string>0.2.0</string>
+	<key>LSMinimumSystemVersion</key><string>14.0</string>
+	<key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
+	<key>NSHighResolutionCapable</key><true/>
+	<key>NSMicrophoneUsageDescription</key><string>Mochi Squad records your voice when you dictate a message.</string>
+	<key>NSSpeechRecognitionUsageDescription</key><string>Mochi Squad turns your spoken message into text.</string>
+	<key>NSDocumentsFolderUsageDescription</key><string>Mochi Squad opens the project folders you choose for your agents.</string>
+	<key>NSDesktopFolderUsageDescription</key><string>Mochi Squad opens the project folders you choose for your agents.</string>
+	<key>NSDownloadsFolderUsageDescription</key><string>Mochi Squad opens the project folders you choose for your agents.</string>
 </dict></plist>

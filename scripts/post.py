@@ -1,11 +1,11 @@
 #!/usr/bin/python3
-"""Agenten-Post: Nachrichten zwischen den Agenten eines Projekts.
+"""Agent post: messages between the agents of a project.
 
-  post liste                      zeigt die erreichbaren Agenten
-  post sende <Name> <Nachricht>   stellt die Nachricht zu; die Antwort kommt als neue Nachricht in den eigenen Chat
+  post list                      shows the agents that can be reached
+  post send <name> <message>     delivers the message; the answer arrives as a new message in the own chat
 
-Briefe landen als out-*.json im Postausgang der Sitzung (MOCHI_OUTBOX). Die App holt sie ab und schreibt die
-Rückmeldung als out-*.result daneben.
+Letters land as out-*.json in the session's outbox (MOCHI_OUTBOX). The app collects them and writes the receipt
+next to them as out-*.result. The wording of receipts comes from the app, in the user's interface language.
 """
 import json
 import os
@@ -19,10 +19,10 @@ WAIT_SECONDS = 20
 
 
 def parse(args):
-    """Brief aus den Argumenten oder None bei falscher Benutzung."""
-    if args == ["liste"]:
+    """Letter from the arguments, or None for wrong usage. The German verbs of earlier versions still work."""
+    if args in (["list"], ["liste"]):
         return {"to": "?", "text": ""}
-    if len(args) >= 3 and args[0] == "sende" and " ".join(args[2:]).strip():
+    if len(args) >= 3 and args[0] in ("send", "sende") and " ".join(args[2:]).strip():
         return {"to": args[1], "text": " ".join(args[2:])}
     return None
 
@@ -42,13 +42,13 @@ def send(box, letter, wait=WAIT_SECONDS):
         time.sleep(0.25)
     try:
         (box / (name + ".json")).unlink()
-        return "Nicht zugestellt: Mochi Squad hat die Nachricht nicht abgeholt. Versuche es später erneut."
+        return "Not delivered: Mochi Squad did not collect the message. Try again later."
     except FileNotFoundError:
-        return "Mochi Squad hat die Nachricht abgeholt, aber noch nicht bestätigt. Sende sie nicht doppelt; prüfe später den Chat."
+        return "Mochi Squad collected the message but has not confirmed it yet. Do not send it twice; check the chat later."
 
 
 def outbox():
-    """Der Postausgang dieser Sitzung. Die App legt ihn an; nur die Sandbox dieser Sitzung darf hineinschreiben."""
+    """This session's outbox. The app creates it; only this session's sandbox may write into it."""
     root = (Path.home() / "Library" / "Caches" / "dev.mochisquad.app" / "outbox").resolve()
     box = Path(os.environ.get("MOCHI_OUTBOX", "")).resolve()
     return box if box.parent == root and box.is_dir() else None
@@ -59,10 +59,10 @@ def main(argv):
     if letter is None:
         raise SystemExit(__doc__)
     if len(letter["text"]) > MAX_TEXT:
-        raise SystemExit("Nicht gesendet: Die Nachricht ist länger als 12 000 Zeichen. Lege den Inhalt als Datei ab und sende den Pfad.")
+        raise SystemExit("Not sent: the message is longer than 12,000 characters. Save the content as a file and send its path.")
     box = outbox()
     if box is None:
-        raise SystemExit("Nicht gesendet: Diese Sitzung hat keinen Postausgang.")
+        raise SystemExit("Not sent: this session has no outbox.")
     print(send(box, letter))
 
 

@@ -1,0 +1,6 @@
+/* German texts for the permission dialogs of macOS. They follow the system language. */
+"NSMicrophoneUsageDescription" = "Mochi Squad nimmt deine Stimme auf, wenn du eine Nachricht einsprichst.";
+"NSSpeechRecognitionUsageDescription" = "Mochi Squad wandelt deine gesprochene Nachricht in Text um.";
+"NSDocumentsFolderUsageDescription" = "Mochi Squad öffnet die Projektordner, die du für deine Agenten auswählst.";
+"NSDesktopFolderUsageDescription" = "Mochi Squad öffnet die Projektordner, die du für deine Agenten auswählst.";
+"NSDownloadsFolderUsageDescription" = "Mochi Squad öffnet die Projektordner, die du für deine Agenten auswählst.";

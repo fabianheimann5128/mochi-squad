@@ -1,35 +1,36 @@
-# Mitwirken
+# Contributing
 
-Schön, dass du Mochi Squad besser machen willst.
+Great that you want to make Mochi Squad better.
 
-## Vor dem Start
+## Before you start
 
-Öffne für größere Änderungen zuerst ein Issue, damit wir die Richtung abstimmen können. Kleine Korrekturen gern direkt als Pull Request.
+For larger changes, please open an issue first so we can agree on the direction. Small fixes are welcome directly as a pull request.
 
-## Entwickeln
+## Developing
 
 ```bash
-swift build          # bauen
-./tools/test.sh      # alle Tests (Swift und Python)
-./install.sh         # nach ~/Applications installieren
+swift build          # build
+./tools/test.sh      # all tests (Swift and Python)
+./install.sh         # install to ~/Applications
 ```
 
-Voraussetzung sind macOS 14 und die Xcode-Befehlszeilenwerkzeuge; Xcode selbst wird nicht benötigt.
+You need macOS 14 and the Xcode command line tools with Swift 6 or newer; Xcode itself is not required.
 
-## Leitlinien
+## Guidelines
 
-- **Klein und lesbar.** Lieber eine klare Funktion als eine clevere. Kommentare erklären das Warum.
-- **Sicherheit zuerst.** Die Rechte eines Agenten entstehen in `scripts/launcher.py` (Regeln und Sandbox), `Sessions/AgentSession.swift` (Sitzungsordner, Postausgang) und `Sessions/SessionManager.swift` (Werkzeuge, Limits). Änderungen dort brauchen Tests und einen Blick in [SECURITY.md](SECURITY.md).
-- **Keine neuen Abhängigkeiten** ohne Absprache. Die Python-Helfer nutzen nur die Standardbibliothek (Python 3.9).
-- **Oberfläche.** Farben und Formen kommen aus `Sources/MochiSquad/UI/Theme.swift`. Texte der App sind deutsch und sprechen den Nutzer mit „du“ an.
-- **Tests.** Neue Logik bekommt Tests; `./tools/test.sh` muss grün sein.
+- **Small and readable.** A clear function beats a clever one. Comments explain the why.
+- **Security first.** An agent's rights are made in `scripts/launcher.py` (rules and sandbox), `Sessions/AgentSession.swift` (session folder, outbox) and `Sessions/SessionManager.swift` (tools, limits). Changes there need tests and a look at [SECURITY.md](SECURITY.md).
+- **No new dependencies** without discussion. The Python helpers use only the standard library (Python 3.9). The one exception is the optional WhatsApp link, which needs Node.js and one pinned library.
+- **Language.** Code, comments, commit messages and docs are in English. Every text the user sees exists in English and German and sits at the call site: `t("English", "Deutsch")` in Swift, `common.t(...)` in Python. Texts that agents read (briefings, receipts, tool answers) are English only; agents answer in the language they are addressed in.
+- **Interface.** Colours and shapes come from `Sources/MochiSquad/UI/Theme.swift`.
+- **Tests.** New logic gets tests; `./tools/test.sh` must be green.
 
-## Aufbau
+## Layout
 
-| Pfad | Inhalt |
+| Path | Content |
 |---|---|
-| `Sources/MochiSquad/Core` | Datenmodell und Speicherung |
-| `Sources/MochiSquad/Sessions` | Sitzungen, Zusammenarbeit, Routinen, Werkzeugserver |
-| `Sources/MochiSquad/UI` | Oberfläche |
-| `scripts/` | Python-Helfer, die in die App kopiert werden |
-| `Tests/MochiSquadTests`, `Tests/python` | Swift- und Python-Tests |
+| `Sources/MochiSquad/Core` | Data model, storage, language |
+| `Sources/MochiSquad/Sessions` | Sessions, collaboration, routines, tool server, messengers |
+| `Sources/MochiSquad/UI` | Interface |
+| `scripts/` | Python helpers that are copied into the app; `scripts/whatsapp/` is the Node helper for WhatsApp |
+| `Tests/MochiSquadTests`, `Tests/python` | Swift and Python tests |
