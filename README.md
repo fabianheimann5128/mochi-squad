@@ -92,6 +92,6 @@ Mehr dazu in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Lizenz und Dank
 
-Apache License 2.0, siehe [LICENSE](LICENSE). Farbwelt und die Grundform der Mochis sind an [Rakazo](https://github.com/elie222/rakazo) (Apache-2.0) angelehnt, das Terminal kommt von [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) (MIT); Einzelheiten in [NOTICE](NOTICE).
+Apache License 2.0, siehe [LICENSE](LICENSE). Die Farbwelt der Oberfläche ist an [Rakazo](https://github.com/elie222/rakazo) (Apache-2.0) angelehnt; die Mochis sind eigene Figuren, das Terminal kommt von [SwiftTerm](https://github.com/migueldeicaza/SwiftTerm) (MIT); Einzelheiten in [NOTICE](NOTICE).
 
 Mochi Squad ist ein unabhängiges Projekt und kein Produkt von Anthropic, OpenAI oder Rakazo. „Claude“ und „ChatGPT“ sind Marken ihrer Inhaber.

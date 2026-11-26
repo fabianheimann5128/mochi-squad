@@ -68,14 +68,19 @@ struct Workspace: View {
         }
         .onChange(of: agents.agents) { _, list in routines.sync(with: list) }
         .sheet(item: $editing) { agent in
-            AgentEditor(agent: agent, isNew: agents.agent(agent.id) == nil) { saved in
+            let store: (Agent) -> Void = { saved in
                 agents.save(saved)
                 selection = .agent(saved.id); showProcesses = false
-            } remove: {
-                if let live = manager.liveSession(for: agent.id) { manager.close(live) }
-                agents.remove(agent)
-                selection = agents.coordinator(in: current).map { .agent($0.id) }
-            }.dialogStyle()
+            }
+            if agents.agent(agent.id) == nil {
+                AgentWizard(agent: agent, save: store).dialogStyle()
+            } else {
+                AgentEditor(agent: agent, save: store) {
+                    if let live = manager.liveSession(for: agent.id) { manager.close(live) }
+                    agents.remove(agent)
+                    selection = agents.coordinator(in: current).map { .agent($0.id) }
+                }.dialogStyle()
+            }
         }
         .sheet(isPresented: $showSettings) { SettingsView().dialogStyle() }
         .sheet(isPresented: $showConnectors) { ConnectorsView(project: current).dialogStyle() }

@@ -62,7 +62,7 @@ struct Agent: Codable, Identifiable, Hashable {
 
     static func coordinator(name: String, project: String) -> Agent {
         Agent(name: name, job: "Koordinator", provider: .claude, model: "opus", project: project,
-              avatar: MochiLook(hex: "FFFFFF").key, isCoordinator: true)
+              avatar: MochiLook.coordinator.key, isCoordinator: true)
     }
 }
 

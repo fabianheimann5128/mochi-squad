@@ -127,7 +127,7 @@ struct Onboarding: View {
         VStack(spacing: 0) {
             Spacer()
             VStack(spacing: 22) {
-                MochiCanvas(look: MochiLook(hex: "FFFFFF")).frame(width: 96, height: 96)
+                MochiCanvas(look: .coordinator).frame(width: 96, height: 96)
                 Group {
                     switch step {
                     case 0: welcome

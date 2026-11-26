@@ -1,7 +1,7 @@
 import SwiftUI
 
-// Mochi-Avatare. Körper- und Handumriss, Farbstufen und Lichtebenen sind an Rakazos Maskottchen angelehnt
-// (Apache-2.0, siehe NOTICE); Bauformen, Kopfteile, Augen und Extras sind eigene Ergänzungen von Mochi Squad.
+// Mochi-Avatare: eine eigene Figur von Mochi Squad. Ein weich zerfließender Mochi auf dunkler Kachel,
+// dazu Bauformen, Kopfteile, Augen und Extras aus einem Baukasten.
 
 /// Aussehen eines Mochis. Gespeichert als Schlüssel „mochi:<bau>.<kopf>.<augen>.<extra>:<RRGGBB>“.
 struct MochiLook: Equatable, Hashable {
@@ -17,18 +17,18 @@ struct MochiLook: Equatable, Hashable {
     var top = Top.none
     var eyes = Eyes.oval
     var extra = Extra.none
-    var hex = "FFFFFF"
+    var hex = "F7F2EA"
 
-    /// Bot-Farben (an Rakazos Palette angelehnt).
     static let palette: [(name: String, hex: String)] = [
-        ("Weiß", "FFFFFF"), ("Violett", "A97EFE"), ("Smaragd", "00C972"), ("Orange", "FF781C"),
-        ("Cyan", "1CC3B0"), ("Kobaltblau", "2A92FE"), ("Bernstein", "FFAF38"), ("Karamell", "A27952"),
-        ("Karminrot", "FF3E51"), ("Neonpink", "FF5EB1"), ("Schiefer", "94A3B8")
+        ("Creme", "F7F2EA"), ("Blau", "4C8DFF"), ("Grün", "3CCB7F"), ("Koralle", "FF6B5E"), ("Sonne", "FFC43D"),
+        ("Violett", "9B7BFF"), ("Türkis", "2CC5B6"), ("Rosa", "FF7EB6"), ("Schiefer", "94A3B8")
     ]
+    /// Der Mochi des Koordinators und der App: cremefarben mit Katzenohren.
+    static let coordinator = MochiLook(top: .cat)
 
     var key: String { "mochi:\(build.rawValue).\(top.rawValue).\(eyes.rawValue).\(extra.rawValue):\(hex)" }
 
-    init(build: Build = .classic, top: Top = .none, eyes: Eyes = .oval, extra: Extra = .none, hex: String = "FFFFFF") {
+    init(build: Build = .classic, top: Top = .none, eyes: Eyes = .oval, extra: Extra = .none, hex: String = "F7F2EA") {
         self.build = build; self.top = top; self.eyes = eyes; self.extra = extra; self.hex = hex
     }
 
@@ -81,39 +81,20 @@ struct SeededGenerator: RandomNumberGenerator {
     }
 }
 
-/// Zeichenformen und Farben der Mochis (Koordinaten 0 … 100, Fuß bei y = 100).
+/// Zeichenformen und Farben der Mochis (Koordinaten 0 … 100: Scheitel bei y = 4, Augen bei 40, Fuß bei `foot`).
 enum Mochi {
+    static let foot: CGFloat = 69
+    /// Runder Kopf, der unten weich in einen breiten Fuß zerfließt.
     static let body: Path = {
         var p = Path()
-        p.move(to: CGPoint(x: -1.759, y: 76.33))
-        p.addCurve(to: CGPoint(x: 10.602, y: 56.566), control1: CGPoint(x: 0.959, y: 69.782), control2: CGPoint(x: 7.117, y: 63.647))
-        p.addCurve(to: CGPoint(x: 17.063, y: 33.747), control1: CGPoint(x: 14.086, y: 49.486), control2: CGPoint(x: 14.898, y: 41.46))
-        p.addCurve(to: CGPoint(x: 28.465, y: 13.175), control1: CGPoint(x: 19.227, y: 26.034), control2: CGPoint(x: 22.744, y: 18.634))
-        p.addCurve(to: CGPoint(x: 50.032, y: 4.183), control1: CGPoint(x: 34.186, y: 7.716), control2: CGPoint(x: 42.11, y: 4.197))
-        p.addCurve(to: CGPoint(x: 71.581, y: 13.121), control1: CGPoint(x: 57.954, y: 4.169), control2: CGPoint(x: 65.874, y: 7.66))
-        p.addCurve(to: CGPoint(x: 82.945, y: 33.732), control1: CGPoint(x: 77.288, y: 18.582), control2: CGPoint(x: 80.783, y: 26.014))
-        p.addCurve(to: CGPoint(x: 89.402, y: 56.543), control1: CGPoint(x: 85.107, y: 41.449), control2: CGPoint(x: 85.935, y: 49.451))
-        p.addCurve(to: CGPoint(x: 101.767, y: 76.305), control1: CGPoint(x: 92.869, y: 63.634), control2: CGPoint(x: 98.975, y: 69.814))
-        p.addLine(to: CGPoint(x: 108.0, y: 108.0))
-        p.addLine(to: CGPoint(x: -8.0, y: 108.0))
-        p.closeSubpath()
-        return p
-    }()
-    static let leftHand: Path = {
-        var p = Path()
-        p.move(to: CGPoint(x: -2.0, y: 74.0))
-        p.addCurve(to: CGPoint(x: 26.0, y: 83.0), control1: CGPoint(x: 7.0, y: 68.0), control2: CGPoint(x: 22.0, y: 75.0))
-        p.addCurve(to: CGPoint(x: 19.0, y: 107.0), control1: CGPoint(x: 31.0, y: 93.0), control2: CGPoint(x: 26.0, y: 102.0))
-        p.addLine(to: CGPoint(x: -2.0, y: 107.0))
-        p.closeSubpath()
-        return p
-    }()
-    static let rightHand: Path = {
-        var p = Path()
-        p.move(to: CGPoint(x: 102.0, y: 73.0))
-        p.addCurve(to: CGPoint(x: 74.0, y: 83.0), control1: CGPoint(x: 92.0, y: 68.0), control2: CGPoint(x: 78.0, y: 75.0))
-        p.addCurve(to: CGPoint(x: 81.0, y: 107.0), control1: CGPoint(x: 69.0, y: 93.0), control2: CGPoint(x: 74.0, y: 102.0))
-        p.addLine(to: CGPoint(x: 102.0, y: 107.0))
+        p.move(to: CGPoint(x: 50, y: 4))
+        p.addCurve(to: CGPoint(x: 83.1, y: 37.1), control1: CGPoint(x: 69.4, y: 4), control2: CGPoint(x: 83.1, y: 17.7))
+        p.addCurve(to: CGPoint(x: 99, y: 62.1), control1: CGPoint(x: 83.1, y: 50.7), control2: CGPoint(x: 96.7, y: 53))
+        p.addCurve(to: CGPoint(x: 91, y: foot), control1: CGPoint(x: 100.2, y: 66.7), control2: CGPoint(x: 96.7, y: foot))
+        p.addLine(to: CGPoint(x: 9, y: foot))
+        p.addCurve(to: CGPoint(x: 1, y: 62.1), control1: CGPoint(x: 3.3, y: foot), control2: CGPoint(x: -0.2, y: 66.7))
+        p.addCurve(to: CGPoint(x: 16.9, y: 37.1), control1: CGPoint(x: 3.3, y: 53), control2: CGPoint(x: 16.9, y: 50.7))
+        p.addCurve(to: CGPoint(x: 50, y: 4), control1: CGPoint(x: 16.9, y: 17.7), control2: CGPoint(x: 30.6, y: 4))
         p.closeSubpath()
         return p
     }()
@@ -127,11 +108,6 @@ enum Mochi {
     static func color(_ hex: String, factor: Double = 1) -> Color {
         let (r, g, b) = rgb(hex)
         return Color(.sRGB, red: min(255, r * factor) / 255, green: min(255, g * factor) / 255, blue: min(255, b * factor) / 255)
-    }
-    /// Lichtkante: Grundton zu 90 % Richtung Weiß.
-    static func rim(_ hex: String) -> Color {
-        let (r, g, b) = rgb(hex)
-        return Color(.sRGB, red: (r + (255 - r) * 0.9) / 255, green: (g + (255 - g) * 0.9) / 255, blue: (b + (255 - b) * 0.9) / 255)
     }
     /// Dunkle Augen, solange sie sich ausreichend vom Körper abheben (Kontrast nach WCAG ≥ 3,5).
     static func darkEyes(_ hex: String) -> Bool {
@@ -200,21 +176,11 @@ enum Mochi {
         return top.applying(CGAffineTransform(translationX: 50, y: cut).scaledBy(x: grow, y: grow).translatedBy(x: -50, y: -cut))
     }
 
-    /// Wie stark die Figur für Kopfteile verkleinert wird, damit nichts aus der Kachel ragt.
-    static func fit(_ top: MochiLook.Top) -> Double {
-        switch top {
-        case .none: return 1
-        case .bunny: return 0.78
-        case .antenna, .sprout, .propeller, .crown, .beanie: return 0.84
-        case .headphones: return 0.86
-        default: return 0.9
-        }
-    }
     static func buildScale(_ build: MochiLook.Build) -> (x: Double, y: Double) {
         switch build {
         case .classic: return (1, 1)
         case .tall: return (0.86, 1.06)
-        case .chubby: return (1.1, 0.9)
+        case .chubby: return (1.06, 0.9)
         case .small: return (0.9, 0.82)
         }
     }
@@ -275,7 +241,10 @@ struct MochiCanvas: View, Equatable {
             ctx.scaleBy(x: s, y: s)
             let plate = Path(roundedRect: CGRect(x: 0, y: 0, width: 100, height: 100), cornerRadius: 23, style: .continuous)
             ctx.clip(to: plate)
-            if showsPlate { ctx.fill(plate, with: .color(Color(.sRGB, red: 20 / 255, green: 20 / 255, blue: 20 / 255))) }
+            if showsPlate {
+                ctx.fill(plate, with: .color(Color(.sRGB, red: 20 / 255, green: 20 / 255, blue: 20 / 255)))
+                ctx.fill(plate, with: .radialGradient(Gradient(colors: [look.color.opacity(0.16), .clear]), center: CGPoint(x: 50, y: 40), startRadius: 0, endRadius: 70))
+            }
             draw(&ctx)
             if showsPlate {
                 ctx.stroke(Path(roundedRect: CGRect(x: 0.5, y: 0.5, width: 99, height: 99), cornerRadius: 22.5, style: .continuous),
@@ -286,75 +255,49 @@ struct MochiCanvas: View, Equatable {
 
     private func draw(_ ctx: inout GraphicsContext) {
         let hex = look.hex
-        let base = Mochi.color(hex), edge = Mochi.color(hex, factor: 0.96), shadow = Mochi.color(hex, factor: 0.8)
-        let flank = Mochi.color(hex, factor: 0.58), contact = Mochi.color(hex, factor: 0.42), rim = Mochi.rim(hex)
+        let base = Mochi.color(hex)
         var body = ctx
-        // Fuß bleibt stehen: Bauform, Platz für Kopfteile und Atmen skalieren um den unteren Rand.
-        let fit = Mochi.fit(look.top), build = Mochi.buildScale(look.build)
-        body.translateBy(x: 50, y: 109)
-        body.scaleBy(x: fit * build.x * (1 - 0.015 * breathe), y: fit * build.y * (1 + 0.035 * breathe))
-        body.translateBy(x: -50, y: -100)
+        // Die Figur steht auf der Kachel; Bauform und Atmen skalieren um den Fuß.
+        let build = Mochi.buildScale(look.build), size = 0.88
+        body.translateBy(x: 50, y: 88)
+        body.scaleBy(x: size * build.x * (1 - 0.015 * breathe), y: size * build.y * (1 + 0.035 * breathe))
+        body.translateBy(x: -50, y: -Mochi.foot)
         let shape = Mochi.silhouette(look.top)
 
-        body.boxFill(shape, cx: 0.57, cy: 0.30, r: 0.76, stops: [.init(color: base, location: 0), .init(color: base, location: 0.48),
-                                                                 .init(color: edge, location: 1)])
-        body.ellipseFill(shape, center: CGPoint(x: 0, y: 32), rx: 45, ry: 44, stops: [
-            .init(color: flank.opacity(0.94), location: 0), .init(color: flank.opacity(0.94), location: 0.4),
-            .init(color: flank.opacity(0.76), location: 0.65), .init(color: flank.opacity(0.22), location: 0.85),
-            .init(color: flank.opacity(0), location: 1)])
-        body.ellipseFill(shape, center: CGPoint(x: 57, y: 23.5), rx: 34, ry: 33, stops: [
-            .init(color: .white.opacity(0.28), location: 0), .init(color: .white.opacity(0.12), location: 0.4), .init(color: .white.opacity(0), location: 1)])
-        let area = Path(CGRect(x: -30, y: -40, width: 160, height: 160))
-        // Obere Lichtkante: nach rechts heller, unten ausgeblendet, links oben gedämpft.
+        // Standschatten
         body.drawLayer { layer in
-            layer.ellipseFill(shape, center: CGPoint(x: 50.02, y: 49.42), rx: 35.35, ry: 45.39, radius: 1.1, stops: [
-                .init(color: rim.opacity(0), location: 0), .init(color: rim.opacity(0), location: 0.818),
-                .init(color: rim.opacity(0.035), location: 0.855), .init(color: rim.opacity(0.14), location: 0.882),
-                .init(color: rim.opacity(0.42), location: 0.9), .init(color: rim.opacity(0.53), location: 0.918),
-                .init(color: rim.opacity(0.2), location: 0.941), .init(color: rim.opacity(0), location: 0.973)])
-            layer.blendMode = .destinationIn
-            layer.fill(area, with: .linearGradient(Gradient(stops: [.init(color: .white.opacity(0.25), location: 0),
-                                                                    .init(color: .white.opacity(0.72), location: 0.5), .init(color: .white, location: 1)]),
-                                                   startPoint: CGPoint(x: 0, y: 0), endPoint: CGPoint(x: 100, y: 0)))
-            layer.blendMode = .destinationOut
-            layer.fill(area, with: .linearGradient(Gradient(stops: [.init(color: .black.opacity(0), location: 0), .init(color: .black.opacity(0), location: 0.36),
-                                                                    .init(color: .black, location: 0.58), .init(color: .black, location: 1)]),
-                                                   startPoint: CGPoint(x: 0, y: 0), endPoint: CGPoint(x: 0, y: 100)))
-            layer.ellipseFill(area, center: CGPoint(x: 36, y: 19), rx: 8.4, ry: 10.5, stops: [
-                .init(color: .black.opacity(0.6), location: 0), .init(color: .black.opacity(0.6), location: 0.9),
-                .init(color: .black.opacity(0.5), location: 0.94), .init(color: .black.opacity(0), location: 0.965)])
+            layer.addFilter(.blur(radius: 3))
+            layer.fill(Path(ellipseIn: CGRect(x: 0, y: Mochi.foot - 3.5, width: 100, height: 10)), with: .color(.black.opacity(0.6)))
         }
-        // Seitliche Lichtkanten im unteren Teil.
+        // Grundton mit Licht von links oben, dunkle Flanke rechts unten, Glanzfleck und helle Kante.
+        body.boxFill(shape, cx: 0.4, cy: 0.3, r: 0.8, stops: [.init(color: Mochi.color(hex, factor: 1.08), location: 0), .init(color: base, location: 0.45),
+                                                              .init(color: Mochi.color(hex, factor: 0.78), location: 1)])
         body.drawLayer { layer in
-            for (center, strength) in [(CGPoint(x: -50, y: 30.68), 0.22), (CGPoint(x: 150, y: 30.56), 0.46)] {
-                layer.ellipseFill(shape, center: center, rx: 66.25, ry: 63.2, radius: 1.1, stops: [
-                    .init(color: rim.opacity(0), location: 0), .init(color: rim.opacity(0), location: 0.873),
-                    .init(color: rim.opacity(strength), location: 0.891), .init(color: rim.opacity(strength), location: 0.912),
-                    .init(color: rim.opacity(strength * 0.45), location: 0.93), .init(color: rim.opacity(0), location: 0.955)])
+            layer.clip(to: shape)
+            layer.drawLayer { shade in
+                shade.addFilter(.blur(radius: 8))
+                shade.fill(Path(ellipseIn: CGRect(x: 59, y: 35, width: 60, height: 50)), with: .color(Mochi.color(hex, factor: 0.45).opacity(0.75)))
+                shade.fill(Path(ellipseIn: CGRect(x: -2, y: 66, width: 104, height: 20)), with: .color(Mochi.color(hex, factor: 0.4).opacity(0.8)))
             }
-            layer.blendMode = .destinationIn
-            layer.fill(area, with: .linearGradient(Gradient(stops: [.init(color: .white.opacity(0), location: 0), .init(color: .white.opacity(0), location: 0.36),
-                                                                    .init(color: .white, location: 0.58), .init(color: .white, location: 1)]),
-                                                   startPoint: CGPoint(x: 0, y: 0), endPoint: CGPoint(x: 0, y: 100)))
-        }
-        // Kontaktschatten unter den Händen, dann die Hände mit eigenem Licht.
-        for x in [24.5, 75.5] {
-            body.ellipseFill(shape, center: CGPoint(x: x, y: 91), rx: 7.5, ry: 17, stops: [
-                .init(color: contact.opacity(0.72), location: 0), .init(color: contact.opacity(0.64), location: 0.45),
-                .init(color: contact.opacity(0.3), location: 0.65), .init(color: contact.opacity(0.04), location: 0.9),
-                .init(color: contact.opacity(0), location: 1)])
-        }
-        for (hand, cx, peak) in [(Mochi.leftHand, 0.6, 0.15), (Mochi.rightHand, 0.4, 0.24)] {
-            var clipped = body
-            clipped.clip(to: Mochi.body)
-            clipped.boxFill(hand, cx: cx, cy: 0.35, r: 0.76, stops: [.init(color: base, location: 0), .init(color: base, location: 0.28),
-                                                                   .init(color: shadow, location: 1)])
-            clipped.boxFill(hand, cx: cx, cy: 0.35, r: 0.62, stops: [.init(color: .white.opacity(peak), location: 0), .init(color: .white.opacity(0), location: 1)])
+            layer.drawLayer { gloss in
+                gloss.addFilter(.blur(radius: 5.5))
+                gloss.fill(Path(ellipseIn: CGRect(x: 17, y: 10, width: 32, height: 18)), with: .color(.white.opacity(0.5)))
+            }
+            layer.drawLayer { edge in
+                edge.addFilter(.blur(radius: 0.9))
+                edge.stroke(shape.applying(CGAffineTransform(translationX: 0.9, y: 1.6)), with: .color(.white.opacity(0.35)), lineWidth: 1.8)
+            }
         }
         drawHeadwear(&body)
         let dark = Mochi.darkEyes(hex)
         let ink = dark ? Mochi.eyeInk : Color(white: 0.96)
-        if look.extra == .blush { drawBlush(&body) }
+        drawBlush(&body, strength: look.extra == .blush ? 0.9 : 0.5)
+        if look.extra != .moustache {
+            var mouth = Path()
+            mouth.move(to: CGPoint(x: 46, y: 50.5))
+            mouth.addQuadCurve(to: CGPoint(x: 54, y: 50.5), control: CGPoint(x: 50, y: 55.5))
+            body.stroke(mouth, with: .color(ink), style: StrokeStyle(lineWidth: 2.4, lineCap: .round))
+        }
         if look.extra == .freckles { drawFreckles(&body, ink: ink) }
         if look.extra == .scarf { drawScarf(&body) }
         if look.extra == .badge { drawBadge(&body) }
@@ -427,11 +370,11 @@ struct MochiCanvas: View, Equatable {
         }
     }
 
-    private func drawBlush(_ ctx: inout GraphicsContext) {
-        for x in [29.0, 71.0] {
-            ctx.fill(Path(ellipseIn: CGRect(x: x - 5.5, y: 48, width: 11, height: 6)),
-                     with: .radialGradient(Gradient(colors: [Color(.sRGB, red: 1, green: 0.42, blue: 0.62, opacity: 0.55), .clear]),
-                                           center: CGPoint(x: x, y: 51), startRadius: 0, endRadius: 6))
+    private func drawBlush(_ ctx: inout GraphicsContext, strength: Double) {
+        for x in [28.0, 72.0] {
+            ctx.fill(Path(ellipseIn: CGRect(x: x - 7, y: 46, width: 14, height: 9)),
+                     with: .radialGradient(Gradient(colors: [Color(.sRGB, red: 1, green: 0.45, blue: 0.55, opacity: strength), .clear]),
+                                           center: CGPoint(x: x, y: 50.5), startRadius: 0, endRadius: 7))
         }
     }
 
@@ -447,7 +390,7 @@ struct MochiCanvas: View, Equatable {
     }
 
     private func drawBow(_ ctx: inout GraphicsContext) {
-        let ribbon = Mochi.color(look.hex == "FF3E51" || look.hex == "FF5EB1" ? "FFFFFF" : "FF3E51")
+        let ribbon = Mochi.color(look.hex == "FF6B5E" || look.hex == "FF7EB6" ? "F7F2EA" : "FF6B5E")
         var bow = Path()
         bow.move(to: CGPoint(x: 66, y: 16))
         bow.addQuadCurve(to: CGPoint(x: 56, y: 9), control: CGPoint(x: 58, y: 18))
@@ -463,9 +406,9 @@ struct MochiCanvas: View, Equatable {
     /// Kontrastfarbe für Zubehör, damit es sich von jeder Körperfarbe abhebt.
     private var accentHex: String {
         switch look.hex {
-        case "FF3E51", "FF5EB1", "FF781C": return "2A92FE"
-        case "FFAF38", "A27952": return "1CC3B0"
-        default: return "FF5A4D"
+        case "FF6B5E", "FF7EB6": return "4C8DFF"
+        case "FFC43D": return "2CC5B6"
+        default: return "FF6B5E"
         }
     }
     private var accent: Color { Mochi.color(accentHex) }
@@ -586,9 +529,10 @@ struct MochiCanvas: View, Equatable {
     }
 
     private func drawScarf(_ ctx: inout GraphicsContext) {
-        castShadow(ctx, below: 70, depth: 6)
+        var ctx = ctx
+        ctx.translateBy(x: 0, y: -4)
         var clipped = ctx
-        clipped.clip(to: Mochi.body)
+        clipped.clip(to: Mochi.body.applying(CGAffineTransform(translationX: 0, y: 4)))
         var band = Path()
         band.move(to: CGPoint(x: -4, y: 60))
         band.addQuadCurve(to: CGPoint(x: 104, y: 60), control: CGPoint(x: 50, y: 74))
@@ -627,7 +571,7 @@ struct MochiCanvas: View, Equatable {
         for i in 0..<10 {
             let radius: CGFloat = i % 2 == 0 ? 6.4 : 2.7
             let angle = CGFloat(i) * .pi / 5 - .pi / 2
-            let point = CGPoint(x: 73 + cos(angle) * radius, y: 71 + sin(angle) * radius)
+            let point = CGPoint(x: 73 + cos(angle) * radius, y: 59 + sin(angle) * radius)
             if i == 0 { star.move(to: point) } else { star.addLine(to: point) }
         }
         star.closeSubpath()

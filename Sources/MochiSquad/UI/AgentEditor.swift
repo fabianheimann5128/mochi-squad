@@ -1,21 +1,19 @@
 import SwiftUI
 
-/// Agent anlegen oder bearbeiten: Aussehen, Name, Job, Aufgaben, Anbieter, Modell und Rechte.
+/// Bestehenden Agenten bearbeiten: Aussehen, Name, Job, Aufgaben, Anbieter, Modell und Rechte. Neue legt AgentWizard an.
 struct AgentEditor: View {
     @State var agent: Agent
-    let isNew: Bool
     let save: (Agent) -> Void
     let remove: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var confirmRemove = false
-    @FocusState private var nameFocused: Bool
 
     private var look: MochiLook { MochiLook(key: agent.avatar) }
     private var valid: Bool { !agent.name.trimmingCharacters(in: .whitespaces).isEmpty }
 
     var body: some View {
         VStack(spacing: 0) {
-            Text(isNew ? "Neuer Agent" : "Agent bearbeiten").font(.system(size: 17, weight: .semibold)).padding(.top, 20)
+            Text("Agent bearbeiten").font(.system(size: 17, weight: .semibold)).padding(.top, 20)
             HStack(spacing: 16) {
                 MochiAvatar(key: agent.avatar, size: 92)
                 VStack(alignment: .leading, spacing: 8) {
@@ -38,19 +36,8 @@ struct AgentEditor: View {
                 Spacer()
             }.padding(.horizontal, 26).padding(.top, 16).padding(.bottom, 14)
             VStack(spacing: 12) {
-                if isNew {
-                    row("Vorlage") {
-                        HStack(spacing: 6) {
-                            ForEach(AgentTemplate.all) { template in
-                                Button(template.job.isEmpty ? "Eigener" : template.job) {
-                                    agent.job = template.job; agent.instructions = template.instructions; agent.canEdit = template.canEdit
-                                }.buttonStyle(.pill)
-                            }
-                        }.frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
                 row("Name") {
-                    TextField("z. B. Mira", text: $agent.name).textFieldStyle(.plain).font(.system(size: 13.5)).focused($nameFocused)
+                    TextField("z. B. Mira", text: $agent.name).textFieldStyle(.plain).font(.system(size: 13.5))
                         .padding(.horizontal, 12).frame(height: 32).field(8)
                 }
                 row("Job") {
@@ -103,7 +90,7 @@ struct AgentEditor: View {
             }.padding(.horizontal, 26)
             Rectangle().fill(Desk.rule).frame(height: 1).padding(.top, 18)
             HStack(spacing: 10) {
-                if !isNew && !agent.isCoordinator {
+                if !agent.isCoordinator {
                     Button { confirmRemove = true } label: { Image(systemName: "trash") }.buttonStyle(.pill).help("Agent entfernen")
                         .confirmationDialog(agent.name + " entfernen?", isPresented: $confirmRemove) {
                             Button("Agent entfernen", role: .destructive) { remove(); dismiss() }
@@ -112,14 +99,13 @@ struct AgentEditor: View {
                 }
                 Spacer()
                 Button("Abbrechen") { dismiss() }.buttonStyle(.pill).keyboardShortcut(.cancelAction)
-                Button(isNew ? "Agent anlegen" : "Speichern") {
+                Button("Speichern") {
                     agent.name = agent.name.trimmingCharacters(in: .whitespaces)
                     save(agent); dismiss()
                 }.buttonStyle(.primaryPill).keyboardShortcut(.defaultAction).disabled(!valid).opacity(valid ? 1 : 0.5)
             }.padding(.horizontal, 22).padding(.vertical, 16)
         }
         .frame(width: 560)
-        .onAppear { nameFocused = isNew }
     }
 
     private func set(_ change: @escaping (inout MochiLook, Int) -> Void) -> (Int) -> Void {

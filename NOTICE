@@ -8,10 +8,6 @@ It includes or adapts the following third-party work:
 1. Rakazo (https://github.com/elie222/rakazo), licensed under the Apache License, Version 2.0.
    - The dark-theme design tokens (colors, radii, type scale) in Sources/MochiSquad/UI/Theme.swift are
      taken from packages/ui-tokens and packages/ui-web.
-   - The base body of the mascot avatar in Sources/MochiSquad/UI/MochiAvatar.swift (body and hand outlines, paint palette,
-     lighting layers, eyes and the bot color palette) is adapted from
-     packages/core/src/avatars/logo-avatar-art.ts, packages/ui-web/src/logo-avatar-body.tsx,
-     packages/ui-web/src/logo-avatar.tsx and packages/contracts/src/bots/bot-avatar.ts.
    "Rakazo" is a name of its respective owners; Mochi Squad is not affiliated with or endorsed by Rakazo.
 
 2. SwiftTerm (https://github.com/migueldeicaza/SwiftTerm), MIT License,

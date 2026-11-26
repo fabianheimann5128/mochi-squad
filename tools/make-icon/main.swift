@@ -12,7 +12,7 @@ import SwiftUI
             RoundedRectangle(cornerRadius: 185, style: .continuous)
                 .fill(RadialGradient(colors: [Color(.sRGB, red: 0.35, green: 0.45, blue: 1, opacity: 0.35), .clear],
                                      center: UnitPoint(x: 0.5, y: 0.35), startRadius: 0, endRadius: 520))
-            MochiCanvas(look: MochiLook(hex: "FFFFFF"), showsPlate: false)
+            MochiCanvas(look: .coordinator, showsPlate: false)
                 .frame(width: 824, height: 824).clipShape(RoundedRectangle(cornerRadius: 185, style: .continuous))
             RoundedRectangle(cornerRadius: 185, style: .continuous).strokeBorder(Color.white.opacity(0.12), lineWidth: 3)
         }.frame(width: 824, height: 824).shadow(color: .black.opacity(0.35), radius: 22, y: 12).frame(width: 1024, height: 1024)
