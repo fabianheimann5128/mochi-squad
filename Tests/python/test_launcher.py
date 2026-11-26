@@ -108,7 +108,7 @@ class SettingsTests(unittest.TestCase):
         settings = self.settings(canEdit=True)
         self.assertIn(f"Edit(/{self.project}/**)", settings["permissions"]["allow"])
         self.assertIn(f"Edit(/{self.project}/.claude/**)", settings["permissions"]["deny"])
-        self.assertEqual(settings["sandbox"]["filesystem"]["denyWrite"], [self.project + "/.claude"])
+        self.assertEqual(settings["sandbox"]["filesystem"]["denyWrite"][0], self.project + "/.claude")
 
     def test_post_rule_needs_tool_and_outbox_and_only_opens_the_outbox(self):
         spec = make_spec(self.project)
@@ -215,7 +215,7 @@ class ArgumentTests(unittest.TestCase):
         spec = make_spec(self.dir.name, canEdit=True)
         spec.update(outbox="/x/outbox/abc", allowWeb=True)
         editor = launcher.build_codex_permissions(spec, home=home)
-        self.assertEqual(editor["filesystem"][":project_roots"], {".": "write"})
+        self.assertEqual(editor["filesystem"][":project_roots"]["."], "write")
         self.assertEqual(editor["filesystem"]["/x/outbox/abc"], "write")
         self.assertTrue(editor["network"]["enabled"])
         for secret in (".ssh", ".codex", ".claude", "Library/Application Support"):
@@ -245,6 +245,36 @@ class ArgumentTests(unittest.TestCase):
         # Ein Client, der die Sperre durchsetzt: der Lesetest scheitert, der Leerlauf gelingt.
         script.write_text('#!/bin/sh\nfor a; do last="$a"; done\ncase "$last" in /usr/bin/true) exit 0;; *) exit 1;; esac\n')
         self.assertTrue(launcher.codex_profile_enforced(str(script), spec))
+
+    def test_editors_cannot_touch_client_folders(self):
+        spec = make_spec(self.dir.name, canEdit=True)
+        codex = launcher.build_codex_permissions(spec, home=Path("/Users/test"))
+        claude = launcher.build_claude_settings(spec, home=Path("/Users/test"))
+        for folder in (".claude", ".codex", ".git/hooks"):
+            self.assertEqual(codex["filesystem"][":project_roots"][folder], "read")
+            self.assertIn(str(Path(spec["project"]) / folder), claude["sandbox"]["filesystem"]["denyWrite"])
+            self.assertIn(f"Edit(/{spec['project']}/{folder}/**)", claude["permissions"]["deny"])
+
+    def test_codex_sees_only_its_own_outbox(self):
+        spec = make_spec(self.dir.name)
+        own = str(common.OUTBOXES / "abc")
+        spec["outbox"] = own
+        files = launcher.build_codex_permissions(spec)["filesystem"]
+        self.assertEqual(files[str(common.OUTBOXES)], "none")
+        self.assertEqual(files[own], "write")
+
+    def test_project_must_not_expose_home(self):
+        home = Path(self.dir.name).resolve()
+        (home / "Library" / "Caches").mkdir(parents=True)
+        (home / "Projekt").mkdir()
+        for bad in (home, home.parent, Path("/"), home / "Library", home / "Library" / "Caches"):
+            self.assertFalse(common.project_allowed(bad, home=home), bad)
+        self.assertTrue(common.project_allowed(home / "Projekt", home=home))
+        with self.assertRaises(launcher.SpecError):
+            launcher.validate_spec(make_spec(str(common.HOME)))
+
+    def test_toml_keeps_unicode(self):
+        self.assertEqual(launcher._toml({"/Users/zoë 😀": "none"}), '{"/Users/zoë 😀" = "none"}')
 
     def test_toml_escapes_keys(self):
         self.assertEqual(launcher._toml({'a "b"': {"c": True}}), '{"a \\"b\\"" = {"c" = true}}')

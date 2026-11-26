@@ -139,7 +139,7 @@ struct Workspace: View {
         panel.canCreateDirectories = true
         panel.prompt = "Projekt hinzufügen"
         guard panel.runModal() == .OK, let folder = panel.url?.standardizedFileURL.resolvingSymlinksInPath() else { return }
-        settings.addProject(folder)
+        guard settings.addProject(folder) else { manager.notice = SettingsStore.refusedProject; return }
         choose(folder)
     }
 

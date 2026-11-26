@@ -182,4 +182,14 @@ import Testing
         #expect(file?["_CFURLString"] as? String == "/Applications/Tom & Jerry <2>.app")
         #expect(file?["_CFURLStringType"] as? Int == 0)
     }
+
+    @MainActor @Test func projectMustNotExposeHome() {
+        let home = URL(fileURLWithPath: "/Users/alex")
+        for bad in ["/", "/Users", "/Users/alex", "/Users/alex/Library", "/Users/alex/Library/Caches/x"] {
+            #expect(!SettingsStore.projectAllowed(URL(fileURLWithPath: bad), home: home), "\(bad)")
+        }
+        for good in ["/Users/alex/Mochi Squad", "/Users/alexander", "/Volumes/Daten/Projekt"] {
+            #expect(SettingsStore.projectAllowed(URL(fileURLWithPath: good), home: home), "\(good)")
+        }
+    }
 }

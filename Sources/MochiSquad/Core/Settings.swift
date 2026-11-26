@@ -26,9 +26,23 @@ struct AppSettings: Codable, Equatable {
             .filter { FileManager.default.fileExists(atPath: $0.path) }
     }
 
-    func addProject(_ folder: URL) {
+    static let refusedProject = "Dieser Ordner geht als Projekt nicht: Agenten könnten sonst an Zugangsdaten und Systemdateien. Wähle einen Ordner unterhalb deines Benutzerordners."
+
+    /// Wie common.project_allowed: nie der Benutzerordner selbst, nichts darüber und nichts in ~/Library.
+    static func projectAllowed(_ folder: URL, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> Bool {
+        let path = folder.standardizedFileURL.resolvingSymlinksInPath().path
+        let home = home.standardizedFileURL.resolvingSymlinksInPath().path
+        let library = home + "/Library"
+        return path != home && !(home + "/").hasPrefix(path == "/" ? "/" : path + "/") && path != library && !path.hasPrefix(library + "/")
+    }
+
+    /// Nimmt den Ordner als Projekt auf. `false`, wenn er als Projekt nicht erlaubt ist.
+    @discardableResult
+    func addProject(_ folder: URL) -> Bool {
+        guard Self.projectAllowed(folder) else { return false }
         let path = folder.standardizedFileURL.resolvingSymlinksInPath().path
         if !value.projects.contains(path) { value.projects.append(path) }
+        return true
     }
 
     func removeProject(_ folder: URL) {

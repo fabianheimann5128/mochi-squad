@@ -20,6 +20,8 @@ import common
 SECRET_PATHS = (".ssh", ".aws", ".gnupg", ".config/gh", ".config/gcloud", ".config/op", ".docker", ".kube", ".netrc", ".npmrc", ".pypirc", ".git-credentials",
                 ".codex", ".claude", ".claude.json", "Library/Keychains", "Library/Application Support", "Library/Cookies",
                 "Library/Mail", "Library/Messages", "Library/Safari", "Library/Containers", "Library/Group Containers")
+# Im Projekt nie beschreibbar: Hier könnte sich ein Agent Rechte geben oder Code für spätere Sitzungen ablegen.
+CLIENT_FOLDERS = (".claude", ".codex", ".git/hooks")
 CHAT_ID = __import__("re").compile(r"[A-Za-z0-9-]{8,64}")
 
 CHAT_STYLE = ("Deine Antworten erscheinen in Mochi Squad als Chat. Schreib kurz und verständlich in der Du-Form: "
@@ -45,6 +47,8 @@ def validate_spec(spec):
     project = Path(str(spec.get("project", ""))).expanduser()
     if not project.is_absolute() or not project.is_dir():
         raise SpecError("Der Projektordner ist nicht erreichbar.")
+    if not common.project_allowed(project):
+        raise SpecError("Dieser Ordner ist als Projekt nicht erlaubt. Wähle einen Ordner unterhalb deines Benutzerordners.")
     if not str(spec.get("task", "")).strip():
         raise SpecError("Der Auftrag ist leer.")
     try:
@@ -145,9 +149,9 @@ def build_claude_settings(spec, home=None):
     agent, project = spec["agent"], spec["project"]
     allow = [f"Read(/{project}/**)"]
     # Edit-Regeln gelten für alle Werkzeuge, die Dateien ändern.
-    deny = [f"Edit(/{project}/.claude/**)", f"Read(/{home / 'Library/Application Support'}/**)"]
+    deny = [f"Edit(/{project}/{p}/**)" for p in CLIENT_FOLDERS] + [f"Read(/{home / 'Library/Application Support'}/**)"]
     filesystem = {"denyRead": [str(home / p) for p in SECRET_PATHS],
-                  "denyWrite": [str(Path(project) / ".claude")] if agent["canEdit"] else [project]}
+                  "denyWrite": [str(Path(project) / p) for p in CLIENT_FOLDERS] if agent["canEdit"] else [project]}
     if agent["canEdit"]:
         allow.append(f"Edit(/{project}/**)")
     if spec.get("post") and spec.get("outbox"):
@@ -195,8 +199,8 @@ def claude_args(spec, interactive=True):
 def _toml(value):
     """Schreibt Wahrheitswerte, Zeichenketten und Tabellen als TOML-Wert für `codex -c`."""
     if isinstance(value, dict):
-        return "{" + ", ".join(f"{json.dumps(str(k))} = {_toml(v)}" for k, v in value.items()) + "}"
-    return json.dumps(value)
+        return "{" + ", ".join(f"{json.dumps(str(k), ensure_ascii=False)} = {_toml(v)}" for k, v in value.items()) + "}"
+    return json.dumps(value, ensure_ascii=False)
 
 
 def build_codex_permissions(spec, home=None):
@@ -207,7 +211,11 @@ def build_codex_permissions(spec, home=None):
     """
     home = Path(home or common.HOME)
     edit = spec["agent"]["canEdit"]
-    files = {":root": "read", ":project_roots": {".": "write" if edit else "read"}}
+    roots = {".": "write" if edit else "read"}
+    if edit:
+        roots.update({p: "read" for p in CLIENT_FOLDERS})
+    # Fremde Postausgänge sind gesperrt; der eigene wird unten wieder freigegeben.
+    files = {":root": "read", ":project_roots": roots, str(common.OUTBOXES): "none"}
     if edit:
         files[":tmpdir"] = "write"
     files.update({str(home / p): "none" for p in SECRET_PATHS})
@@ -232,7 +240,11 @@ def codex_profile_enforced(binary, spec, home=None, timeout=20):
                                   timeout=timeout).returncode
         except (OSError, subprocess.TimeoutExpired):
             return None
-    return probe("/usr/bin/true") == 0 and probe("/bin/ls", locked) not in (0, None)
+    # Leerlauf gelingt, Lesen und Schreiben an gesperrter Stelle scheitern. Die Probedatei läge in den App-Daten.
+    marker = str(Path(locked) / common.APP_NAME / ".profilprobe")
+    ok = probe("/usr/bin/true") == 0 and probe("/bin/ls", locked) not in (0, None) and probe("/usr/bin/touch", marker) not in (0, None)
+    Path(marker).unlink(missing_ok=True)
+    return ok
 
 
 OUTDATED_CODEX = ("Diese Codex-Version kennt keine Rechteprofile, die Lesesperren würden nicht greifen. "
@@ -321,6 +333,9 @@ def login(provider):
     binary = common.find_client(provider)
     if not binary:
         raise SystemExit("Das Programm ist auf diesem Mac nicht installiert.")
+    env = common.client_path_env(common.clean_child_env())
+    os.environ.clear()
+    os.environ.update(env)
     os.execv(binary, [binary, *(["login"] if provider == "codex" else ["auth", "login"])])
 
 

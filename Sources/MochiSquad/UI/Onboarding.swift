@@ -180,10 +180,11 @@ struct Onboarding: View {
                     Text(folder.map { FileManager.default.fileExists(atPath: $0.path) } == false ? "wird angelegt" : "Ändern").foregroundStyle(Desk.faint)
                 }.font(.system(size: 13.5)).padding(.horizontal, 14).frame(height: 40).field(12).contentShape(Rectangle())
             }.buttonStyle(.plain)
-            note("Agenten dürfen in diesem Ordner lesen. Schreiben dürfen nur die, denen du es erlaubst.", Desk.dim)
+            if folderAllowed { note("Agenten dürfen in diesem Ordner lesen. Schreiben dürfen nur die, denen du es erlaubst.", Desk.dim) }
+            else { note(SettingsStore.refusedProject, Desk.warning) }
             HStack(spacing: 10) {
                 Button("Zurück") { step = 0 }.buttonStyle(.pill)
-                Button("Weiter") { step = 2 }.buttonStyle(.primaryPill).keyboardShortcut(.defaultAction).disabled(folder == nil)
+                Button("Weiter") { step = 2 }.buttonStyle(.primaryPill).keyboardShortcut(.defaultAction).disabled(!folderAllowed)
             }
         }
     }
@@ -212,6 +213,8 @@ struct Onboarding: View {
         }
     }
 
+    private var folderAllowed: Bool { folder.map { SettingsStore.projectAllowed($0) } ?? false }
+
     private var coordinatorName: String {
         let trimmed = coordinator.trimmingCharacters(in: .whitespaces)
         return trimmed.isEmpty ? "Mochi" : trimmed
@@ -225,7 +228,7 @@ struct Onboarding: View {
     }
 
     private func complete() {
-        guard let folder, (try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)) != nil else { return }
+        guard let folder, folderAllowed, (try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)) != nil else { return }
         settings.value.ownerName = name.trimmingCharacters(in: .whitespaces)
         settings.value.coordinatorName = coordinatorName
         settings.addProject(folder)

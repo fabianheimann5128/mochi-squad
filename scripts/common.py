@@ -31,6 +31,17 @@ def codex_home():
     return Path(os.environ.get("CODEX_HOME") or HOME / ".codex")
 
 
+def project_allowed(project, home=None):
+    """Ein Projekt liegt unterhalb des Benutzerordners oder außerhalb davon, aber nie darüber und nie in ~/Library.
+
+    Sonst lägen Zugangsdaten, Startskripte oder die Daten der App selbst im beschreibbaren Bereich eines Agenten.
+    """
+    home = Path(home or HOME).resolve()
+    project = Path(project).resolve()
+    library = home / "Library"
+    return project != home and project not in home.parents and project != library and library not in project.parents
+
+
 def project_key(project):
     """So benennt Claude Code den Ordner eines Projekts unter ~/.claude/projects."""
     return re.sub(r"[^a-zA-Z0-9]", "-", str(project))

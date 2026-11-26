@@ -79,7 +79,7 @@ import Foundation
             tools = (config, bridge.token)
         }
         let session = try AgentSession(agent: agent, project: project, task: task)
-        let team = agents.agents(in: project).filter { $0.id != agent.id }.map { "\($0.name) (\($0.jobTitle))" }
+        let team = agents.agents(in: project).filter { !$0.isCoordinator && $0.id != agent.id }.map { "\($0.name) (\($0.jobTitle))" }
         let spec = SessionSpec(agent: agent, project: project, task: task, sessionID: session.id, owner: settings.value.owner,
                                team: team, parentChat: parentChat)
         session.onPost = { [weak self, weak session] to, text in
@@ -134,7 +134,8 @@ import Foundation
 
     /// Nachricht eines Agenten an einen anderen benannten Agenten desselben Projekts.
     func deliver(from origin: AgentSession, to name: String, text: String) -> String {
-        let people = agents.agents(in: origin.project).filter { $0.id != origin.agentID }
+        // Der Koordinator ist für Agenten nicht erreichbar: Über seine Werkzeuge könnten sie sonst mehr anstoßen, als sie selbst dürfen.
+        let people = agents.agents(in: origin.project).filter { !$0.isCoordinator && $0.id != origin.agentID }
         let roster = people.map { "\($0.name) (\($0.jobTitle))" }.joined(separator: ", ")
         if name == "?" { return roster.isEmpty ? "Keine weiteren Agenten in diesem Projekt." : "Erreichbar: " + roster }
         guard let target = people.first(where: { $0.name.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }) else {
@@ -198,7 +199,8 @@ import Foundation
     /// Leitet eine Team-Nachricht an alle mit @Name Angesprochenen weiter. `origin` ist der schreibende Agent, nil für den Nutzer.
     @discardableResult
     private func relay(_ text: String, from origin: Agent?, project: URL, skip: Set<UUID> = []) -> Set<UUID> {
-        let people = agents.agents(in: project).filter { $0.id != origin?.id }
+        // Den Koordinator ruft nur der Nutzer; Agenten erreichen ihn auch im Team-Chat nicht (siehe deliver).
+        let people = agents.agents(in: project).filter { $0.id != origin?.id && (origin == nil || !$0.isCoordinator) }
         var targets = people.filter { Mention.contains(text, $0.name) && !skip.contains($0.id) }
         if origin == nil {
             // @alle meint die Fachagenten. Ohne Anrede geht es weiter mit den zuletzt Angesprochenen, sonst an den Koordinator.
