@@ -284,4 +284,13 @@ import Testing
         #expect(AttachmentPreview.fitted(CGSize(width: 600, height: 1200)) == CGSize(width: 120, height: 240))
         #expect(AttachmentPreview.fitted(CGSize(width: 100, height: 80)) == CGSize(width: 100, height: 80))
     }
+
+    @Test func everyAgentHasAnExplicitModel() {
+        var agent = Agent(name: "Emil", job: "", project: "/tmp/p")
+        #expect(agent.withModel().model == "opus")
+        agent.model = "sonnet"
+        #expect(agent.withModel().model == "sonnet")
+        agent.provider = .codex
+        #expect(Provider.codex.models.contains(agent.withModel().model))
+    }
 }

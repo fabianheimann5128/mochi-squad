@@ -61,6 +61,10 @@ enum LaunchError: LocalizedError {
 @MainActor final class AgentSession: NSObject, Identifiable, ObservableObject {
     let id = UUID()
     let agentID: UUID
+    /// Zugriffsstufe, mit der diese Sitzung gestartet wurde; sie gilt, bis die Sitzung endet.
+    let access: Agent.Access
+    /// Modell, mit dem diese Sitzung gestartet wurde.
+    let model: String
     let project: URL
     let provider: Provider
     let task: String
@@ -93,6 +97,8 @@ enum LaunchError: LocalizedError {
 
     init(agent: Agent, project: URL, task: String) throws {
         agentID = agent.id
+        access = agent.access
+        model = agent.model
         self.project = project
         provider = agent.provider
         self.task = task

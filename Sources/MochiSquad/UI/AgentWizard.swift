@@ -122,7 +122,7 @@ struct AgentWizard: View {
                 HStack(spacing: 8) {
                     Text("ChatGPT-Abo").font(.system(size: 13)).foregroundStyle(Desk.dim)
                     Picker("", selection: Binding(get: { agent.account ?? "" }, set: { agent.account = $0.isEmpty ? nil : $0 })) {
-                        Text("Standard-Abo").tag("")
+                        Text("Haupt-Abo").tag("")
                         ForEach(settings.accounts) { Text($0.name).tag($0.id) }
                     }.labelsHidden().fixedSize()
                 }

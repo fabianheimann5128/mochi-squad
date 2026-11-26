@@ -60,14 +60,13 @@ struct AgentEditor: View {
                         .font(.system(size: 13.5)).padding(.horizontal, 12).frame(height: 32).field(8)
                 }
                 row("Anbieter") {
-                    PillPicker(selection: Binding(get: { agent.provider }, set: { agent.provider = $0; agent.model = ""; agent.effort = ""; agent.account = nil }),
+                    PillPicker(selection: Binding(get: { agent.provider }, set: { agent.provider = $0; agent.model = $0.models.first ?? ""; agent.effort = ""; agent.account = nil }),
                                options: Provider.allCases.map { ($0, $0.vendor + " · " + $0.title) })
                         .frame(maxWidth: .infinity, alignment: .leading).disabled(agent.isCoordinator)
                 }
                 row("Modell") {
                     HStack(spacing: 8) {
                         Picker("", selection: $agent.model) {
-                            Text("Standard des Clients").tag("")
                             ForEach(agent.provider.models, id: \.self) { Text($0).tag($0) }
                         }.labelsHidden().fixedSize()
                             .onChange(of: agent.model) { _, model in if !agent.provider.efforts(for: model).contains(agent.effort) { agent.effort = "" } }
@@ -81,7 +80,7 @@ struct AgentEditor: View {
                 if agent.provider == .codex, !settings.accounts.isEmpty {
                     row("ChatGPT-Abo") {
                         Picker("", selection: Binding(get: { agent.account ?? "" }, set: { agent.account = $0.isEmpty ? nil : $0 })) {
-                            Text("Standard-Abo").tag("")
+                            Text("Haupt-Abo").tag("")
                             ForEach(settings.accounts) { Text($0.name).tag($0.id) }
                         }.labelsHidden().fixedSize()
                             .frame(maxWidth: .infinity, alignment: .leading)

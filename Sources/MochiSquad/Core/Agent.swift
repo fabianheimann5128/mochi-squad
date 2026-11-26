@@ -7,7 +7,7 @@ enum Provider: String, Codable, CaseIterable, Identifiable {
     var title: String { self == .claude ? "Claude Code" : "Codex" }
     var vendor: String { self == .claude ? "Anthropic" : "OpenAI" }
 
-    /// Modelle zur Auswahl; leer bedeutet „Standard des Clients“.
+    /// Modelle zur Auswahl; das erste ist die Vorgabe für Agenten ohne Angabe.
     var models: [String] { self == .claude ? ["opus", "sonnet", "haiku"] : CodexCatalog.models.map(\.slug) }
 
     func efforts(for model: String) -> [String] {
@@ -75,6 +75,15 @@ struct Agent: Codable, Identifiable, Hashable {
             }
         }
     }
+    /// Jeder Agent hat ein ausdrückliches Modell; fehlt es oder passt es nicht zum Anbieter, gilt dessen erstes.
+    func withModel() -> Agent {
+        guard !provider.models.contains(model), let first = provider.models.first else { return self }
+        var copy = self
+        copy.model = first
+        if !provider.efforts(for: first).contains(copy.effort) { copy.effort = "" }
+        return copy
+    }
+
     var access: Access {
         get { fullAccess == true ? .full : canEdit ? .edit : .read }
         set { canEdit = newValue != .read; fullAccess = newValue == .full ? true : nil }
@@ -123,7 +132,7 @@ struct AgentTemplate: Identifiable {
             let backup = file.deletingPathExtension().appendingPathExtension("defekt-\(Int(Date().timeIntervalSince1970)).json")
             try? FileManager.default.copyItem(at: file, to: backup)
         }
-        agents = loaded ?? []
+        agents = (loaded ?? []).map { $0.withModel() }
     }
 
     func agents(in project: URL) -> [Agent] { agents.filter { $0.project == project.path } }
@@ -149,6 +158,7 @@ struct AgentTemplate: Identifiable {
     }
 
     func save(_ agent: Agent) {
+        let agent = agent.withModel()
         if let index = agents.firstIndex(where: { $0.id == agent.id }) { agents[index] = agent } else { agents.append(agent) }
         persist()
     }

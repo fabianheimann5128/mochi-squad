@@ -171,7 +171,15 @@ private struct ComputerView: View {
             VStack(alignment: .leading, spacing: 9) {
                 line("Arbeitsordner", URL(fileURLWithPath: agent.project).lastPathComponent)
                 line("Anbieter", agent.provider.title)
-                line("Modell", agent.model.isEmpty ? "Standard" : agent.model)
+                HStack {
+                    Text("Modell").foregroundStyle(Desk.dim)
+                    Spacer(minLength: 6)
+                    Picker("Modell", selection: Binding(get: { agent.model }, set: { model in
+                        agents.update(agent.id) { $0.model = model; if !$0.provider.efforts(for: model).contains($0.effort) { $0.effort = "" } }
+                    })) {
+                        ForEach(agent.provider.models, id: \.self) { Text($0).tag($0) }
+                    }.labelsHidden().fixedSize().controlSize(.small)
+                }.font(.system(size: 12.5))
                 if let account = settings.accounts.first(where: { $0.id == agent.account }) { line("ChatGPT-Abo", account.name) }
                 HStack {
                     Text("Zugriff").foregroundStyle(Desk.dim)
@@ -183,9 +191,13 @@ private struct ComputerView: View {
                 if agent.access == .full {
                     Text(Agent.Access.full.note).font(.system(size: 11.5)).foregroundStyle(Desk.warning).fixedSize(horizontal: false, vertical: true)
                 }
-                // Rechte stehen beim Start einer Sitzung fest.
-                if manager.liveSession(for: agent.id) != nil {
-                    Text("Gilt ab der nächsten Sitzung.").font(.system(size: 11.5)).foregroundStyle(Desk.faint)
+                // Rechte stehen beim Start einer Sitzung fest; ein Neustart wendet die neue Stufe sofort an.
+                if let live = manager.liveSession(for: agent.id), live.access != agent.access || live.model != agent.model {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Die laufende Sitzung arbeitet noch mit \(live.model), „\(live.access.title)“.").font(.system(size: 11.5)).foregroundStyle(Desk.dim)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("Sitzung neu starten") { manager.restart(agent) }.buttonStyle(.pill)
+                    }
                 }
                 if let extra { line(extra.0, extra.1) }
             }.padding(14).background(Desk.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))

@@ -96,6 +96,13 @@ import Foundation
         return session
     }
 
+    /// Startet die Sitzung eines Agenten neu, damit geändertes Modell oder geänderte Rechte sofort gelten. Claude-Agenten machen im selben Chat weiter.
+    func restart(_ agent: Agent) {
+        if let live = liveSession(for: agent.id) { close(live) }
+        let task = "Deine Einstellungen wurden gerade geändert (Modell: \(agent.model), Zugriff: \(agent.access.title)). Bestätige das kurz in einem Satz und mach dann dort weiter, wo wir waren."
+        do { try launch(agent, task: task, parentChat: resumableChat(for: agent)) } catch { notice = error.localizedDescription }
+    }
+
     func close(_ session: AgentSession) {
         waiting.removeAll { $0.session == session.id }
         feeds[session.id] = nil
