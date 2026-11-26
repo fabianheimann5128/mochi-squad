@@ -43,7 +43,7 @@ Per agent, the access level "Full access" can be switched on. It is the explicit
 
 ## Operating the computer
 
-Per agent, "Operate computer" can be switched on. Codex agents then keep Codex's computer control (apps and browser), Claude agents control the Chrome browser through Claude in Chrome. These tools run outside the sandbox: what the agent does through the screen or browser is not bound by the file limits above, and in the browser it acts with your sign-ins. The default is off; routines never operate the computer.
+Per agent, "Operate computer" can be switched on. Codex agents then keep Codex's computer control (screen, apps and browser). Claude agents get Claude Code's own desktop control (screenshots, mouse and keyboard in any app) and control the Chrome browser through Claude in Chrome. Claude Code keeps its desktop control off until it is enabled once per project in its `/mcp` dialog; Mochi Squad makes that choice for you before the first such session, in a short session of its own that sends nothing to the model. macOS asks you to allow Mochi Squad under Accessibility and Screen Recording. These tools run outside the sandbox: what the agent does through the screen or browser is not bound by the file limits above, and in the browser it acts with your sign-ins. The default is off; routines never operate the computer.
 
 Codex's computer control stays on only if it is genuine: its program must lie inside the ChatGPT app, that app must carry OpenAI's code signature, its arguments must be plain switches, and the project must not bring a server of the same name.
 

@@ -204,9 +204,9 @@ private struct ComputerView: View {
                         .toggleStyle(.switch).controlSize(.mini).labelsHidden()
                 }.font(.system(size: 12.5))
                 if agent.computerUse == true {
-                    Text(agent.provider == .claude ? t("Controls the Chrome browser through the Claude extension. Chrome must be open with the extension signed in to the same account; after switching this on for the first time, quit and reopen Chrome once.",
-                                                    "Steuert den Chrome-Browser über die Claude-Erweiterung. Chrome muss offen und die Erweiterung mit demselben Konto angemeldet sein; nach dem ersten Einschalten Chrome einmal beenden und neu öffnen.")
-                         : t("Controls apps and the browser through Codex's computer control.", "Steuert Programme und Browser über die Computersteuerung von Codex."))
+                    Text(agent.provider == .claude ? t("Takes over screen, mouse and keyboard in any app, and controls Chrome through the Claude extension. macOS asks once to allow Mochi Squad under Accessibility and Screen Recording. For Chrome, quit and reopen it once after switching this on for the first time.",
+                                                    "Übernimmt Bildschirm, Maus und Tastatur in jedem Programm und steuert Chrome über die Claude-Erweiterung. macOS fragt einmal, ob Mochi Squad unter Bedienungshilfen und Bildschirmaufnahme erlaubt wird. Für Chrome: nach dem ersten Einschalten Chrome einmal beenden und neu öffnen.")
+                         : t("Takes over screen, apps and browser through Codex's computer control.", "Übernimmt Bildschirm, Programme und Browser über die Computersteuerung von Codex."))
                         .font(.system(size: 11.5)).foregroundStyle(Desk.dim).fixedSize(horizontal: false, vertical: true)
                 }
                 // What was fixed at the start of a session applies until it ends; a restart applies changes at once.

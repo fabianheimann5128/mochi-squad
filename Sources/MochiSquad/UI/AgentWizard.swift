@@ -177,8 +177,7 @@ struct AgentWizard: View {
     static var autoEffort: String { t("Reasoning depth: automatic", "Denktiefe automatisch") }
     static var mainPlan: String { t("Main plan", "Haupt-Abo") }
     static func computerUseLabel(_ provider: Provider) -> String {
-        provider == .claude ? t("May operate the Chrome browser", "Darf den Chrome-Browser bedienen")
-            : t("May operate apps and the browser", "Darf Programme und Browser bedienen")
+        t("May operate the computer (screen, apps and browser)", "Darf den Computer bedienen (Bildschirm, Programme und Browser)")
     }
 
     private func go(_ delta: Int) {

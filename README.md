@@ -27,7 +27,7 @@
 - **Team chat.** Just write: without a mention your coordinator answers, with `@name` you bring in a specific agent, with `@all` everyone. Agents can bring in colleagues themselves.
 - **From your phone.** Connect Telegram or WhatsApp and write to your team chat on the go; the answers come back to the messenger.
 - **Computer view.** Watch live what an agent is working on and which files it touched last.
-- **Operate the computer.** If you allow it, a Codex agent controls apps and the browser, a Claude agent the Chrome browser.
+- **Operate the computer.** If you allow it, an agent takes over screen, mouse and keyboard: Codex through its computer control, Claude through its desktop control and the Chrome extension.
 - **Several ChatGPT plans.** Add more plans in Settings and choose per agent which one it works with.
 - **Routines.** Tasks at fixed times through the macOS scheduler, even when the app is closed.
 - **Clear rights.** Three levels per agent: read only, edit in project, or full access. In the first two the agent runs in a sandbox with locked credentials; full access is something you switch on deliberately. Details in [SECURITY.md](SECURITY.md).

@@ -445,7 +445,12 @@ class ArgumentTests(unittest.TestCase):
         self.assertIn("--no-chrome", launcher.claude_args(off))
         on = make_spec(self.dir.name, computerUse=True)
         self.assertIn("--chrome", launcher.claude_args(on))
-        self.assertIn("mcp__claude-in-chrome", launcher.build_claude_settings(on, home="/Users/test")["permissions"]["allow"])
+        allowed = launcher.build_claude_settings(on, home="/Users/test")["permissions"]["allow"]
+        self.assertIn("mcp__claude-in-chrome", allowed)
+        # Claude's desktop control is approved too, and the agent is told that it has the whole desktop.
+        self.assertIn("mcp__computer-use", allowed)
+        self.assertNotIn("mcp__computer-use", launcher.build_claude_settings(off, home="/Users/test")["permissions"]["allow"])
+        self.assertIn("whole desktop", launcher.build_prompt(on))
         genuine = launcher.COMPUTER_APP + "/Contents/Resources/cua_node/bin/node_repl"
         servers = [("cua_repl", True, genuine, ["--require-browser-access"]), ("postiz", False, "", [])]
         off_flag = "mcp_servers.cua_repl.enabled=false"

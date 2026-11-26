@@ -248,6 +248,38 @@ class TelegramTests(unittest.TestCase):
             self.assertEqual(call.call_args[0][2]["chat_id"], 7)
 
 
+class DesktopControlTests(unittest.TestCase):
+    """Reading the client's `/mcp` dialog, as it arrives from the terminal."""
+
+    def test_terminal_output_is_reduced_to_plain_lines(self):
+        import computer
+        raw = "\x1b[2K\x1b[1m  ❯\x1b[3Ccomputer-use\x1b[0m\r\n\r\n   Other MCPs\r\n".encode()
+        self.assertEqual(computer.plain(raw), ["❯computer-use", "OtherMCPs"])
+
+    def test_selection_mark_and_detail_view(self):
+        import computer
+        self.assertTrue(computer.marked(["claude.aiGmail", "❯computer-use"]))
+        self.assertFalse(computer.marked(["❯claude.aiGmail", "computer-use"]))
+        self.assertFalse(computer.marked(["computer-use"]))
+        self.assertEqual(computer.view_state(["computer-use", "MCPserver", "Status:◯disabled", "❯Enable", "Back"]), "enable")
+        self.assertEqual(computer.view_state(["Status:✔connected", "Capabilities:24tools", "❯Viewtools", "Disableinthisproject"]), "enabled")
+        self.assertIsNone(computer.view_state(["somethingelse"]))
+
+    def test_a_project_is_only_set_up_once(self):
+        import computer
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as folder:
+            with mock.patch.object(common, "DATA", Path(folder)), mock.patch.object(computer, "enable", return_value="enabled") as enable:
+                self.assertEqual(computer.ensure("/bin/claude", "/p/one"), "enabled")
+                self.assertEqual(computer.ensure("/bin/claude", "/p/one"), "already")
+                self.assertEqual(enable.call_count, 1)
+            # A failed attempt is not remembered: the next session tries again.
+            with mock.patch.object(common, "DATA", Path(folder)), mock.patch.object(computer, "enable", return_value="failed") as enable:
+                computer.ensure("/bin/claude", "/p/two")
+                computer.ensure("/bin/claude", "/p/two")
+                self.assertEqual(enable.call_count, 2)
+
+
 class CommonTests(unittest.TestCase):
     def test_project_key_and_private_files(self):
         self.assertEqual(common.project_key("/Users/a b/Project.x"), "-Users-a-b-Project-x")

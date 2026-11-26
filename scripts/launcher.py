@@ -33,6 +33,8 @@ COMPUTER_SERVERS = ("cua_repl",)
 # Where OpenAI ships that server, and the team that signs it.
 COMPUTER_APP = "/Applications/ChatGPT.app"
 COMPUTER_TEAM = "2DC432GLL2"
+# Claude Code's built-in server for desktop control.
+COMPUTER_TOOLS = "computer-use"
 # Name of the coordinator's own tool server in both clients.
 TOOL_SERVER = "mochi"
 TOKEN_VARIABLE = "MOCHI_TOKEN"
@@ -160,7 +162,8 @@ def build_prompt(spec):
     if agent["persona"]:
         parts.append("Your character: " + agent["persona"] + ".")
     if agent["computerUse"]:
-        parts.append("You may operate the computer: " + ("the Chrome browser through Claude in Chrome." if spec["provider"] == "claude"
+        parts.append("You may operate the computer: " + ("the whole desktop (screenshots, mouse and keyboard in any app) through the "
+                     "computer-use tools, and the Chrome browser through Claude in Chrome." if spec["provider"] == "claude"
                      else "apps and the browser through Codex's computer control.") +
                      f" Use it only when {owner} asks for it, and never send, buy or delete anything through it without explicit approval.")
     if agent["fullAccess"]:
@@ -242,7 +245,7 @@ def build_claude_settings(spec, home=None):
         # Nobody is there to confirm a request, and some domains are approved in advance: "off" means off.
         deny += ["WebSearch", "WebFetch"]
     if agent["computerUse"]:
-        allow.append("mcp__claude-in-chrome")
+        allow += ["mcp__claude-in-chrome", "mcp__" + COMPUTER_TOOLS]
     settings = {
         "permissions": {"allow": allow, "deny": deny},
         # Local ports stay closed (the default): an agent shall not reach unprotected services on this Mac.
@@ -256,7 +259,7 @@ def build_claude_settings(spec, home=None):
 
 def claude_args(spec, interactive=True):
     agent = spec["agent"]
-    # Computer use means for Claude Code: operating the Chrome browser.
+    # Computer use means for Claude Code: its desktop control (switched on per project, see computer.py) and Chrome.
     args = ["--session-id", spec["sessionId"], "--settings", json.dumps(build_claude_settings(spec)),
             "--chrome" if agent["computerUse"] else "--no-chrome"]
     if not interactive:
@@ -521,9 +524,25 @@ def run(spec_path):
         if spec.get("parentChat"):
             os.execv(binary, [binary, "fork", *codex_args(spec, servers=servers), spec["parentChat"], prompt])
         os.execv(binary, [binary, *codex_args(spec, servers=servers), prompt])
+    if spec["agent"]["computerUse"]:
+        prepare_desktop_control(binary, spec["project"])
     journal = common.claude_journal(spec["project"], spec["sessionId"])
     common.write_private(spec["contextFile"], json.dumps({"historyPath": str(journal)}))
     os.execv(binary, [binary, *claude_args(spec), prompt])
+
+
+def prepare_desktop_control(binary, project):
+    """Claude Code keeps its desktop control off until it is enabled once per project. Do that before the first
+    session that may use it; whatever goes wrong here must not keep the session from starting."""
+    try:
+        import computer
+        if project in (common.read_json(computer.marker(), []) or []):
+            return
+        print(t("Switching on desktop control for this project (once, a few seconds) …",
+                "Schalte die Bildschirmsteuerung für dieses Projekt ein (einmalig, wenige Sekunden) …"), flush=True)
+        computer.ensure(binary, project)
+    except Exception:  # noqa: BLE001 – a convenience step; the client reports itself if the tools are missing
+        pass
 
 
 def login(provider, account=""):

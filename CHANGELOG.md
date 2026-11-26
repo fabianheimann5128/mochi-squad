@@ -8,6 +8,7 @@
 - **WhatsApp.** Reach your team chat through the "Message yourself" chat (unofficial link, see the note in setup).
 - **New icon bar.** New agent, processes, connectors, what's new, feedback and settings sit in one bar on the left.
 - **Chats read better.** Lists with clean indentation, highlighted file names, shorter lines.
+- **The whole computer.** With "Operate computer", Claude agents now take over the screen in any app, not only Chrome; one-time notices of the client no longer leave a session waiting.
 - **Coordinator with Codex.** The coordinator can run with Codex too, so one subscription is enough.
 - **Routines you can rely on.** Schedule problems are shown, a routine never runs twice at once, and Codex runs appear in the agent's chat.
 - **Fixes from an independent review.** Many corrections to rights, data safety and reliability (see SECURITY.md).
