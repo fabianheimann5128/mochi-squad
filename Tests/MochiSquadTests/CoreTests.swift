@@ -192,4 +192,12 @@ import Testing
             #expect(SettingsStore.projectAllowed(URL(fileURLWithPath: good), home: home), "\(good)")
         }
     }
+
+    @Test func inputPromptIgnoresEmptyCells() {
+        #expect(TerminalPromptScanner.isInputPrompt("› "))
+        #expect(TerminalPromptScanner.isInputPrompt("›\u{0}"))
+        #expect(TerminalPromptScanner.isInputPrompt("\u{0}❯ "))
+        #expect(!TerminalPromptScanner.isInputPrompt("› x"))
+        #expect(!TerminalPromptScanner.isInputPrompt(""))
+    }
 }

@@ -238,9 +238,8 @@ enum LaunchError: LocalizedError {
         guard isRunning, !submitPending, TerminalPromptScanner.scan(terminal) == nil else { return false }
         let screen = terminal.getTerminal()
         let cursor = screen.getCursorLocation()
-        guard (1...4).contains(cursor.x), let row = screen.getLine(row: cursor.y) else { return false }
-        let prefix = row.translateToString(trimRight: true, startCol: 0, endCol: cursor.x).trimmingCharacters(in: .whitespaces)
-        guard ["❯", "›", ">"].contains(prefix) else { return false }
+        guard (1...4).contains(cursor.x), let row = screen.getLine(row: cursor.y),
+              TerminalPromptScanner.isInputPrompt(row.translateToString(trimRight: true, startCol: 0, endCol: cursor.x)) else { return false }
         let clean = String(String.UnicodeScalarView(text.unicodeScalars.filter {
             !CharacterSet.controlCharacters.contains($0) || $0 == "\n" || $0 == "\t"
         }))
@@ -277,6 +276,11 @@ enum TerminalPromptScanner {
                 .trimmingCharacters(in: CharacterSet(charactersIn: " \t│|╭╮╰╯─"))
         }
         return parse(lines)
+    }
+
+    /// Steht vor dem Cursor nur das Eingabezeichen des Clients? Leere Terminalzellen kommen als NUL statt als Leerzeichen.
+    static func isInputPrompt(_ beforeCursor: String) -> Bool {
+        ["❯", "›", ">"].contains(beforeCursor.trimmingCharacters(in: CharacterSet.whitespaces.union(CharacterSet(charactersIn: "\u{0}"))))
     }
 
     /// Nummerierte Zeilen ab 1, eine davon markiert (❯ oder ›); sonst ein Menü ohne Nummern mit „Enter to confirm“.
