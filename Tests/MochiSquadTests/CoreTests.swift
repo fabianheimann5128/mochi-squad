@@ -274,6 +274,9 @@ import Testing
         #expect(SpeechInput.scaled(rms: 0) == 0)
         #expect(SpeechInput.scaled(rms: 0.03) > 0.3)
         #expect(SpeechInput.scaled(rms: 5) == 1)
+        #expect(SpeechInput.join("", "Hallo") == "Hallo")
+        #expect(SpeechInput.join("Hallo", "wie gehts") == "Hallo wie gehts")
+        #expect(SpeechInput.join("Hallo", "") == "Hallo")
     }
 
     @Test func imagePreviewsKeepTheirProportions() {
