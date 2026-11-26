@@ -11,6 +11,8 @@ struct Bubble: Identifiable, Equatable {
     /// Absender einer Nachricht von Agent zu Agent oder aus dem Team-Chat.
     let relayedFrom: String?
     let relayedVia: String?
+    /// Angehängte Dateien einer eigenen Nachricht, relativ zum Projekt.
+    var attachments = [String]()
     /// Erste Blase eines neuen Tages: „Heute 9:40“.
     let day: String?
     /// Abstand nach oben in Punkten.
@@ -38,9 +40,9 @@ struct Bubble: Identifiable, Equatable {
             previousRole = line.role
             if line.role == "user" {
                 let relay = RelayedMessage.parse(line.text)
-                let shown = relay?.body ?? line.text
+                let parts = Attachments.split(relay?.body ?? line.text), shown = parts.text
                 result.append(Bubble(id: "\(line.id).0", kind: .user, text: AttributedString(shown), plain: shown,
-                                     relayedFrom: relay?.sender, relayedVia: relay?.via, day: day,
+                                     relayedFrom: relay?.sender, relayedVia: relay?.via, attachments: parts.files, day: day,
                                      gap: first ? 0 : (follows ? 4 : 14)))
                 continue
             }

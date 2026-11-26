@@ -122,11 +122,10 @@ struct AgentWizard: View {
 
     private var rights: some View {
         VStack(spacing: 16) {
-            question("Darf \(shownName) Dateien ändern?", "Lesen darf jeder Agent im Projekt. Das kannst du später jederzeit umstellen.")
-            PillPicker(selection: $agent.canEdit, options: [(false, "Nur lesen"), (true, "Lesen und ändern")])
-            Text(agent.canEdit ? "\(shownName) arbeitet in einer Sandbox, die nur ins Projekt schreiben darf."
-                 : "\(shownName) liest nur und fragt dich im Chat, wenn er mehr braucht.")
-                .font(.system(size: 12.5)).foregroundStyle(Desk.dim).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+            question("Was darf \(shownName)?", "Das kannst du später jederzeit umstellen.")
+            PillPicker(selection: $agent.access, options: Agent.Access.allCases.map { ($0, $0.title) })
+            Text(agent.access.note).font(.system(size: 12.5)).foregroundStyle(agent.access == .full ? Desk.warning : Desk.dim)
+                .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
         }
     }
 

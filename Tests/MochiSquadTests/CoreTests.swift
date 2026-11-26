@@ -258,4 +258,21 @@ import Testing
         #expect(Attachments.message("Schau mal", files: []) == "Schau mal")
         #expect(Attachments.message("", files: ["a/b.png"]).hasSuffix("[Anhänge im Projektordner]\n- a/b.png"))
     }
+
+    @Test func sentAttachmentsAreShownSeparatelyFromTheText() {
+        let message = Attachments.message("Siehst du das?", files: [".mochi-squad/anhaenge/Bildschirmfoto 1.png", ".mochi-squad/anhaenge/notiz.txt"])
+        let parts = Attachments.split(message)
+        #expect(parts.text == "Siehst du das?")
+        #expect(parts.files == [".mochi-squad/anhaenge/Bildschirmfoto 1.png", ".mochi-squad/anhaenge/notiz.txt"])
+        #expect(Attachments.split("Nur Text\n- kein Anhang").files.isEmpty)
+        let bubble = Bubble.make(from: [ChatLine(id: 1, role: "user", text: message, timestamp: "")])[0]
+        #expect(bubble.plain == "Siehst du das?" && bubble.attachments.count == 2)
+        #expect(Attachments.isImage(URL(fileURLWithPath: "/x/Foto.PNG")) && !Attachments.isImage(URL(fileURLWithPath: "/x/notiz.txt")))
+    }
+
+    @Test func speechLevelStaysBetweenZeroAndOne() {
+        #expect(SpeechInput.scaled(rms: 0) == 0)
+        #expect(SpeechInput.scaled(rms: 0.03) > 0.3)
+        #expect(SpeechInput.scaled(rms: 5) == 1)
+    }
 }

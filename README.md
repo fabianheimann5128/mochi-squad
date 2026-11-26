@@ -30,7 +30,7 @@
 - **Computer-Ansicht.** Sieh live, woran ein Agent arbeitet und welche Dateien er zuletzt angefasst hat.
 - **Mehrere ChatGPT-Abos.** Lege in den Einstellungen weitere Abos an und wähle je Agent, mit welchem er arbeitet. Jedes Abo hat seine eigene Anmeldung.
 - **Routinen.** Aufträge zu festen Zeiten über die Zeitplanung von macOS, auch wenn die App geschlossen ist.
-- **Klare Rechte.** Jeder Agent läuft in einer Sandbox, bei Claude Code wie bei Codex. Schreiben darf nur, wem du es erlaubst, und Zugangsdaten bleiben gesperrt. Details in [SECURITY.md](SECURITY.md).
+- **Klare Rechte.** Drei Stufen je Agent: nur lesen, im Projekt ändern oder Vollzugriff. In den ersten beiden läuft der Agent in einer Sandbox mit gesperrten Zugangsdaten; Vollzugriff schaltest du bewusst ein. Details in [SECURITY.md](SECURITY.md).
 
 ## Voraussetzungen
 

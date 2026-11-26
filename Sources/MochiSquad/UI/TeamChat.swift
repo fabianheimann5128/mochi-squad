@@ -62,8 +62,7 @@ struct TeamChat: View {
                     TextField("Nachricht ans Team, @Name holt einen Agenten dazu", text: $draft, axis: .vertical)
                         .textFieldStyle(.plain).lineLimit(1...6).font(.system(size: 15)).focused($focused).onSubmit(send)
                         .padding(.vertical, 8).frame(minHeight: 34)
-                    Button { focused = true; DispatchQueue.main.async { Dictation.start() } } label: { RoundGlyph(name: "mic") }
-                        .buttonStyle(.plain).help("Nachricht diktieren")
+                    MicControl(draft: $draft)
                     Button(action: send) { SendGlyph() }.buttonStyle(.plain).keyboardShortcut(.return, modifiers: .command)
                         .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }.composerCapsule()

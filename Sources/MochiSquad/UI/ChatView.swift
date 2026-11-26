@@ -50,10 +50,11 @@ struct AgentChat: View {
                     }
                     if let session { LiveExtras(session: session, name: agent.name) { console = true } }
                 }
-                Composer(agent: agent, session: session, draft: $draft, openConsole: { console = true })
+                Composer(agent: agent, draft: $draft)
             }
         }
         .background(Desk.canvas)
+        .environment(\.projectFolder, URL(fileURLWithPath: agent.project, isDirectory: true))
         .task(id: session?.id) { await follow() }
         .onChange(of: transcript.lastLine) { _, line in
             guard let line, line.role != "user" else { return }
@@ -205,9 +206,45 @@ struct TranscriptList<Extras: View>: View {
     }
 }
 
+/// Projektordner des gezeigten Chats, um angehängte Dateien zu finden.
+private struct ProjectFolderKey: EnvironmentKey { static let defaultValue: URL? = nil }
+extension EnvironmentValues {
+    var projectFolder: URL? {
+        get { self[ProjectFolderKey.self] }
+        set { self[ProjectFolderKey.self] = newValue }
+    }
+}
+
+/// Vorschau einer angehängten Datei: Bilder als Miniatur, alles andere mit Symbol und Namen. Ein Klick öffnet sie.
+struct AttachmentPreview: View {
+    let file: URL
+    var compact = false
+    var body: some View {
+        Button { NSWorkspace.shared.open(file) } label: {
+            if Attachments.isImage(file), let image = NSImage(contentsOf: file) {
+                Image(nsImage: image).resizable().aspectRatio(contentMode: compact ? .fill : .fit)
+                    .frame(width: compact ? 44 : nil, height: compact ? 44 : nil)
+                    .frame(maxWidth: compact ? nil : 260, maxHeight: compact ? nil : 180)
+                    .clipShape(RoundedRectangle(cornerRadius: compact ? 9 : 10, style: .continuous))
+                    .overlay { RoundedRectangle(cornerRadius: compact ? 9 : 10, style: .continuous).strokeBorder(Color.white.opacity(0.14)) }
+            } else {
+                HStack(spacing: 7) {
+                    Image(systemName: "doc").font(.system(size: 13))
+                    Text(file.lastPathComponent).font(.system(size: 12.5)).lineLimit(1).truncationMode(.middle)
+                }
+                .padding(.horizontal, 10).frame(height: compact ? 44 : 32).frame(maxWidth: 220)
+                .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            }
+        }.buttonStyle(.plain).help(file.lastPathComponent)
+    }
+}
+
 struct BubbleView: View, Equatable {
     let bubble: Bubble
     let avatar: String?
+    @Environment(\.projectFolder) private var project
+
+    static func == (left: BubbleView, right: BubbleView) -> Bool { left.bubble == right.bubble && left.avatar == right.avatar }
 
     var body: some View {
         let outgoing = bubble.kind == .user
@@ -223,6 +260,11 @@ struct BubbleView: View, Equatable {
                 }
                 Text(bubble.text).font(bubble.kind == .code ? .system(size: 13, design: .monospaced) : .system(size: 15))
                     .foregroundStyle(Desk.text).lineSpacing(4).textSelection(.enabled)
+                if let project, !bubble.attachments.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(bubble.attachments, id: \.self) { AttachmentPreview(file: project.appendingPathComponent($0)) }
+                    }.padding(.top, 4)
+                }
             }
             .padding(.horizontal, 16).padding(.vertical, 10)
             .background(outgoing ? (bubble.relayedFrom == nil ? Desk.bubble : Desk.relayed) : Desk.incoming,
@@ -334,9 +376,7 @@ private struct EmptyChat: View {
 /// Eingabe: schreibt in die laufende Sitzung oder startet eine neue.
 private struct Composer: View {
     let agent: Agent
-    let session: AgentSession?
     @Binding var draft: String
-    let openConsole: () -> Void
     @EnvironmentObject private var manager: SessionManager
     @State private var hint: String?
     /// Dateien, die mit der nächsten Nachricht mitgehen.
@@ -353,26 +393,24 @@ private struct Composer: View {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 6) {
                             ForEach(files, id: \.self) { file in
-                                HStack(spacing: 6) {
-                                    Image(systemName: "paperclip").font(.system(size: 11)).foregroundStyle(Desk.dim)
-                                    Text(file.lastPathComponent).font(.system(size: 12.5)).lineLimit(1)
-                                    Button { files.removeAll { $0 == file } } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }
-                                        .buttonStyle(.plain).foregroundStyle(Desk.dim).help("Anhang entfernen")
-                                }.padding(.horizontal, 10).frame(height: 26).background(Desk.pillSelected, in: Capsule())
+                                AttachmentPreview(file: file, compact: true)
+                                    .overlay(alignment: .topTrailing) {
+                                        Button { files.removeAll { $0 == file } } label: {
+                                            Image(systemName: "xmark").font(.system(size: 8, weight: .bold)).foregroundStyle(.white)
+                                                .frame(width: 16, height: 16).background(Color.black.opacity(0.75), in: Circle())
+                                        }.buttonStyle(.plain).offset(x: 5, y: -5).help("Anhang entfernen")
+                                    }
                             }
-                        }.padding(.horizontal, 4)
+                        }.padding(.horizontal, 4).padding(.top, 6)
                     }
                 }
                 HStack(alignment: .bottom, spacing: 8) {
-                    Button(action: openConsole) { RoundGlyph(name: "terminal") }.buttonStyle(.plain)
-                        .help("Konsole des Agenten öffnen").disabled(session == nil).opacity(session == nil ? 0.4 : 1)
                     Button { files += Attachments.choose().filter { !files.contains($0) } } label: { RoundGlyph(name: "paperclip") }
                         .buttonStyle(.plain).help("Bilder oder Dateien anhängen")
                     TextField("Nachricht an " + agent.name, text: $draft, axis: .vertical)
                         .textFieldStyle(.plain).lineLimit(1...6).font(.system(size: 15)).focused($focused).onSubmit(send)
                         .padding(.vertical, 8).frame(minHeight: 34)
-                    Button { focused = true; DispatchQueue.main.async { Dictation.start() } } label: { RoundGlyph(name: "mic") }
-                        .buttonStyle(.plain).help("Nachricht diktieren")
+                    MicControl(draft: $draft)
                     Button(action: send) { SendGlyph() }.buttonStyle(.plain)
                         .keyboardShortcut(.return, modifiers: .command).disabled(empty)
                 }

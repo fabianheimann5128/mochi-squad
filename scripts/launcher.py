@@ -68,12 +68,16 @@ def validate_spec(spec):
         "model": str(agent.get("model", "")).strip(),
         "effort": str(agent.get("effort", "")).strip(),
         "canEdit": agent.get("canEdit") is True,
+        "fullAccess": agent.get("fullAccess") is True,
         "isCoordinator": agent.get("isCoordinator") is True,
     }
     spec["team"] = [str(x) for x in spec.get("team") or [] if str(x).strip()]
     spec["owner"] = str(spec.get("owner") or "").strip() or "der Nutzer"
     spec["unattended"] = spec.get("unattended") is True
     spec["allowWeb"] = spec.get("allowWeb") is True
+    # Vollzugriff gibt es nur, wenn der Nutzer dabei ist: Routinen laufen immer in der Sandbox.
+    if spec["unattended"]:
+        spec["agent"]["fullAccess"] = False
     spec["postEnabled"] = spec.get("postEnabled") is True
     account = str(spec.get("account") or "")
     if account and (spec["provider"] != "codex" or not common.ACCOUNT_ID.fullmatch(account)):
@@ -124,7 +128,11 @@ def build_prompt(spec):
         parts.append("Deine Aufgaben: " + agent["instructions"])
     if agent["persona"]:
         parts.append("Dein Charakter: " + agent["persona"] + ".")
-    if agent["canEdit"]:
+    if agent["fullAccess"]:
+        parts.append(f"Du hast Vollzugriff auf diesen Mac, ohne Sandbox und ohne Rückfragen. Geh sorgsam damit um: Arbeite "
+                     f"im Projektordner, solange der Auftrag nichts anderes verlangt, und lösche oder überschreibe außerhalb "
+                     f"davon nichts, ohne {owner} vorher im Chat zu fragen.")
+    elif agent["canEdit"]:
         parts.append("Du darfst im Projektordner Dateien anlegen und ändern. Befehle laufen in einer Sandbox, die nur ins "
                      "Projekt und in den Temp-Ordner schreiben darf.")
     parts.append(f"Veröffentliche nichts, lade nichts hoch und lös nichts aus, das Geld kostet, ohne {owner}s ausdrückliche "
@@ -152,6 +160,14 @@ def build_claude_settings(spec, home=None):
     """
     home = Path(home or common.HOME)
     agent, project = spec["agent"], spec["project"]
+    if agent["fullAccess"]:
+        # Vom Nutzer ausdrücklich eingeschaltet: keine Sandbox, keine Sperren. Nur die Statuszeile bleibt.
+        settings = {"permissions": {"allow": ["mcp__mochi"] if agent["isCoordinator"] else []}}
+        if spec.get("contextFile"):
+            hook = Path(__file__).with_name("context.py")
+            settings["statusLine"] = {"type": "command",
+                                      "command": " ".join(map(_quote, [sys.executable, str(hook), "claude", spec["contextFile"]]))}
+        return settings
     allow = [f"Read(/{project}/**)"]
     # Edit-Regeln gelten für alle Werkzeuge, die Dateien ändern.
     deny = [f"Edit(/{project}/{p}/**)" for p in CLIENT_FOLDERS] + [f"Read(/{home / 'Library/Application Support'}/**)"]
@@ -188,7 +204,7 @@ def claude_args(spec, interactive=True):
     args = ["--session-id", spec["sessionId"], "--settings", json.dumps(build_claude_settings(spec)), "--no-chrome"]
     if not interactive:
         args = ["-p"] + args + ["--output-format", "text"]
-    args += ["--permission-mode", "default"]
+    args += ["--permission-mode", "bypassPermissions" if agent["fullAccess"] else "default"]
     # Immer nur die eigenen Werkzeuge: Ein fremder Server namens „mochi“ darf die Freigabe nicht erben.
     if agent["isCoordinator"]:
         args += ["--strict-mcp-config"] + (["--mcp-config", spec["mcpConfig"]] if spec.get("mcpConfig") else [])
@@ -278,14 +294,18 @@ UNKNOWN_SERVERS = ("Die Werkzeugserver deiner Codex-Konfiguration ließen sich n
 def codex_args(spec, interactive=True, servers=()):
     """`servers` sind die MCP-Server des Nutzers. Ihre Werkzeuge liefen außerhalb der Sandbox, deshalb bleiben sie aus."""
     agent = spec["agent"]
-    args = codex_profile_args(spec) + ["-c", "web_search=" + json.dumps("live" if spec.get("allowWeb") else "disabled")]
+    if agent["fullAccess"]:
+        # Vom Nutzer ausdrücklich eingeschaltet: Codex ohne Sandbox und ohne Rückfragen, mit seinen eigenen Werkzeugen.
+        args, servers = ["--sandbox", "danger-full-access", "-c", 'web_search="live"'], ()
+    else:
+        args = codex_profile_args(spec) + ["-c", "web_search=" + json.dumps("live" if spec.get("allowWeb") else "disabled")]
     for name, is_command in servers:
         # Server aus Plugins haben keinen Eintrag in der Konfiguration; erst mit einem Befehl ist der Eintrag gültig.
         if is_command:
             args += ["-c", f'mcp_servers.{name}.command="/usr/bin/false"']
         args += ["-c", f"mcp_servers.{name}.enabled=false"]
     if interactive:
-        args += ["--ask-for-approval", "on-request"]
+        args += ["--ask-for-approval", "never" if agent["fullAccess"] else "on-request"]
     if agent["model"]:
         args += ["--model", agent["model"]]
     if agent["effort"] in {"minimal", "low", "medium", "high", "xhigh"}:
@@ -354,11 +374,13 @@ def run(spec_path):
     if spec.get("outbox"):
         os.environ["MOCHI_OUTBOX"] = spec["outbox"]
     if provider == "codex":
-        if not codex_profile_enforced(binary, spec):
-            raise SystemExit(OUTDATED_CODEX)
-        servers = codex_servers(binary)
-        if servers is None:
-            raise SystemExit(UNKNOWN_SERVERS)
+        servers = ()
+        if not spec["agent"]["fullAccess"]:
+            if not codex_profile_enforced(binary, spec):
+                raise SystemExit(OUTDATED_CODEX)
+            servers = codex_servers(binary)
+            if servers is None:
+                raise SystemExit(UNKNOWN_SERVERS)
         # Der Codex-Beobachter findet die Sitzung über diese Zeile in der ersten Nachricht.
         prompt = f"Sitzung {spec['sessionId']}\n" + prompt
         if spec.get("parentChat"):

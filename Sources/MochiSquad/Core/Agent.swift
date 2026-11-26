@@ -51,6 +51,8 @@ struct Agent: Codable, Identifiable, Hashable {
     var isCoordinator = false
     /// Darf im Projekt Dateien ändern; Befehle laufen dann in der Sandbox des Clients.
     var canEdit = false
+    /// Vollzugriff auf den ganzen Mac: ohne Sandbox und ohne Rückfragen. Nur auf ausdrücklichen Wunsch des Nutzers.
+    var fullAccess: Bool?
     /// Kennung eines weiteren ChatGPT-Abos (nur Codex); nil nutzt die normale Anmeldung.
     var account: String?
     var journals: [String] = []
@@ -59,6 +61,24 @@ struct Agent: Codable, Identifiable, Hashable {
     var updated: Date?
 
     static let journalLimit = 8
+
+    /// Wie weit ein Agent zugreifen darf, in drei Stufen.
+    enum Access: String, CaseIterable, Identifiable {
+        case read, edit, full
+        var id: String { rawValue }
+        var title: String { ["read": "Nur lesen", "edit": "Im Projekt ändern", "full": "Vollzugriff"][rawValue]! }
+        var note: String {
+            switch self {
+            case .read: return "Liest im Projekt und fragt dich im Chat, wenn mehr nötig ist."
+            case .edit: return "Arbeitet in einer Sandbox, die nur ins Projekt schreiben darf."
+            case .full: return "Ohne Sandbox und ohne Rückfragen: Der Agent kann alle Dateien und Programme dieses Macs lesen, ändern und löschen. Nur für Agenten, denen du voll vertraust."
+            }
+        }
+    }
+    var access: Access {
+        get { fullAccess == true ? .full : canEdit ? .edit : .read }
+        set { canEdit = newValue != .read; fullAccess = newValue == .full ? true : nil }
+    }
 
     var jobTitle: String { job.isEmpty ? (isCoordinator ? "Koordinator" : "Agent") : job }
 

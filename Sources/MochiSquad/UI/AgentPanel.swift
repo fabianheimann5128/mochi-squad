@@ -174,12 +174,15 @@ private struct ComputerView: View {
                 line("Modell", agent.model.isEmpty ? "Standard" : agent.model)
                 if let account = settings.accounts.first(where: { $0.id == agent.account }) { line("ChatGPT-Abo", account.name) }
                 HStack {
-                    Text("Dateien ändern").foregroundStyle(Desk.dim)
+                    Text("Zugriff").foregroundStyle(Desk.dim)
                     Spacer(minLength: 6)
-                    Text(agent.canEdit ? "im Projekt erlaubt" : "nur lesen")
-                    Toggle("Dateien im Projekt ändern", isOn: Binding(get: { agent.canEdit }, set: { allowed in agents.update(agent.id) { $0.canEdit = allowed } }))
-                        .toggleStyle(.switch).controlSize(.mini).labelsHidden()
+                    Picker("Zugriff", selection: Binding(get: { agent.access }, set: { level in agents.update(agent.id) { $0.access = level } })) {
+                        ForEach(Agent.Access.allCases) { Text($0.title).tag($0) }
+                    }.labelsHidden().fixedSize().controlSize(.small)
                 }.font(.system(size: 12.5))
+                if agent.access == .full {
+                    Text(Agent.Access.full.note).font(.system(size: 11.5)).foregroundStyle(Desk.warning).fixedSize(horizontal: false, vertical: true)
+                }
                 // Rechte stehen beim Start einer Sitzung fest.
                 if manager.liveSession(for: agent.id) != nil {
                     Text("Gilt ab der nächsten Sitzung.").font(.system(size: 11.5)).foregroundStyle(Desk.faint)

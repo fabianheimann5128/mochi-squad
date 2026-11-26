@@ -320,6 +320,30 @@ class ArgumentTests(unittest.TestCase):
             with self.assertRaises(launcher.SpecError):
                 spec(provider, account)
 
+    def test_full_access_drops_the_sandbox_only_when_asked(self):
+        spec = make_spec(self.dir.name, canEdit=True, fullAccess=True)
+        settings = launcher.build_claude_settings(spec, home="/Users/test")
+        self.assertNotIn("sandbox", settings)
+        self.assertEqual(settings["permissions"], {"allow": []})
+        args = launcher.claude_args(spec)
+        self.assertEqual(args[args.index("--permission-mode") + 1], "bypassPermissions")
+        codex = launcher.codex_args(spec, servers=[("postiz", False)])
+        self.assertEqual(codex[:2], ["--sandbox", "danger-full-access"])
+        self.assertEqual(codex[codex.index("--ask-for-approval") + 1], "never")
+        self.assertFalse(any(a.startswith(("permissions.mochi", "mcp_servers")) for a in codex))
+        self.assertIn("Vollzugriff", launcher.build_prompt(spec))
+        # Ohne die Angabe bleibt alles beim Alten.
+        normal = make_spec(self.dir.name, canEdit=True)
+        self.assertIn("sandbox", launcher.build_claude_settings(normal, home="/Users/test"))
+        self.assertNotIn("danger-full-access", launcher.codex_args(normal))
+        self.assertFalse(make_spec(self.dir.name, fullAccess="true")["agent"]["fullAccess"])
+
+    def test_routines_never_get_full_access(self):
+        spec = launcher.validate_spec({"provider": "claude", "project": self.dir.name, "task": "x", "unattended": True,
+                                       "sessionId": str(uuid.uuid4()), "owner": "Alex", "agent": {"name": "Mira", "fullAccess": True}})
+        self.assertFalse(spec["agent"]["fullAccess"])
+        self.assertIn("sandbox", launcher.build_claude_settings(spec, home="/Users/test"))
+
     def test_toml_escapes_keys(self):
         self.assertEqual(launcher._toml({'a "b"': {"c": True}}), '{"a \\"b\\"" = {"c" = true}}')
 

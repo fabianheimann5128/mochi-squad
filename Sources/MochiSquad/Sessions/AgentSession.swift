@@ -18,7 +18,7 @@ struct ClientPrompt: Equatable {
 struct SessionSpec: Encodable {
     struct AgentPart: Encodable {
         let name, job, instructions, persona, model, effort: String
-        let canEdit, isCoordinator: Bool
+        let canEdit, isCoordinator, fullAccess: Bool
     }
     let provider: String
     let project: String
@@ -39,7 +39,8 @@ struct SessionSpec: Encodable {
         sessionId = sessionID.uuidString.lowercased()
         self.owner = owner
         self.agent = AgentPart(name: agent.name, job: agent.jobTitle, instructions: agent.instructions, persona: agent.persona,
-                               model: agent.model, effort: agent.effort, canEdit: agent.canEdit, isCoordinator: agent.isCoordinator)
+                               model: agent.model, effort: agent.effort, canEdit: agent.canEdit, isCoordinator: agent.isCoordinator,
+                               fullAccess: agent.fullAccess == true)
         self.team = team
         account = agent.provider == .codex ? agent.account ?? "" : ""
         self.parentChat = parentChat

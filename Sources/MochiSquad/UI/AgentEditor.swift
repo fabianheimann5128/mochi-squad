@@ -90,10 +90,9 @@ struct AgentEditor: View {
                 do {
                     row("Rechte", top: true) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Toggle("Darf Dateien im Projekt anlegen und ändern", isOn: $agent.canEdit).toggleStyle(.checkbox).font(.system(size: 13))
-                            Text(agent.canEdit ? "Befehle laufen in einer Sandbox, die nur ins Projekt schreiben darf. Lege wichtige Projekte unter Versionsverwaltung."
-                                 : "Der Agent liest nur. Für alles andere fragt er dich im Chat.")
-                                .font(.system(size: 12)).foregroundStyle(Desk.dim).fixedSize(horizontal: false, vertical: true)
+                            PillPicker(selection: $agent.access, options: Agent.Access.allCases.map { ($0, $0.title) })
+                            Text(agent.access.note).font(.system(size: 12)).foregroundStyle(agent.access == .full ? Desk.warning : Desk.dim)
+                                .fixedSize(horizontal: false, vertical: true)
                         }.frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }

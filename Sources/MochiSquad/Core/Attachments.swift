@@ -33,7 +33,21 @@ enum Attachments {
     static func message(_ text: String, files: [String]) -> String {
         guard !files.isEmpty else { return text }
         let list = files.map { "- " + $0 }.joined(separator: "\n")
-        return (text.isEmpty ? "Sieh dir bitte die angehängten Dateien an." : text) + "\n\n[Anhänge im Projektordner]\n" + list
+        return (text.isEmpty ? "Sieh dir bitte die angehängten Dateien an." : text) + marker + list
+    }
+
+    static let marker = "\n\n[Anhänge im Projektordner]\n"
+
+    /// Zerlegt eine gesendete Nachricht wieder in Text und angehängte Dateien (Pfade relativ zum Projekt).
+    static func split(_ message: String) -> (text: String, files: [String]) {
+        guard let cut = message.range(of: marker, options: .backwards) else { return (message, []) }
+        let rows = message[cut.upperBound...].split(separator: "\n").map(String.init)
+        guard !rows.isEmpty, rows.allSatisfy({ $0.hasPrefix("- ") }) else { return (message, []) }
+        return (String(message[..<cut.lowerBound]), rows.map { String($0.dropFirst(2)) })
+    }
+
+    static func isImage(_ file: URL) -> Bool {
+        ["png", "jpg", "jpeg", "gif", "heic", "webp", "tiff", "bmp"].contains(file.pathExtension.lowercased())
     }
 
     /// Erster freier Dateiname: „bild.png“, „bild-2.png“, …
@@ -53,14 +67,5 @@ enum Attachments {
         panel.canChooseFiles = true; panel.canChooseDirectories = false; panel.allowsMultipleSelection = true
         panel.prompt = "Anhängen"
         return panel.runModal() == .OK ? panel.urls : []
-    }
-}
-
-/// Diktat von macOS im gerade aktiven Eingabefeld (wie die Diktiertaste).
-enum Dictation {
-    @MainActor static func start() {
-        // Derselbe Befehl wie „Bearbeiten › Diktat starten …“; NSApplication führt ihn selbst aus.
-        let command = Selector(("startDictation:"))
-        if NSApp.responds(to: command) { NSApp.perform(command, with: nil) }
     }
 }
