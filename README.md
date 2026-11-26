@@ -25,7 +25,7 @@
 
 - **Agenten nach deinen Vorstellungen.** Name, Job, Aufgaben, Charakter, Anbieter (Claude Code oder Codex), Modell und Denktiefe legst du frei fest. Jeder Agent bekommt seinen eigenen Mochi.
 - **Ein Koordinator.** Er kennt über eingebaute Werkzeuge den Stand aller Projekte und Agenten und verteilt Aufträge für dich.
-- **Chat statt Terminal.** Jede Sitzung läuft im echten Client. Du siehst sie als Chat und kannst jederzeit in die Konsole wechseln. Rückfragen des Clients beantwortest du per Klick.
+- **Chat statt Terminal.** Jede Sitzung läuft im echten Client. Du siehst sie als Chat und kannst jederzeit in die Konsole wechseln. Rückfragen des Clients beantwortest du per Klick. Bilder und Dateien hängst du per Klick oder Ziehen an, diktieren geht über das Mikrofon.
 - **Team-Chat.** Schreib einfach los: Ohne Anrede antwortet dein Koordinator, mit `@Name` holst du einen bestimmten Agenten dazu. Alle lesen den Verlauf mit und können selbst Kollegen einbeziehen.
 - **Computer-Ansicht.** Sieh live, woran ein Agent arbeitet und welche Dateien er zuletzt angefasst hat.
 - **Mehrere ChatGPT-Abos.** Lege in den Einstellungen weitere Abos an und wähle je Agent, mit welchem er arbeitet. Jedes Abo hat seine eigene Anmeldung.

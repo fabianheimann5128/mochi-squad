@@ -48,7 +48,7 @@ struct Workspace: View {
                     Rectangle().fill(Desk.rule).frame(width: 1)
                 }
                 content.frame(maxWidth: .infinity, maxHeight: .infinity)
-                if showPanel, !showProcesses, let agent = selectedAgent, width >= 900 {
+                if showPanel, !showProcesses, let agent = selectedAgent, width >= 1040 {
                     Rectangle().fill(Desk.rule).frame(width: 1)
                     AgentPanel(agent: agent, tab: $panelTab, openProcesses: { showProcesses = true },
                                openConnectors: { showConnectors = true },

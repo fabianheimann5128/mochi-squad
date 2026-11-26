@@ -339,27 +339,63 @@ private struct Composer: View {
     let openConsole: () -> Void
     @EnvironmentObject private var manager: SessionManager
     @State private var hint: String?
+    /// Dateien, die mit der nächsten Nachricht mitgehen.
+    @State private var files = [URL]()
+    @FocusState private var focused: Bool
+
+    private var empty: Bool { draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && files.isEmpty }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let hint { Text(hint).font(.system(size: 12.5)).foregroundStyle(Desk.dim).padding(.horizontal, 20) }
-            HStack(alignment: .bottom, spacing: 10) {
-                Button(action: openConsole) { RoundGlyph(name: "terminal") }.buttonStyle(.plain)
-                    .help("Konsole des Agenten öffnen").disabled(session == nil).opacity(session == nil ? 0.4 : 1)
-                TextField("Nachricht an " + agent.name, text: $draft, axis: .vertical)
-                    .textFieldStyle(.plain).lineLimit(1...6).font(.system(size: 15)).onSubmit(send)
-                    .padding(.vertical, 8).frame(minHeight: 34)
-                Button(action: send) { SendGlyph() }.buttonStyle(.plain)
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            }.composerCapsule()
+            VStack(alignment: .leading, spacing: 6) {
+                if !files.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(files, id: \.self) { file in
+                                HStack(spacing: 6) {
+                                    Image(systemName: "paperclip").font(.system(size: 11)).foregroundStyle(Desk.dim)
+                                    Text(file.lastPathComponent).font(.system(size: 12.5)).lineLimit(1)
+                                    Button { files.removeAll { $0 == file } } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }
+                                        .buttonStyle(.plain).foregroundStyle(Desk.dim).help("Anhang entfernen")
+                                }.padding(.horizontal, 10).frame(height: 26).background(Desk.pillSelected, in: Capsule())
+                            }
+                        }.padding(.horizontal, 4)
+                    }
+                }
+                HStack(alignment: .bottom, spacing: 8) {
+                    Button(action: openConsole) { RoundGlyph(name: "terminal") }.buttonStyle(.plain)
+                        .help("Konsole des Agenten öffnen").disabled(session == nil).opacity(session == nil ? 0.4 : 1)
+                    Button { files += Attachments.choose().filter { !files.contains($0) } } label: { RoundGlyph(name: "paperclip") }
+                        .buttonStyle(.plain).help("Bilder oder Dateien anhängen")
+                    TextField("Nachricht an " + agent.name, text: $draft, axis: .vertical)
+                        .textFieldStyle(.plain).lineLimit(1...6).font(.system(size: 15)).focused($focused).onSubmit(send)
+                        .padding(.vertical, 8).frame(minHeight: 34)
+                    Button { focused = true; DispatchQueue.main.async { Dictation.start() } } label: { RoundGlyph(name: "mic") }
+                        .buttonStyle(.plain).help("Nachricht diktieren")
+                    Button(action: send) { SendGlyph() }.buttonStyle(.plain)
+                        .keyboardShortcut(.return, modifiers: .command).disabled(empty)
+                }
+            }
+            .composerCapsule()
+            // Dateien lassen sich auch auf das Eingabefeld ziehen.
+            .dropDestination(for: URL.self) { dropped, _ in
+                files += dropped.filter { $0.isFileURL && !files.contains($0) }
+                return !dropped.isEmpty
+            }
         }.frame(maxWidth: 960).padding(.horizontal, 24).padding(.top, 6).padding(.bottom, 24).frame(maxWidth: .infinity)
     }
 
     private func send() {
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !empty else { return }
         hint = nil
+        let text: String
+        do {
+            let staged = try Attachments.stage(files, in: URL(fileURLWithPath: agent.project))
+            text = Attachments.message(draft.trimmingCharacters(in: .whitespacesAndNewlines), files: staged)
+            // Ab hier liegen die Kopien im Projekt; der Text trägt die Verweise, falls das Senden gleich warten muss.
+            if !files.isEmpty { files = []; draft = text }
+        } catch { hint = error.localizedDescription; return }
         if let live = manager.liveSession(for: agent.id) {
             if live.send(text) { draft = "" }
             else if live.submitPending {

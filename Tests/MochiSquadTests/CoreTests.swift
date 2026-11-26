@@ -244,4 +244,18 @@ import Testing
         agent.provider = .codex
         #expect(try account(agent) == id)
     }
+
+    @Test func attachmentsAreCopiedIntoTheProjectWithFreeNames() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let project = root.appendingPathComponent("projekt"), source = root.appendingPathComponent("bild.png")
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Data("a".utf8).write(to: source)
+        #expect(try Attachments.stage([source], in: project) == [".mochi-squad/anhaenge/bild.png"])
+        #expect(try Attachments.stage([source], in: project) == [".mochi-squad/anhaenge/bild-2.png"])
+        #expect(FileManager.default.fileExists(atPath: project.appendingPathComponent(".mochi-squad/anhaenge/bild-2.png").path))
+        #expect(throws: Attachments.Failure.self) { try Attachments.stage([root.appendingPathComponent("fehlt.txt")], in: project) }
+        #expect(Attachments.message("Schau mal", files: []) == "Schau mal")
+        #expect(Attachments.message("", files: ["a/b.png"]).hasSuffix("[Anhänge im Projektordner]\n- a/b.png"))
+    }
 }

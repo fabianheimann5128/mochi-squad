@@ -82,7 +82,7 @@ struct RootView: View {
         Group {
             if settings.value.onboarded, !settings.projects.isEmpty { Workspace() } else { Onboarding() }
         }
-        .frame(minWidth: 900, minHeight: 560)
+        .frame(minWidth: 640, minHeight: 480)
         .preferredColorScheme(.dark).foregroundStyle(Desk.text).tint(Desk.accent)
         .background(Desk.canvas)
         .background(WindowChrome())
