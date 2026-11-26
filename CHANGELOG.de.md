@@ -4,8 +4,8 @@
 
 - **Englisch zuerst.** Englisch ist jetzt die Hauptsprache; Deutsch wählst du bei der Einrichtung und in den Einstellungen.
 - **Agenten sprechen deine Sprache.** Sie antworten in der Sprache, in der du ihnen schreibst, egal wie die Oberfläche eingestellt ist.
-- **Telegram.** Erreiche deinen Team-Chat vom Handy über deinen eigenen Bot.
-- **WhatsApp.** Erreiche deinen Team-Chat über den Chat „Nachricht an mich selbst“ (inoffizielle Anbindung, siehe Hinweis bei der Einrichtung).
+- **Telegram.** Schreib vom Handy mit deinem Koordinator, über deinen eigenen Bot.
+- **WhatsApp.** Schreib mit deinem Koordinator über den Chat „Nachricht an mich selbst“ (inoffizielle Anbindung, siehe Hinweis bei der Einrichtung).
 - **Neue Symbolleiste.** Neuer Agent, Prozesse, Konnektoren, Neuigkeiten, Rückmeldung und Einstellungen sitzen in einer Leiste links.
 - **Chats lesen sich besser.** Listen mit sauberem Einzug, hervorgehobene Dateinamen, kürzere Zeilen.
 - **Skills.** Bring deinen Agenten bei, wie du etwas haben willst: Skills, die schon auf deinem Mac liegen, mit einem Klick übernehmen oder einen Ordner oder eine .zip hineinziehen. Sie funktionieren für Claude- und Codex-Agenten.

@@ -70,11 +70,11 @@ A skill is a folder with instructions (`SKILL.md`) and sometimes scripts. Whatev
 
 ## Messengers
 
-Telegram and WhatsApp let you write to the team chat of one project from your phone. A message from a messenger does what the same message typed in the app would do, with one exception: **agents with full access or computer use are not reachable this way** unless you allow it in Settings.
+Telegram and WhatsApp let you write to the coordinator of one project from your phone. **A message from a messenger reaches the coordinator and nobody else**, whatever it mentions, and only the coordinator's answers go back to the phone. The coordinator is reached with the rights you gave it, full access and computer use included, and can hand out work to other agents as it can in the app.
 
 - **Telegram.** You create the bot; its token is kept in your macOS keychain and handed to the helper process through a pipe. The app reads the bot by polling; there is no server and no public address. Only private chats count, and after pairing only the one account you confirmed. Pairing needs a random one-time code that is valid for 15 minutes. Messages from anyone else are dropped.
 - **WhatsApp.** The app links this Mac as a device of your account through the unofficial Baileys library, which is downloaded from the npm registry when you set WhatsApp up (install scripts of packages are not run). It reads and writes one chat only, "Message yourself"; all other chats are discarded before they are decrypted. WhatsApp does not permit unofficial clients and may block a number. The session is stored in the app data, which is locked for sandboxed agents.
-- Whoever has your unlocked phone, or control of your Telegram or WhatsApp account, can give your team tasks. Keep that in mind before you allow privileged agents there.
+- Whoever has your unlocked phone, or control of your Telegram or WhatsApp account, can give your coordinator tasks, with everything the coordinator is allowed to do. Keep that in mind when you choose the coordinator's access level, and lock your phone.
 
 ## Attachments, dictation, background
 

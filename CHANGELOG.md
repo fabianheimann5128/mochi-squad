@@ -4,8 +4,8 @@
 
 - **English first.** English is now the main language; German can be chosen during setup and in Settings.
 - **Agents speak your language.** They answer in the language you write to them, whatever the interface is set to.
-- **Telegram.** Reach your team chat from your phone through your own bot.
-- **WhatsApp.** Reach your team chat through the "Message yourself" chat (unofficial link, see the note in setup).
+- **Telegram.** Talk to your coordinator from your phone through your own bot.
+- **WhatsApp.** Talk to your coordinator through the "Message yourself" chat (unofficial link, see the note in setup).
 - **New icon bar.** New agent, processes, connectors, what's new, feedback and settings sit in one bar on the left.
 - **Chats read better.** Lists with clean indentation, highlighted file names, shorter lines.
 - **Skills.** Teach your agents how you want things done: add skills already on your Mac with one click or drop in a folder or .zip. They work for Claude and Codex agents.

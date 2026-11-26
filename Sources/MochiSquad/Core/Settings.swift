@@ -31,8 +31,6 @@ struct Messengers: Codable, Equatable {
     var whatsapp: WhatsApp?
     /// Project whose team chat the messengers talk to; nil means the first project.
     var project: String?
-    /// Whether messages from a messenger may reach agents with full access or computer use.
-    var reachPrivileged = false
 }
 
 /// The user's settings. They live in settings.json; the Python helpers read the name and language from it.

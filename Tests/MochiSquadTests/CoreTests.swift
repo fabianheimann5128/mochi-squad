@@ -595,7 +595,6 @@ import Testing
         settings.messengers = Messengers(telegram: .init(bot: "my_bot", userID: 42, userName: "Alex"), whatsapp: .init(number: "491234"))
         let json = String(data: try JSONFile.encoder.encode(settings), encoding: .utf8) ?? ""
         #expect(json.contains("my_bot") && !json.lowercased().contains("token"))
-        #expect(!Messengers().reachPrivileged)
         // A token is found inside a pasted BotFather reply; anything shorter is not one.
         let token = "1234567890:" + String(repeating: "A", count: 35)
         #expect(TelegramLink.token(in: "Use this token to access the HTTP API:\n\(token)\nKeep it safe") == token)

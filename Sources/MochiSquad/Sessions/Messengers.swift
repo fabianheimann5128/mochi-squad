@@ -219,8 +219,8 @@ enum Keychain {
         pairing = nil
         self.candidate = nil
         process?.send(["allow": NSNumber(value: candidate.user)])
-        send(t("Connected. Write here to reach your team: without a mention your coordinator answers, with @name a specific agent.",
-               "Verbunden. Schreib hier, um dein Team zu erreichen: Ohne Anrede antwortet dein Koordinator, mit @Name ein bestimmter Agent."))
+        send(t("Connected. Write here to talk to your coordinator: it knows what your agents are working on and hands out work for you.",
+               "Verbunden. Schreib hier mit deinem Koordinator: Er weiß, woran deine Agenten arbeiten, und verteilt Aufgaben für dich."))
     }
 
     func rejectCandidate() { candidate = nil; pairing = nil }
@@ -446,7 +446,12 @@ enum Keychain {
     /// Answers and notices of the messenger project go to every messenger the user wrote from recently.
     private func forward(_ line: TeamLine, project: String) {
         guard line.kind != .user, project == settings.messengerProject?.path else { return }
-        let text = line.kind == .agent ? line.from + ": " + line.text : "ℹ️ " + line.text
-        for (channel, heard) in lastHeard where Date().timeIntervalSince(heard) < Self.follow { send(text, to: channel) }
+        // The phone is a conversation with the coordinator: what other agents say in the team chat stays in the app.
+        if line.kind == .agent, !manager.isCoordinator(line.agent) { return }
+        for (channel, heard) in lastHeard where Date().timeIntervalSince(heard) < Self.follow {
+            // In WhatsApp the answer lands in the user's own chat, so it carries the coordinator's name; a Telegram bot speaks for itself.
+            let named = channel == "WhatsApp" ? line.from + ": " + line.text : line.text
+            send(line.kind == .agent ? named : "ℹ️ " + line.text, to: channel)
+        }
     }
 }

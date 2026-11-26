@@ -24,13 +24,9 @@ struct MessengerSection: View {
                         }.labelsHidden().fixedSize()
                     }
                 }
-                Toggle(isOn: Binding(get: { settings.messengers.reachPrivileged }, set: { settings.messengers.reachPrivileged = $0 })) {
-                    Text(t("Agents with full access or computer use may also be reached this way", "Auch Agenten mit Vollzugriff oder Computer-Nutzung sind so erreichbar"))
-                        .font(.system(size: 12.5))
-                }.toggleStyle(.checkbox)
             }
-            Text(t("Write to your team from your phone: without a mention your coordinator answers, with @name a specific agent. Answers come back to the messenger.",
-                   "Schreib deinem Team vom Handy aus: Ohne Anrede antwortet dein Koordinator, mit @Name ein bestimmter Agent. Die Antworten kommen im Messenger an."))
+            Text(t("Write to your coordinator from your phone. It knows what every agent is working on and hands out work for you; its answers come back to the messenger.",
+                   "Schreib deinem Koordinator vom Handy aus. Er weiß, woran jeder Agent arbeitet, und verteilt Aufgaben für dich; seine Antworten kommen im Messenger an."))
                 .font(.system(size: 12)).foregroundStyle(Desk.dim).fixedSize(horizontal: false, vertical: true)
         }
         .sheet(item: $setup) { channel in

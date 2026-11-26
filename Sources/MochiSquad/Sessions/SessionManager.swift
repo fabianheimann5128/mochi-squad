@@ -287,6 +287,11 @@ import Foundation
     // MARK: Team chat
 
     /// A message of the user to the team. `via` names the messenger it arrived through, nil for the app itself.
+    func isCoordinator(_ id: UUID?) -> Bool {
+        guard let id else { return false }
+        return agents.agents.first { $0.id == id }?.isCoordinator == true
+    }
+
     func sendToTeam(_ text: String, project: URL, via: String? = nil) {
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { return }
@@ -313,19 +318,19 @@ import Foundation
                               "\(origin.name) kann \(names) nicht selbst dazuholen (Vollzugriff oder Computer-Nutzung). Sprich sie bei Bedarf mit @Name an."),
                             project: project.path)
             }
-        } else if remote, !settings.messengers.reachPrivileged {
-            // From a phone, agents with far-reaching rights stay out unless the user switched that on in Settings.
-            let privileged = people.filter { $0.access == .full || $0.computerUse == true }
-            people.removeAll { privileged.contains($0) }
-            let called = privileged.filter { Mention.contains(text, $0.name) }
-            if !called.isEmpty {
-                team.notice(t("\(called.map(\.name).joined(separator: ", ")) can only be reached in the app: agents with full access or computer use are not available through messengers. You can allow it in Settings.",
-                              "\(called.map(\.name).joined(separator: ", ")) ist nur in der App erreichbar: Agenten mit Vollzugriff oder Computer-Nutzung sind über Messenger nicht verfügbar. In den Einstellungen kannst du das erlauben."),
-                            project: project.path)
-            }
         }
         var targets = people.filter { Mention.contains(text, $0.name) && !skip.contains($0.id) }
-        if origin == nil {
+        if remote {
+            // From a messenger the user talks to the coordinator and to nobody else: it knows every chat and
+            // process and hands work on itself. That holds whatever rights the coordinator has, because only the
+            // paired account of the user gets this far.
+            targets = everyone.filter(\.isCoordinator)
+            guard !targets.isEmpty else {
+                team.notice(t("This project has no coordinator yet. Open Mochi Squad on your Mac once.",
+                              "Dieses Projekt hat noch keinen Koordinator. Öffne Mochi Squad einmal auf deinem Mac."), project: project.path)
+                return []
+            }
+        } else if origin == nil {
             // @all really means everyone, the coordinator included. Without a mention the coordinator answers, every time.
             if Mention.addressesEveryone(text) { targets = people }
             if targets.isEmpty { targets = people.filter(\.isCoordinator) }
@@ -353,7 +358,8 @@ import Foundation
             let voices = everyone.filter { $0.id == target.id || (!target.isCoordinator && mayReach($0, target, replies: false)) }
             let message = RelayedMessage.teamPrefix + sender + ": " + String(text.prefix(Self.teamTextLimit))
                 + team.context(project: project.path, owner: settings.value.owner, voices: voices) + RelayedMessage.teamHint
-                + "Answer briefly for everyone in the team chat. With @name you bring in a colleague when their role is needed; otherwise mention nobody."
+                + (remote ? "The user wrote this from their phone and reads your answer there. Answer yourself, briefly and in plain sentences. Use your tools to look up the state of agents and processes or to hand out work; do not mention anyone with @name."
+                          : "Answer briefly for everyone in the team chat. With @name you bring in a colleague when their role is needed; otherwise mention nobody.")
             track(hand(message, to: target), agent: target)
         }
         return Set(targets.map(\.id))

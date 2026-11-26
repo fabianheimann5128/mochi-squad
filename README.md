@@ -25,7 +25,7 @@
 - **A coordinator.** Through built-in tools it knows the state of all projects and agents and hands out work for you. It runs with Claude Code or Codex.
 - **Chat instead of terminal.** Every session runs in the real client. You see it as a chat and can switch to the console at any time. You answer the client's questions with a click, attach images and files, and dictate through the microphone.
 - **Team chat.** Just write: without a mention your coordinator answers, with `@name` you bring in a specific agent, with `@all` everyone. Agents can bring in colleagues themselves.
-- **From your phone.** Connect Telegram or WhatsApp and write to your team chat on the go; the answers come back to the messenger.
+- **From your phone.** Connect Telegram or WhatsApp and write to your coordinator on the go. It knows what every agent is doing and hands out work; its answers come back to the messenger.
 - **Computer view.** Watch live what an agent is working on and which files it touched last.
 - **Operate the computer.** If you allow it, an agent takes over screen, mouse and keyboard: Codex through its computer control, Claude through its desktop control and the Chrome extension.
 - **Skills.** Teach your agents how you want a kind of work done. Take skills that are already on your Mac with one click, or drop a skill folder or .zip into the app. A skill works for Claude and Codex agents alike and is for all agents unless you narrow it down.
@@ -65,12 +65,10 @@ After that your coordinator is waiting. You add more agents with **+**, one ques
 
 ### Telegram and WhatsApp
 
-Both are set up in Settings under **Messengers** and connect your phone with the team chat of one project.
+Both are set up in Settings under **Messengers** and connect your phone with the coordinator of one project. You talk to the coordinator only; it reaches the other agents for you.
 
 - **Telegram** uses a bot you create yourself in @BotFather. You paste its token, press Start on your phone and confirm your account. Only that account can write to the bot afterwards. This is Telegram's official bot interface.
 - **WhatsApp** links this Mac as a device of your own account, like WhatsApp Web, and uses only your "Message yourself" chat. There is no official way to do this for private accounts: the link uses the unofficial [Baileys](https://github.com/WhiskeySockets/Baileys) library, WhatsApp's terms do not allow it, and there is a small risk that WhatsApp blocks a number for it. It needs Node.js.
-
-By default, agents with full access or computer use cannot be reached through a messenger; you can allow that in Settings.
 
 ## Where is my data?
 
