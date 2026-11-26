@@ -116,6 +116,7 @@ struct Sidebar: View {
                     Text(String(settings.value.owner.prefix(1)).uppercased()).font(.system(size: 14, weight: .semibold))
                         .frame(width: 38, height: 38).background(Color(white: 0.96).opacity(0.04), in: Circle()).contentShape(Circle())
                 }.buttonStyle(.plain).help("Einstellungen").accessibilityLabel("Einstellungen")
+                HelpMenu()
                 Button(action: openConnectors) {
                     HStack {
                         Text("Konnektoren").font(.system(size: 13.5, weight: .medium))
