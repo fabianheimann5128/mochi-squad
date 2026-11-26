@@ -56,6 +56,14 @@ struct ChangeItem: Equatable {
 struct WhatsNew: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showEarlier = false
+    @State private var contentHeight: CGFloat = 480
+    /// Tallest list that still leaves room for header and footer on a small display.
+    private static var tallest: CGFloat { max(320, (NSScreen.main?.visibleFrame.height ?? 800) - 320) }
+
+    private struct ContentHeight: PreferenceKey {
+        static let defaultValue: CGFloat = 0
+        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+    }
 
     /// (heading, items) per version, newest first.
     static func sections(_ text: String) -> [(title: String, items: [String])] {
@@ -78,7 +86,12 @@ struct WhatsNew: View {
                     }
                     if sections.count > 1 { earlier(Array(sections.dropFirst())) }
                 }.padding(.horizontal, 18).padding(.vertical, 14)
-            }.frame(height: 380)
+                    // The window grows with its content, so the latest version is readable without scrolling;
+                    // only very long lists (or unfolded earlier versions) scroll.
+                    .background(GeometryReader { area in Color.clear.preference(key: ContentHeight.self, value: area.size.height) })
+            }
+            .frame(height: min(max(contentHeight, 120), Self.tallest))
+            .onPreferenceChange(ContentHeight.self) { contentHeight = $0 }
             Rectangle().fill(Desk.rule).frame(height: 1)
             HStack {
                 Text(t("You are using Mochi Squad \(Feedback.appVersion).", "Du nutzt Mochi Squad \(Feedback.appVersion)."))
