@@ -11,5 +11,5 @@ if [[ "$(xcode-select -p)" == "$clt" ]]; then
            -Xlinker -rpath -Xlinker "$clt/Library/Developer/usr/lib"
            -Xswiftc -plugin-path -Xswiftc "$clt/usr/lib/swift/host/plugins/testing")
 fi
-swift test "${flags[@]}"
+swift test ${flags[@]+"${flags[@]}"}
 /usr/bin/python3 -B -W error::ResourceWarning -m unittest discover -s Tests/python
