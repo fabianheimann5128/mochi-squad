@@ -215,27 +215,38 @@ extension EnvironmentValues {
     }
 }
 
-/// Vorschau einer angehängten Datei: Bilder als Miniatur, alles andere mit Symbol und Namen. Ein Klick öffnet sie.
+/// Vorschau einer angehängten Datei: Bilder als passgenaue Kachel, alles andere mit Symbol und Namen. Ein Klick öffnet sie.
 struct AttachmentPreview: View {
     let file: URL
+    /// Kleine quadratische Kachel fürs Eingabefeld statt der großen Ansicht im Verlauf.
     var compact = false
+
+    /// Größte Darstellung im Verlauf; das Bild behält sein Seitenverhältnis.
+    private static let limit = CGSize(width: 320, height: 240)
+
     var body: some View {
         Button { NSWorkspace.shared.open(file) } label: {
-            if Attachments.isImage(file), let image = NSImage(contentsOf: file) {
-                Image(nsImage: image).resizable().aspectRatio(contentMode: compact ? .fill : .fit)
-                    .frame(width: compact ? 44 : nil, height: compact ? 44 : nil)
-                    .frame(maxWidth: compact ? nil : 260, maxHeight: compact ? nil : 180)
-                    .clipShape(RoundedRectangle(cornerRadius: compact ? 9 : 10, style: .continuous))
-                    .overlay { RoundedRectangle(cornerRadius: compact ? 9 : 10, style: .continuous).strokeBorder(Color.white.opacity(0.14)) }
+            if Attachments.isImage(file), let image = NSImage(contentsOf: file), image.size.width > 0, image.size.height > 0 {
+                let size = compact ? CGSize(width: 44, height: 44) : Self.fitted(image.size)
+                let shape = RoundedRectangle(cornerRadius: compact ? 9 : 14, style: .continuous)
+                Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
+                    .frame(width: size.width, height: size.height).clipShape(shape)
+                    .overlay { shape.strokeBorder(Color.white.opacity(0.12)) }
             } else {
-                HStack(spacing: 7) {
-                    Image(systemName: "doc").font(.system(size: 13))
-                    Text(file.lastPathComponent).font(.system(size: 12.5)).lineLimit(1).truncationMode(.middle)
+                HStack(spacing: 8) {
+                    Image(systemName: "doc.text").font(.system(size: 14)).foregroundStyle(Desk.dim)
+                    Text(file.lastPathComponent).font(.system(size: 13)).lineLimit(1).truncationMode(.middle)
                 }
-                .padding(.horizontal, 10).frame(height: compact ? 44 : 32).frame(maxWidth: 220)
-                .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .padding(.horizontal, 12).frame(height: compact ? 44 : 40).frame(maxWidth: 240)
+                .background(Desk.card, in: RoundedRectangle(cornerRadius: compact ? 9 : 12, style: .continuous))
+                .overlay { RoundedRectangle(cornerRadius: compact ? 9 : 12, style: .continuous).strokeBorder(Desk.edge) }
             }
         }.buttonStyle(.plain).help(file.lastPathComponent)
+    }
+
+    static func fitted(_ size: CGSize) -> CGSize {
+        let scale = min(1, limit.width / size.width, limit.height / size.height)
+        return CGSize(width: (size.width * scale).rounded(), height: (size.height * scale).rounded())
     }
 }
 
@@ -250,28 +261,33 @@ struct BubbleView: View, Equatable {
         let outgoing = bubble.kind == .user
         HStack(spacing: 0) {
             if outgoing { Spacer(minLength: 120) }
-            VStack(alignment: .leading, spacing: 4) {
-                if let sender = bubble.relayedFrom {
-                    HStack(spacing: 6) {
-                        if let avatar { MochiAvatar(key: avatar, size: 18) }
-                        Text(sender).font(.system(size: 13, weight: .semibold)).foregroundStyle(avatar.map { MochiLook(key: $0).color } ?? Desk.accent)
-                        Text(bubble.relayedVia ?? "").font(.system(size: 12)).foregroundStyle(Desk.dim)
-                    }
+            VStack(alignment: outgoing ? .trailing : .leading, spacing: 6) {
+                // Anhänge stehen wie in Messengern als eigene Kacheln über dem Text, nicht in der farbigen Blase.
+                if let project {
+                    ForEach(bubble.attachments, id: \.self) { AttachmentPreview(file: project.appendingPathComponent($0)) }
                 }
-                Text(bubble.text).font(bubble.kind == .code ? .system(size: 13, design: .monospaced) : .system(size: 15))
-                    .foregroundStyle(Desk.text).lineSpacing(4).textSelection(.enabled)
-                if let project, !bubble.attachments.isEmpty {
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(bubble.attachments, id: \.self) { AttachmentPreview(file: project.appendingPathComponent($0)) }
-                    }.padding(.top, 4)
-                }
+                if !bubble.plain.isEmpty || bubble.attachments.isEmpty || project == nil { textBubble(outgoing: outgoing) }
             }
-            .padding(.horizontal, 16).padding(.vertical, 10)
-            .background(outgoing ? (bubble.relayedFrom == nil ? Desk.bubble : Desk.relayed) : Desk.incoming,
-                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .frame(maxWidth: 680, alignment: outgoing ? .trailing : .leading)
             if !outgoing { Spacer(minLength: 120) }
         }.frame(maxWidth: .infinity, alignment: outgoing ? .trailing : .leading)
+    }
+
+    private func textBubble(outgoing: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let sender = bubble.relayedFrom {
+                HStack(spacing: 6) {
+                    if let avatar { MochiAvatar(key: avatar, size: 18) }
+                    Text(sender).font(.system(size: 13, weight: .semibold)).foregroundStyle(avatar.map { MochiLook(key: $0).color } ?? Desk.accent)
+                    Text(bubble.relayedVia ?? "").font(.system(size: 12)).foregroundStyle(Desk.dim)
+                }
+            }
+            Text(bubble.text).font(bubble.kind == .code ? .system(size: 13, design: .monospaced) : .system(size: 15))
+                .foregroundStyle(Desk.text).lineSpacing(4).textSelection(.enabled)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .background(outgoing ? (bubble.relayedFrom == nil ? Desk.bubble : Desk.relayed) : Desk.incoming,
+                    in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 

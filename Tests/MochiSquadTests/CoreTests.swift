@@ -275,4 +275,10 @@ import Testing
         #expect(SpeechInput.scaled(rms: 0.03) > 0.3)
         #expect(SpeechInput.scaled(rms: 5) == 1)
     }
+
+    @Test func imagePreviewsKeepTheirProportions() {
+        #expect(AttachmentPreview.fitted(CGSize(width: 3200, height: 1200)) == CGSize(width: 320, height: 120))
+        #expect(AttachmentPreview.fitted(CGSize(width: 600, height: 1200)) == CGSize(width: 120, height: 240))
+        #expect(AttachmentPreview.fitted(CGSize(width: 100, height: 80)) == CGSize(width: 100, height: 80))
+    }
 }
