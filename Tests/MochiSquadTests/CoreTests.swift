@@ -109,6 +109,18 @@ import Testing
         #expect(TerminalPromptScanner.parse(["1. Step one", "2. Step two", "Done."]) == nil)
     }
 
+    /// A one-time screen that only waits for Return becomes a card with one answer.
+    @Test func noticesThatWaitForReturnAreRecognised() {
+        let prompt = TerminalPromptScanner.parse(["────────", "Claude in Chrome", "", "Claude can use Chrome through its extension.", "", "Enter to continue · Esc to close", "", ""])
+        #expect(prompt?.options.map(\.key) == [TerminalPromptScanner.continueKey])
+        #expect(prompt?.context == ["Claude in Chrome", "Claude can use Chrome through its extension."])
+        #expect(prompt.map(TerminalPromptScanner.isChromeIntroduction) == true)
+        let other = TerminalPromptScanner.parse(["Terms changed", "Please read them.", "", "Enter to continue"])
+        #expect(other != nil && other.map(TerminalPromptScanner.isChromeIntroduction) == false)
+        // Text that merely mentions the phrase further up is no notice.
+        #expect(TerminalPromptScanner.parse(["Press Enter to continue later", "", "❯ "]) == nil)
+    }
+
     @Test func plainMenuWithEnterHint() {
         let prompt = TerminalPromptScanner.parse(["Trust this folder?", "", "❯ Yes, proceed", "No, exit", "", "Enter to confirm"])
         #expect(prompt?.options.count == 2)

@@ -187,7 +187,13 @@ enum LaunchError: LocalizedError {
         let touched = usage.historyPath.flatMap { try? FileManager.default.attributesOfItem(atPath: $0)[.modificationDate] as? Date }
         let now = isRunning && touched.map { Date().timeIntervalSince($0) < 7 } == true
         if now != working { working = now }
-        let ask = isRunning ? TerminalPromptScanner.scan(terminal) : nil
+        var ask = isRunning ? TerminalPromptScanner.scan(terminal) : nil
+        // The client introduces Claude in Chrome once with a screen that only waits for Return. The user already
+        // switched computer use on for this agent, so the app confirms it instead of leaving the session waiting.
+        if computerUse, let notice = ask, TerminalPromptScanner.isChromeIntroduction(notice) {
+            terminal.send(txt: TerminalPromptScanner.continueKey)
+            ask = nil
+        }
         if ask != prompt { prompt = ask }
         // While no history exists yet, the launcher may be waiting at the sign-in (see launcher.LOGIN_NOTICE).
         let login = isRunning && usage.historyPath == nil && screenText().contains("MOCHI-SIGN-IN")
@@ -364,7 +370,24 @@ enum TerminalPromptScanner {
         if (2...6).contains(options.count), marked, first >= 0 {
             return ClientPrompt(context: Array(lines[max(0, first - 9)..<first].filter { !$0.isEmpty }.suffix(6)), options: options)
         }
-        return plainMenu(lines)
+        return plainMenu(lines) ?? notice(lines)
+    }
+
+    /// The one-time introduction to Claude in Chrome: a notice, nothing to decide.
+    static func isChromeIntroduction(_ prompt: ClientPrompt) -> Bool {
+        prompt.options.map(\.key) == [continueKey] && prompt.context.first == "Claude in Chrome"
+    }
+
+    /// Key of the single answer to a notice: Return.
+    static let continueKey = "\r"
+
+    /// A screen the client shows once and that only waits for Return ("Enter to continue"), for example the
+    /// introduction to Claude in Chrome. Without a card for it the session would sit there unanswered.
+    private static func notice(_ lines: [String]) -> ClientPrompt? {
+        guard let hint = lines.lastIndex(where: { $0.localizedCaseInsensitiveContains("enter to continue") }),
+              lines[(hint + 1)...].allSatisfy(\.isEmpty) else { return nil }
+        let context = lines[..<hint].filter { !$0.isEmpty && !$0.allSatisfy { "─━-—=".contains($0) } }.suffix(7)
+        return ClientPrompt(context: Array(context), options: [.init(key: continueKey, label: "Continue")])
     }
 
     private static func plainMenu(_ lines: [String]) -> ClientPrompt? {

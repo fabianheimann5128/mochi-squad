@@ -14,6 +14,8 @@ struct AgentChat: View {
     @EnvironmentObject private var manager: SessionManager
     @State private var draft = ""
     @State private var console = false
+    /// History file the transcript currently shows.
+    @State private var shownHistory: String?
 
     private var session: AgentSession? { manager.latestSession(for: agent.id) }
 
@@ -45,9 +47,9 @@ struct AgentChat: View {
                 SessionTerminal(session: session).padding(.horizontal, 12).padding(.bottom, 12)
             } else {
                 TranscriptList(agentName: agent.name, peers: peers, loadEarlier: { Task { await refresh(more: true) } }) {
-                    if transcript.bubbles.isEmpty, !transcript.loading {
-                        if let session { pending(session.task) } else { EmptyChat(agent: agent) { draft = $0 } }
-                    }
+                    if session == nil, transcript.bubbles.isEmpty, !transcript.loading { EmptyChat(agent: agent) { draft = $0 } }
+                    // Until the client has written the new message into its history, it is shown here, below the earlier chat.
+                    if let session, !sent(session) { pending(session.task) }
                     if let session {
                         SessionNotice(session: session, name: agent.name) { console = true }
                         LiveExtras(session: session, name: agent.name) { console = true }
@@ -85,13 +87,19 @@ struct AgentChat: View {
         Dictionary(agents.agents.filter { $0.project == agent.project }.map { ($0.name, $0.avatar) }, uniquingKeysWith: { a, _ in a })
     }
 
+    /// Has the client taken the session's first message into its history yet?
+    private func sent(_ session: AgentSession) -> Bool {
+        guard let path = session.usage.historyPath, shownHistory == path else { return false }
+        return FileManager.default.fileExists(atPath: path)
+    }
+
     private func pending(_ task: String) -> some View {
         HStack {
             Spacer(minLength: 120)
             Text(Attachments.split(RelayedMessage.parse(task)?.body ?? task).text).font(.system(size: 15)).foregroundStyle(Desk.text).lineSpacing(4)
                 .padding(.horizontal, 16).padding(.vertical, 10)
                 .background(Desk.bubble, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        }
+        }.frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     /// Reads the history while this chat is open.
@@ -109,7 +117,10 @@ struct AgentChat: View {
     private func refresh(more: Bool = false) async {
         let fresh = agents.agent(agent.id) ?? agent
         let journals = fresh.journals.filter { FileManager.default.fileExists(atPath: $0) }
-        guard let current = manager.latestSession(for: agent.id)?.usage.historyPath ?? journals.last else { return }
+        // A session that has just started has no history file yet: until it has, the agent's earlier chat stays on screen.
+        let live = manager.latestSession(for: agent.id)?.usage.historyPath
+        guard let current = live.flatMap({ FileManager.default.fileExists(atPath: $0) ? $0 : nil }) ?? journals.last else { return }
+        shownHistory = current
         // The history belongs to the program that wrote it, even if the agent has switched provider since.
         let writer: Provider = URL(fileURLWithPath: current).lastPathComponent.hasPrefix("rollout-") ? .codex : .claude
         await transcript.load(current, provider: writer, earlier: journals.filter { $0 != current }, more: more)
@@ -220,7 +231,7 @@ struct TranscriptList<Extras: View>: View {
                     Color.clear.frame(height: 1).id("end")
                 }.frame(maxWidth: 960, alignment: .leading).padding(.horizontal, 24).padding(.vertical, 18).frame(maxWidth: .infinity)
             }
-            .defaultScrollAnchor(transcript.bubbles.isEmpty ? .center : .bottom)
+            .defaultScrollAnchor(.bottom)
             .onChange(of: transcript.lineCount) { _, _ in
                 Task { @MainActor in
                     try? await Task.sleep(for: .milliseconds(150))
@@ -364,13 +375,17 @@ struct PromptCard: View {
         if let ask = session.prompt {
             // Only real approvals (yes/no) get our own wording; other questions of the client stay as they are.
             let permission = Self.isPermission(ask.options.map(\.label))
+            let notice = ask.options.map(\.key) == [TerminalPromptScanner.continueKey]
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 10) {
                     Image(systemName: permission ? "hand.raised.fill" : "questionmark.bubble.fill").font(.system(size: 13)).foregroundStyle(Desk.warning)
                         .frame(width: 30, height: 30).background(Desk.warning.opacity(0.15), in: Circle())
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(permission ? t("\(name) needs your permission", "\(name) braucht deine Erlaubnis") : t("\(name) has a question", "\(name) hat eine Rückfrage")).font(.system(size: 14.5, weight: .semibold))
-                        Text(permission ? t("Read what is planned, then decide.", "Lies kurz, was geplant ist, und entscheide.") : t("Choose an answer.", "Wähle eine Antwort.")).font(.system(size: 12)).foregroundStyle(Desk.dim)
+                        Text(permission ? t("\(name) needs your permission", "\(name) braucht deine Erlaubnis")
+                             : notice ? t("\(name)'s program shows a notice", "Das Programm von \(name) zeigt einen Hinweis")
+                             : t("\(name) has a question", "\(name) hat eine Rückfrage")).font(.system(size: 14.5, weight: .semibold))
+                        Text(permission ? t("Read what is planned, then decide.", "Lies kurz, was geplant ist, und entscheide.")
+                             : notice ? t("Confirm it so the work can go on.", "Bestätige ihn, damit es weitergeht.") : t("Choose an answer.", "Wähle eine Antwort.")).font(.system(size: 12)).foregroundStyle(Desk.dim)
                     }
                 }
                 if !ask.context.isEmpty {
@@ -382,8 +397,8 @@ struct PromptCard: View {
                 }
                 VStack(spacing: 6) {
                     ForEach(ask.options) { option in
-                        let primary = option.key == "1" || option.key == "pos:\(ask.marked ?? -1)"
-                        let text = permission ? Self.wording(option.label) : (title: option.label, detail: nil)
+                        let primary = notice || option.key == "1" || option.key == "pos:\(ask.marked ?? -1)"
+                        let text = notice ? (title: t("Continue", "Weiter"), detail: nil) : permission ? Self.wording(option.label) : (title: option.label, detail: nil)
                         Button { session.answer(option) } label: {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(text.title).font(.system(size: 13.5, weight: .semibold))
