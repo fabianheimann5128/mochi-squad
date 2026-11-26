@@ -65,6 +65,8 @@ struct RoutineRun: Decodable, Identifiable {
     @Published private(set) var runs = [RoutineRun]()
     /// Routines whose macOS schedule could not be set up, with the reason. "Active" alone proves nothing.
     @Published private(set) var scheduleIssues = [String: String]()
+    /// Routines whose test run, started from the app, is still going.
+    @Published private(set) var testing = Set<String>()
     private let file: URL
     private let runFile: URL
     private var runOffset = 0
@@ -132,7 +134,16 @@ struct RoutineRun: Decodable, Identifiable {
         process.environment = AppPaths.helperEnvironment()
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
-        return (try? process.run()) != nil
+        let id = routine.id
+        process.terminationHandler = { [weak self] _ in
+            Task { @MainActor in
+                self?.testing.remove(id)
+                self?.readRuns()
+            }
+        }
+        guard (try? process.run()) != nil else { return false }
+        testing.insert(id)
+        return true
     }
 
     /// Take over new runs from the position read last.

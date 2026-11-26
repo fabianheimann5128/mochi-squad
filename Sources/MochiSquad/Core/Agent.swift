@@ -77,6 +77,9 @@ struct Agent: Codable, Identifiable, Hashable {
     /// Id of an extra ChatGPT subscription (Codex only); nil uses the regular sign-in.
     var account: String?
     var journals: [String] = []
+    /// History files written by routine runs. They are shown in the chat like any other, but a new message never
+    /// continues from one, and one that was dropped from `journals` is not attached a second time.
+    var routineJournals: [String]?
     var lastTask = ""
     var lastLine: String?
     var updated: Date?
@@ -248,7 +251,8 @@ struct AgentTemplate: Identifiable {
         var agent = agent.withModel()
         if let index = agents.firstIndex(where: { $0.id == agent.id }) {
             let stored = agents[index]
-            agent.journals = stored.journals; agent.lastTask = stored.lastTask; agent.lastLine = stored.lastLine; agent.updated = stored.updated
+            agent.journals = stored.journals; agent.routineJournals = stored.routineJournals
+            agent.lastTask = stored.lastTask; agent.lastLine = stored.lastLine; agent.updated = stored.updated
             agents[index] = agent
         } else {
             agents.append(agent)
@@ -281,6 +285,17 @@ struct AgentTemplate: Identifiable {
             $0.journals.append(journal)
             // Only the most recent ones count for the chat; older ones stay under "More chats".
             if $0.journals.count > Agent.journalLimit { $0.journals.removeFirst($0.journals.count - Agent.journalLimit) }
+        }
+    }
+
+    /// Adds the history of a routine run to the agent's chat, once. The preview moves only forward in time.
+    func attach(routineJournal journal: String, to id: UUID, lastLine: String?, finished: Date) {
+        update(id) {
+            guard !($0.routineJournals ?? []).contains(journal), !$0.journals.contains(journal) else { return }
+            $0.routineJournals = Array((($0.routineJournals ?? []) + [journal]).suffix(60))
+            $0.journals.append(journal)
+            if $0.journals.count > Agent.journalLimit { $0.journals.removeFirst($0.journals.count - Agent.journalLimit) }
+            if finished > ($0.updated ?? .distantPast) { $0.lastLine = lastLine; $0.updated = finished }
         }
     }
 

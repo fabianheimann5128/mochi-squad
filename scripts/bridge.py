@@ -5,6 +5,7 @@ Every coordinator session gets its own token, so the app knows which session is 
 that session's rights, not by anyone else's.
 
 Protocol with the app:
+  argv:   an optional port to listen on again after a restart (any free port otherwise)
   stdout: {"ready": true, "port": <port>}
   app → stdin: {"grant": "<token>", "caller": "<session id>"}   a session may call from now on
   app → stdin: {"revoke": "<token>"}                            the session ended
@@ -179,8 +180,18 @@ class Handler(BaseHTTPRequestHandler):
         self.send(status, reply)
 
 
-def serve(inp=sys.stdin, out=sys.stdout):
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+def listen(port=0):
+    """Binds to the wanted port, or to any free one if it is taken (or none is wanted)."""
+    if port:
+        try:
+            return ThreadingHTTPServer(("127.0.0.1", port), Handler)
+        except OSError:
+            pass
+    return ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+
+
+def serve(inp=sys.stdin, out=sys.stdout, port=0):
+    server = listen(port)
     server.daemon_threads = True
     server.relay = Relay(out)
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -195,7 +206,9 @@ def serve(inp=sys.stdin, out=sys.stdout):
 
 
 def main():
-    serve()
+    # After a restart the app asks for the port of the first start, which running sessions still use.
+    wanted = sys.argv[1] if len(sys.argv) > 1 else ""
+    serve(port=int(wanted) if wanted.isdigit() and 1024 < int(wanted) < 65536 else 0)
 
 
 if __name__ == "__main__":

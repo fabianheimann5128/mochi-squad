@@ -200,9 +200,16 @@ struct TelegramSetup: View {
 
     private var connected: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Label(t("Connected with \(link.config?.userName ?? "your account") through @\(link.config?.bot ?? "")",
-                    "Verbunden mit \(link.config?.userName ?? "deinem Konto") über @\(link.config?.bot ?? "")"), systemImage: "checkmark.circle.fill")
-                .font(.system(size: 13.5)).foregroundStyle(Desk.success)
+            if link.state == .ready {
+                Label(t("Connected with \(link.config?.userName ?? "your account") through @\(link.config?.bot ?? "")",
+                        "Verbunden mit \(link.config?.userName ?? "deinem Konto") über @\(link.config?.bot ?? "")"), systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 13.5)).foregroundStyle(Desk.success)
+            } else {
+                Label(t("Linked with \(link.config?.userName ?? "your account"), but not connected right now.",
+                        "Verknüpft mit \(link.config?.userName ?? "deinem Konto"), aber gerade nicht verbunden."), systemImage: "wifi.exclamationmark")
+                    .font(.system(size: 13.5)).foregroundStyle(Desk.warning)
+                Button(t("Connect again", "Neu verbinden")) { link.reconnect() }.buttonStyle(.primaryPill)
+            }
             Text(t("Write to your bot in Telegram. Only your account is answered; messages from anyone else are ignored.",
                    "Schreib deinem Bot in Telegram. Nur dein Konto bekommt Antworten; Nachrichten von anderen werden ignoriert."))
                 .font(.system(size: 12.5)).foregroundStyle(Desk.dim).fixedSize(horizontal: false, vertical: true)

@@ -9,6 +9,8 @@ import Security
     typealias Handler = @MainActor (String, [String: String], UUID?) async -> [String: Any]
 
     @Published private(set) var port: Int?
+    /// Port of the first start. A restarted server asks for the same one: running sessions have it in their configuration.
+    private var firstPort: Int?
     /// Name of the environment variable through which a coordinator gets its token.
     static let tokenVariable = "MOCHI_TOKEN"
     /// Tokens in use: token → session.
@@ -67,7 +69,7 @@ import Security
         guard let script = AppPaths.script("bridge") else { return }
         let process = Process(), stdin = Pipe(), stdout = Pipe()
         process.executableURL = AppPaths.python
-        process.arguments = ["-B", script.path]
+        process.arguments = ["-B", script.path] + (firstPort.map { [String($0)] } ?? [])
         process.standardInput = stdin
         process.standardOutput = stdout
         process.standardError = FileHandle.nullDevice
@@ -82,6 +84,7 @@ import Security
                     // A restarted server knows no tokens yet: hand it those of the sessions that still run.
                     for (token, session) in grants { send(["grant": token, "caller": session.uuidString]) }
                     self.port = port
+                    if firstPort == nil { firstPort = port }
                 } else if let id = event["id"] as? String, let name = event["tool"] as? String {
                     let args = event["args"] as? [String: String] ?? [:]
                     let caller = (event["caller"] as? String).flatMap(UUID.init)

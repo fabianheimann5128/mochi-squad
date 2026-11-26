@@ -306,8 +306,6 @@ private struct RoutinePanel: View {
     let agent: Agent
     @EnvironmentObject private var store: RoutineStore
     @State private var draft: Routine?
-    /// Id of the routine whose test run is in progress, and when it was started.
-    @State private var testing: (id: String, since: Date)?
     @State private var confirmDelete = false
     private var days: [(Int, String)] { (1...7).map { ($0, Routine.dayNames[$0]) } }
 
@@ -372,21 +370,9 @@ private struct RoutinePanel: View {
                         Button(t("Delete routine", "Routine löschen"), role: .destructive) { store.remove(stored); draft = nil }
                         Button(t("Cancel", "Abbrechen"), role: .cancel) {}
                     }
-                let running = testing?.id == stored.id
-                Button(running ? t("Running …", "Läuft …") : t("Test run", "Testlauf")) {
-                    if store.runNow(stored) { testing = (stored.id, Date()) } else { testing = nil }
-                }
-                .buttonStyle(.pill).help(t("Run once now", "Jetzt einmal ausführen")).disabled(running)
-                // While the test run is in progress, look into the log more often. The button frees up as soon as a run
-                // since the click is in the log, at the latest after the three hours a run may take.
-                .task(id: testing?.id) {
-                    while let current = testing, !Task.isCancelled {
-                        try? await Task.sleep(for: .seconds(2))
-                        store.readRuns()
-                        let done = store.runs(for: current.id).contains { Timestamp.date($0.start).map { $0 >= current.since.addingTimeInterval(-2) } ?? false }
-                        if done || Date().timeIntervalSince(current.since) > 3 * 3600 + 60 { testing = nil }
-                    }
-                }
+                let running = store.testing.contains(stored.id)
+                Button(running ? t("Running …", "Läuft …") : t("Test run", "Testlauf")) { store.runNow(stored) }
+                    .buttonStyle(.pill).help(t("Run once now", "Jetzt einmal ausführen")).disabled(running)
             }
         }
         if routine.active, let issue = store.scheduleIssues[routine.id] {

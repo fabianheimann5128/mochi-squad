@@ -165,6 +165,20 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(self.post(ping)[0], 200)
 
 
+class PortTests(unittest.TestCase):
+    def test_restart_asks_for_the_same_port_and_falls_back(self):
+        first = bridge.listen()
+        port = first.server_address[1]
+        # While the port is taken, any free one is used instead of failing.
+        other = bridge.listen(port)
+        self.assertNotEqual(other.server_address[1], port)
+        other.server_close()
+        first.server_close()
+        again = bridge.listen(port)
+        self.assertEqual(again.server_address[1], port)
+        again.server_close()
+
+
 class ValidationTests(unittest.TestCase):
     def test_valid_arguments(self):
         self.assertTrue(bridge.valid_arguments("list_agents", {"project": "/p"}))

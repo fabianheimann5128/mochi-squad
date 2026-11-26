@@ -105,7 +105,7 @@ import Foundation
     func restart(_ agent: Agent) {
         if let live = liveSession(for: agent.id) { close(live, keepWaiting: true) }
         // Only Claude agents continue their chat; Codex begins a new one.
-        let task = "Your settings were just changed (model: \(agent.model), access: \(agent.access.rawValue)). Confirm that briefly in one sentence"
+        let task = RelayedMessage.postPrefix + AppPaths.appName + ": Your settings were just changed (model \(agent.model), access \(agent.access.rawValue)). Confirm that briefly in one sentence"
             + (agent.provider == .claude ? " and then carry on where we were." : ".")
         do { try launch(agent, task: task, parentChat: resumableChat(for: agent)) } catch { notice = error.localizedDescription }
     }
@@ -168,8 +168,9 @@ import Foundation
     func resumableChat(for agent: Agent) -> String? {
         guard agent.provider == .claude else { return nil }
         // Only Claude Code histories can be continued; after a provider switch the list holds Codex histories too.
+        // A routine's run is no conversation to pick up: the chat continues from the last real session.
         return agent.journals.reversed().lazy
-            .filter { FileManager.default.fileExists(atPath: $0) }
+            .filter { !(agent.routineJournals ?? []).contains($0) && FileManager.default.fileExists(atPath: $0) }
             .map { URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent }
             .first { UUID(uuidString: $0) != nil }
     }

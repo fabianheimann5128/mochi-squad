@@ -59,7 +59,7 @@ struct FoundSkill: Identifiable, Equatable {
 
     /// Name and description from the head of a SKILL.md ("---", "name: …", "description: …", "---").
     static func parse(_ text: String) -> (name: String, description: String)? {
-        let lines = text.components(separatedBy: "\n")
+        let lines = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
         guard lines.first?.trimmingCharacters(in: .whitespaces) == "---",
               let end = lines.dropFirst().firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == "---" }) else { return nil }
         var fields = [String: String](), current: String?
@@ -160,13 +160,19 @@ struct FoundSkill: Identifiable, Equatable {
         publish()
     }
 
-    /// Rebuilds the copy agents read from: exactly the skills of the library, nothing else.
+    /// Brings the copy agents read from in line with the library: missing skills are added, removed ones deleted.
+    /// Skills that are already there stay untouched, so a running agent never finds a skill gone for a moment
+    /// (a changed skill gets a new id on import and is therefore a new folder).
     private func publish() {
         let fm = FileManager.default
-        try? fm.removeItem(at: mirror)
         try? fm.createDirectory(at: mirror, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
-        for skill in skills {
-            try? fm.copyItem(at: library.appendingPathComponent(skill.id), to: mirror.appendingPathComponent(skill.id))
+        let wanted = Set(skills.map(\.id))
+        for name in (try? fm.contentsOfDirectory(atPath: mirror.path)) ?? [] where !wanted.contains(name) {
+            try? fm.removeItem(at: mirror.appendingPathComponent(name))
+        }
+        for id in wanted where !fm.fileExists(atPath: mirror.appendingPathComponent(id + "/SKILL.md").path) {
+            try? fm.removeItem(at: mirror.appendingPathComponent(id))
+            try? fm.copyItem(at: library.appendingPathComponent(id), to: mirror.appendingPathComponent(id))
         }
     }
 

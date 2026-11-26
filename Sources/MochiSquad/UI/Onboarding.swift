@@ -254,10 +254,9 @@ struct Onboarding: View {
         settings.value.ownerName = name.trimmingCharacters(in: .whitespaces)
         settings.value.coordinatorName = coordinatorName
         settings.addProject(folder)
-        agents.ensureCoordinator(in: folder, name: coordinatorName,
-                                 provider: status.map { !$0.claude.installed && $0.codex.installed } == true ? .codex : .claude)
-        agents.renameCoordinators(to: coordinatorName)
         if keepInDock { Dock.keepApp() }
+        // The workspace creates the coordinator when it opens the project, with the program that is really installed.
+        agents.renameCoordinators(to: coordinatorName)
         settings.value.onboarded = true
     }
 

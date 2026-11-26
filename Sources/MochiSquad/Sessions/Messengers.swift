@@ -147,6 +147,12 @@ enum Keychain {
                                           guard let self else { return }
                                           self.process = nil
                                           if self.state == .ready || self.state == .connecting { self.state = .off }
+                                          // The helper should never end by itself while a bot is set up: start it again shortly.
+                                          guard self.config != nil, !fresh else { return }
+                                          Task { [weak self] in
+                                              try? await Task.sleep(for: .seconds(30))
+                                              self?.start()
+                                          }
                                       })
             process?.sendLine(token)
         } catch {
@@ -170,8 +176,9 @@ enum Keychain {
         } else if let reason = event["error"] as? String {
             switch reason {
             case "token": state = .failed(t("Telegram does not accept this token. Copy it again from BotFather.", "Telegram akzeptiert dieses Token nicht. Kopiere es noch einmal aus BotFather."))
-            case "conflict": state = .failed(t("Another program is already reading this bot. Use a bot of its own for Mochi Squad.", "Ein anderes Programm liest diesen Bot bereits. Nutze für Mochi Squad einen eigenen Bot."))
-            default: if state == .connecting { state = .failed(t("Telegram cannot be reached right now.", "Telegram ist gerade nicht erreichbar.")) }
+            // After a successful start these are passing troubles: the helper keeps trying, the link stays up.
+            case "conflict": if state != .ready { state = .failed(t("Another program is already reading this bot. Use a bot of its own for Mochi Squad.", "Ein anderes Programm liest diesen Bot bereits. Nutze für Mochi Squad einen eigenen Bot.")) }
+            default: if state == .connecting { state = .failed(t("Telegram cannot be reached right now. Mochi Squad keeps trying.", "Telegram ist gerade nicht erreichbar. Mochi Squad versucht es weiter.")) }
             }
         } else if let start = event["start"] as? [String: Any], let code = start["code"] as? String, let user = (start["user"] as? NSNumber)?.int64Value {
             // Only the code from the open, unexpired pairing counts; everything else is someone guessing.
@@ -224,6 +231,9 @@ enum Keychain {
     }
 
     func stop() { process?.stop(); process = nil }
+
+    /// Connects again with the stored token, for example after "not connected right now".
+    func reconnect() { stop(); start() }
 
     /// Forgets the bot: the process ends, the token leaves the keychain.
     func disconnect() {

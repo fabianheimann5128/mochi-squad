@@ -143,16 +143,24 @@ def main():
     if not re.fullmatch(r"\d{5,15}:[A-Za-z0-9_-]{30,60}", token):
         emit({"error": "token"})
         return
-    try:
-        me = call(token, "getMe")
-        # A webhook left over from another tool would keep getUpdates from working.
-        call(token, "deleteWebhook", {"drop_pending_updates": False})
-    except ValueError as error:
-        emit({"error": str(error)})
-        return
-    except OSError:
-        emit({"error": "network"})
-        return
+    me, pause, told = None, 2, False
+    while me is None:
+        try:
+            me = call(token, "getMe")
+            # A webhook left over from another tool would keep getUpdates from working.
+            call(token, "deleteWebhook", {"drop_pending_updates": False})
+        except (OSError, ValueError) as error:
+            reason = str(error) if isinstance(error, ValueError) else "network"
+            if reason == "token":
+                emit({"error": "token"})
+                return
+            # No network at launch, or Telegram is down: say so once and keep trying.
+            me = None
+            if not told:
+                emit({"error": reason})
+                told = True
+            time.sleep(min(pause, 60))
+            pause *= 2
     emit({"ready": True, "bot": str(me.get("username") or ""), "name": str(me.get("first_name") or "")})
     link = Link(token)
     threading.Thread(target=link.poll, daemon=True).start()

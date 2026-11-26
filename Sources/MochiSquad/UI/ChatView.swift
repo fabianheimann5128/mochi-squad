@@ -453,7 +453,7 @@ private struct SessionNotice: View {
             card("person.crop.circle.badge.exclamationmark", t("\(name) is waiting for you to sign in", "\(name) wartet auf deine Anmeldung"),
                  t("This agent's program is not signed in yet. Open the console and sign in with your subscription.",
                    "Das Programm dieses Agenten ist noch nicht angemeldet. Öffne die Konsole und melde dich mit deinem Abo an."), nil)
-        } else if !session.isRunning, session.failed, session.usage.historyPath == nil {
+        } else if !session.isRunning, session.failed, !(session.usage.historyPath.map(FileManager.default.fileExists(atPath:)) ?? false) {
             card("exclamationmark.triangle.fill", t("\(name) could not start", "\(name) konnte nicht starten"),
                  t("The session ended before it could work.", "Die Sitzung ist beendet, bevor sie arbeiten konnte."), session.screenText(lines: 6))
         }

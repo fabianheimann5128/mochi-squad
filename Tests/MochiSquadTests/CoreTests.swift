@@ -603,6 +603,38 @@ import Testing
         #expect(QRCode.image("https://t.me/my_bot?start=abc") != nil)
     }
 
+    /// A routine's run shows up in the agent's chat once, and a new message never continues from it.
+    @MainActor @Test func routineRunsJoinTheChatButAreNoPlaceToContinue() throws {
+        let home = try folder(), fm = FileManager.default
+        defer { try? fm.removeItem(at: home) }
+        let agents = AgentStore(file: home.appendingPathComponent("agents.json"))
+        let settings = SettingsStore(file: home.appendingPathComponent("settings.json"))
+        let manager = SessionManager(agents: agents, settings: settings,
+                                     routines: RoutineStore(file: home.appendingPathComponent("r.json"), runFile: home.appendingPathComponent("runs.jsonl")),
+                                     team: TeamLog(folder: home))
+        let agent = Agent(name: "Mira", job: "researcher", project: "/tmp/p").withModel()
+        agents.save(agent)
+        let chat = home.appendingPathComponent(UUID().uuidString + ".jsonl"), run = home.appendingPathComponent(UUID().uuidString + ".jsonl")
+        for file in [chat, run] { try Data("{}\n".utf8).write(to: file) }
+        agents.remember(journal: chat.path, for: agent.id)
+        let later = Date(), earlier = later.addingTimeInterval(-3600)
+        agents.update(agent.id) { $0.updated = later; $0.lastLine = "from the chat" }
+        agents.attach(routineJournal: run.path, to: agent.id, lastLine: "old run", finished: earlier)
+        var stored = try #require(agents.agent(agent.id))
+        #expect(stored.journals == [chat.path, run.path] && stored.lastLine == "from the chat" && stored.updated == later)
+        #expect(manager.resumableChat(for: stored) == chat.deletingPathExtension().lastPathComponent)
+        // Once the run has dropped out of the recent histories, it is not attached again.
+        agents.update(agent.id) { $0.journals = [chat.path] }
+        agents.attach(routineJournal: run.path, to: agent.id, lastLine: "old run", finished: earlier)
+        stored = try #require(agents.agent(agent.id))
+        #expect(stored.journals == [chat.path])
+        // A newer run does move the preview on.
+        let fresh = home.appendingPathComponent(UUID().uuidString + ".jsonl")
+        agents.attach(routineJournal: fresh.path, to: agent.id, lastLine: "new run", finished: later.addingTimeInterval(60))
+        #expect(agents.agent(agent.id)?.lastLine == "new run")
+        #expect(SkillStore.parse("---\r\nname: windows\r\ndescription: line endings\r\n---\r\nBody")?.name == "windows")
+    }
+
     /// Skills: import from a folder or archive, assignment, and the copy agents read.
     @MainActor @Test func skillsAreImportedAssignedAndPublished() throws {
         let home = try folder(), fm = FileManager.default
