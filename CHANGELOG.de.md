@@ -2,15 +2,15 @@
 
 ## 0.2.0
 
-- Englisch ist jetzt die Hauptsprache; Deutsch lässt sich bei der Einrichtung und in den Einstellungen wählen
-- Agenten antworten in der Sprache, in der du ihnen schreibst, unabhängig von der Sprache der Oberfläche
-- Telegram: Erreiche deinen Team-Chat vom Handy über deinen eigenen Bot
-- WhatsApp: Erreiche deinen Team-Chat über den Chat „Nachricht an mich selbst“ (inoffizielle Anbindung, siehe Hinweis bei der Einrichtung)
-- Neue Symbolleiste links: neuer Agent, Prozesse, Konnektoren, Neuigkeiten, Rückmeldung und Einstellungen
-- Chats lesen sich besser: Listen mit sauberem Einzug, hervorgehobene Dateinamen, kürzere Zeilen
-- Der Koordinator kann auch mit Codex laufen, ein Abo genügt also
-- Routinen: Probleme mit dem Zeitplan werden angezeigt, eine Routine läuft nie doppelt, Codex-Läufe erscheinen im Chat des Agenten
-- Viele Korrekturen aus einer unabhängigen Prüfung von Rechten, Datensicherheit und Zuverlässigkeit (siehe SECURITY.md)
+- **Englisch zuerst.** Englisch ist jetzt die Hauptsprache; Deutsch wählst du bei der Einrichtung und in den Einstellungen.
+- **Agenten sprechen deine Sprache.** Sie antworten in der Sprache, in der du ihnen schreibst, egal wie die Oberfläche eingestellt ist.
+- **Telegram.** Erreiche deinen Team-Chat vom Handy über deinen eigenen Bot.
+- **WhatsApp.** Erreiche deinen Team-Chat über den Chat „Nachricht an mich selbst“ (inoffizielle Anbindung, siehe Hinweis bei der Einrichtung).
+- **Neue Symbolleiste.** Neuer Agent, Prozesse, Konnektoren, Neuigkeiten, Rückmeldung und Einstellungen sitzen in einer Leiste links.
+- **Chats lesen sich besser.** Listen mit sauberem Einzug, hervorgehobene Dateinamen, kürzere Zeilen.
+- **Koordinator mit Codex.** Der Koordinator kann auch mit Codex laufen, ein Abo genügt also.
+- **Verlässliche Routinen.** Probleme mit dem Zeitplan werden angezeigt, eine Routine läuft nie doppelt, und Codex-Läufe erscheinen im Chat des Agenten.
+- **Korrekturen aus einer unabhängigen Prüfung.** Viele Verbesserungen bei Rechten, Datensicherheit und Zuverlässigkeit (siehe SECURITY.md).
 
 ## 0.1.0
 

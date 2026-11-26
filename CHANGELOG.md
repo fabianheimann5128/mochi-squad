@@ -2,15 +2,15 @@
 
 ## 0.2.0
 
-- English is now the main language; German can be chosen during setup and in Settings
-- Agents answer in the language you write to them, whatever the interface language is
-- Telegram: reach your team chat from your phone through your own bot
-- WhatsApp: reach your team chat through the "Message yourself" chat (unofficial link, see the note in setup)
-- New icon bar on the left: new agent, processes, connectors, what's new, feedback and settings
-- Chats read better: lists with clean indentation, highlighted file names, shorter lines
-- The coordinator can run with Codex too, so one subscription is enough
-- Routines: schedule problems are shown, a routine never runs twice at once, Codex runs appear in the agent's chat
-- Many fixes from an independent review of rights, data safety and reliability (see SECURITY.md)
+- **English first.** English is now the main language; German can be chosen during setup and in Settings.
+- **Agents speak your language.** They answer in the language you write to them, whatever the interface is set to.
+- **Telegram.** Reach your team chat from your phone through your own bot.
+- **WhatsApp.** Reach your team chat through the "Message yourself" chat (unofficial link, see the note in setup).
+- **New icon bar.** New agent, processes, connectors, what's new, feedback and settings sit in one bar on the left.
+- **Chats read better.** Lists with clean indentation, highlighted file names, shorter lines.
+- **Coordinator with Codex.** The coordinator can run with Codex too, so one subscription is enough.
+- **Routines you can rely on.** Schedule problems are shown, a routine never runs twice at once, and Codex runs appear in the agent's chat.
+- **Fixes from an independent review.** Many corrections to rights, data safety and reliability (see SECURITY.md).
 
 ## 0.1.0
 

@@ -379,6 +379,9 @@ import Testing
         #expect(Feedback.url(.idea).absoluteString.hasSuffix("template=feature.md"))
         let parts = WhatsNew.sections("# What's new\n\n## 0.2.0\n- A\n- B\n\n## 0.1.0\n- C")
         #expect(parts.map(\.title) == ["0.2.0", "0.1.0"] && parts[0].items == ["A", "B"])
+        let item = ChangeItem("**Telegram.** Reach your team chat from your phone.")
+        #expect(item.title == "Telegram" && item.text == "Reach your team chat from your phone." && item.symbol == "paperplane.fill")
+        #expect(ChangeItem("Plain entry").title == nil && ChangeItem("Plain entry").symbol == "sparkles")
     }
 
     @Test func attachmentPathsFromMessagesCannotLeaveTheAttachmentFolder() throws {
