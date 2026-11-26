@@ -18,7 +18,7 @@ struct TeamChat: View {
         VStack(spacing: 0) {
             ChatHeader(showRail: $showRail) {
                 GlassPill {
-                    GroupAvatar(keys: members.prefix(3).map(\.avatar), size: 30)
+                    GroupAvatar(keys: members.prefix(3).map(\.avatar), size: 30, round: true)
                     Text("Team " + project.lastPathComponent).font(.system(size: 15, weight: .medium)).lineLimit(1)
                     if !typing.isEmpty {
                         Text(typing.joined(separator: ", ") + (typing.count == 1 ? " schreibt …" : " schreiben …"))

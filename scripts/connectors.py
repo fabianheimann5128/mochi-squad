@@ -36,20 +36,34 @@ def run(provider, args, folder, timeout=45):
     return subprocess.run([client(provider), "mcp", *args], capture_output=True, text=True, cwd=folder, timeout=timeout)
 
 
+def codex_state(row):
+    """ok, login (Anmeldung nötig), off (abgeschaltet) oder error."""
+    if row.get("enabled") is False:
+        return "off"
+    return "login" if row.get("auth_status") == "not_logged_in" else "ok"
+
+
+def claude_state(text):
+    text = text.lower()
+    if "connected" in text:
+        return "ok"
+    return "login" if "authentication" in text else "error"
+
+
 def connectors(provider, folder):
     codex = provider == "codex"
     result = run(provider, ["list", "--json"] if codex else ["list"], folder)
     if result.returncode:
         raise ValueError("Der Client konnte seine Konnektoren nicht auflisten.")
     if codex:
-        return [dict(name=str(x.get("name", "")), status=x.get("auth_status", "") if x.get("enabled", True) else "disabled")
+        return [dict(name=str(x.get("name", "")), state=codex_state(x))
                 for x in json.loads(result.stdout) if isinstance(x, dict) and x.get("name")]
     rows = []
     for line in result.stdout.splitlines():
         line = re.sub(r"\x1b\[[0-9;]*m", "", line)
         match = re.match(r"^([^:]+): .+? - (.+)$", line.strip())
         if match:
-            rows.append(dict(name=match[1], status=match[2]))
+            rows.append(dict(name=match[1], state=claude_state(match[2])))
     return rows
 
 

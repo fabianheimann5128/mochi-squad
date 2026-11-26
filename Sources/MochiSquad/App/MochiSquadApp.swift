@@ -60,7 +60,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if manager.runningCount > 0 {
             let alert = NSAlert()
             alert.messageText = "Mochi Squad beenden?"
-            alert.informativeText = "Es laufen noch \(manager.runningCount) Sitzungen. Sie werden beendet; die Verläufe bleiben erhalten."
+            let count = manager.runningCount
+            alert.informativeText = (count == 1 ? "Es läuft noch eine Sitzung. Sie wird beendet" : "Es laufen noch \(count) Sitzungen. Sie werden beendet")
+                + "; die Verläufe bleiben erhalten."
             alert.addButton(withTitle: "Weiterarbeiten")
             alert.addButton(withTitle: "Beenden")
             if alert.runModal() != .alertSecondButtonReturn { return .terminateCancel }

@@ -66,7 +66,7 @@ struct Sidebar: View {
                         Button { selection = .team; showProcesses = false } label: {
                             row(name: "Team", job: nil, time: team.lines.last?.date, preview: teamPreview,
                                 chosen: selection == .team && !showProcesses, hoverID: nil) {
-                                GroupAvatar(keys: crew.prefix(3).map(\.avatar), size: 38)
+                                GroupAvatar(keys: members.prefix(3).map(\.avatar), size: 38)
                             }
                         }.buttonStyle(.plain)
                     }

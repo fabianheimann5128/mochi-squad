@@ -65,7 +65,11 @@ struct ConnectorsView: View {
     @State private var notice = ""
     @State private var busy = false
 
-    struct Row: Decodable { let name, status: String }
+    struct Row: Decodable {
+        let name, state: String
+        var label: String { ["ok": "verbunden", "login": "Anmeldung nötig", "off": "abgeschaltet"][state] ?? "nicht erreichbar" }
+        var color: SwiftUI.Color { state == "ok" ? Desk.success : state == "off" ? Desk.faint : Desk.warning }
+    }
     private struct Result: Decodable { let rows: [Row]?; let message, error: String? }
 
     var body: some View {
@@ -84,15 +88,21 @@ struct ConnectorsView: View {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(row.name).font(.system(size: 13.5, weight: .medium))
-                                Text(row.status).font(.system(size: 12)).foregroundStyle(Desk.dim).lineLimit(1)
+                                HStack(spacing: 5) {
+                                    Circle().fill(row.color).frame(width: 6, height: 6)
+                                    Text(row.label).font(.system(size: 12)).foregroundStyle(Desk.dim)
+                                }
                             }
                             Spacer()
-                            Button("Anmelden") { Task { await perform("login", [row.name]) } }.buttonStyle(.pill)
+                            if row.state == "login" { Button("Anmelden") { Task { await perform("login", [row.name]) } }.buttonStyle(.pill).disabled(busy) }
                         }.padding(.horizontal, 12).frame(height: 48).background(Desk.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
-                    if rows.isEmpty { Text(busy ? "Wird geladen …" : "Noch keine Konnektoren eingerichtet.").font(.system(size: 12.5)).foregroundStyle(Desk.dim).padding(.vertical, 12) }
-                }
-            }.frame(height: 190)
+                    if rows.isEmpty {
+                        if busy { ProgressView().controlSize(.small).padding(.top, 40) }
+                        else { Text("Noch keine Konnektoren eingerichtet.").font(.system(size: 12.5)).foregroundStyle(Desk.dim).padding(.vertical, 12) }
+                    }
+                }.frame(maxWidth: .infinity)
+            }.frame(height: 264)
             Text("Server hinzufügen").font(.system(size: 13, weight: .semibold)).foregroundStyle(Desk.dim)
             HStack(spacing: 8) {
                 TextField("Name", text: $name).textFieldStyle(.plain).padding(.horizontal, 12).frame(width: 130, height: 32).field(8)

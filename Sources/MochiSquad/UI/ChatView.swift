@@ -151,8 +151,8 @@ private struct SessionStatus: View {
                 : session.working ? ("schreibt …", Desk.success) : ("online", Desk.dim)
             HStack(spacing: 5) {
                 Circle().fill(color).frame(width: 6, height: 6)
-                Text(text).font(.system(size: 12)).foregroundStyle(color)
-            }
+                Text(text).font(.system(size: 12)).foregroundStyle(color).lineLimit(1)
+            }.fixedSize()
         }
     }
 }
