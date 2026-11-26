@@ -84,9 +84,7 @@ def attach_runtime(spec, session_dir, shared=None):
     spec = dict(spec, contextFile=str(session_dir / "context.json"))
     outbox = Path(shared or common.SHARED) / "outbox" / session_dir.name
     tool = Path(shared or common.SHARED) / "bin" / "post"
-    # Codex-Agenten ohne Schreibrecht laufen in einer reinen Lese-Sandbox und können keinen Postausgang beschreiben.
-    can_post = spec["provider"] == "claude" or spec["agent"]["canEdit"]
-    if spec["postEnabled"] and can_post and outbox.is_dir() and tool.is_file():
+    if spec["postEnabled"] and outbox.is_dir() and tool.is_file():
         spec.update(post=str(tool), outbox=str(outbox))
     if spec["agent"]["isCoordinator"]:
         config = session_dir / "mcp.json"
@@ -194,11 +192,56 @@ def claude_args(spec, interactive=True):
     return args
 
 
+def _toml(value):
+    """Schreibt Wahrheitswerte, Zeichenketten und Tabellen als TOML-Wert für `codex -c`."""
+    if isinstance(value, dict):
+        return "{" + ", ".join(f"{json.dumps(str(k))} = {_toml(v)}" for k, v in value.items()) + "}"
+    return json.dumps(value)
+
+
+def build_codex_permissions(spec, home=None):
+    """Rechteprofil einer Codex-Sitzung, das Gegenstück zu build_claude_settings.
+
+    Lesen: alles außer SECRET_PATHS. Schreiben: mit canEdit das Projekt und der Temp-Ordner, sonst nichts außer dem
+    eigenen Postausgang. Netz für Befehle nur mit allowWeb.
+    """
+    home = Path(home or common.HOME)
+    edit = spec["agent"]["canEdit"]
+    files = {":root": "read", ":project_roots": {".": "write" if edit else "read"}}
+    if edit:
+        files[":tmpdir"] = "write"
+    files.update({str(home / p): "none" for p in SECRET_PATHS})
+    if spec.get("outbox"):
+        files[spec["outbox"]] = "write"
+    return {"filesystem": files, "network": {"enabled": bool(spec.get("allowWeb"))}}
+
+
+def codex_profile_args(spec):
+    # Ein eigenes Profil statt --sandbox: Nur Profile kennen Lesesperren.
+    return ["-c", 'default_permissions="mochi"', "-c", "permissions.mochi=" + _toml(build_codex_permissions(spec))]
+
+
+def codex_profile_enforced(binary, spec, home=None, timeout=20):
+    """Prüft am echten Client, dass das Profil greift. Ältere Codex-Versionen übergehen es stillschweigend."""
+    locked = str(Path(home or common.HOME) / "Library/Application Support")
+
+    def probe(*command):
+        try:
+            return subprocess.run([binary, "sandbox", *codex_profile_args(spec), "--", *command], cwd=spec["project"],
+                                  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                  timeout=timeout).returncode
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+    return probe("/usr/bin/true") == 0 and probe("/bin/ls", locked) not in (0, None)
+
+
+OUTDATED_CODEX = ("Diese Codex-Version kennt keine Rechteprofile, die Lesesperren würden nicht greifen. "
+                  "Aktualisiere Codex und starte die Sitzung erneut.")
+
+
 def codex_args(spec, interactive=True):
     agent = spec["agent"]
-    args = ["--sandbox", "workspace-write" if agent["canEdit"] else "read-only"]
-    if agent["canEdit"] and spec.get("outbox"):
-        args += ["-c", "sandbox_workspace_write.writable_roots=" + json.dumps([spec["outbox"]])]
+    args = codex_profile_args(spec) + ["-c", "web_search=" + json.dumps("live" if spec.get("allowWeb") else "disabled")]
     if interactive:
         args += ["--ask-for-approval", "on-request"]
     if agent["model"]:
@@ -262,6 +305,8 @@ def run(spec_path):
     if spec.get("outbox"):
         os.environ["MOCHI_OUTBOX"] = spec["outbox"]
     if provider == "codex":
+        if not codex_profile_enforced(binary, spec):
+            raise SystemExit(OUTDATED_CODEX)
         # Der Codex-Beobachter findet die Sitzung über diese Zeile in der ersten Nachricht.
         prompt = f"Sitzung {spec['sessionId']}\n" + prompt
         if spec.get("parentChat"):

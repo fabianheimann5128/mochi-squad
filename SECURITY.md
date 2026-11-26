@@ -35,7 +35,7 @@ Rückfragen des Clients (z. B. „Darf ich diesen Befehl ausführen?“) erschei
 ## Bekannte Grenzen
 
 - **Prompt-Injection.** Ein Agent, der Webseiten oder fremde Dateien liest, kann darin versteckten Anweisungen folgen. Die Rechte oben begrenzen den Schaden, verhindern ihn aber nicht vollständig. Gib Schreibrechte und Internetzugang nur Agenten, die sie brauchen, und halte wichtige Projekte unter Versionsverwaltung.
-- **Codex ist weniger streng abgeschirmt.** Für Codex-Agenten setzt Mochi Squad dessen eigene Sandbox ein: nur lesen oder im Projekt schreiben. Diese Sandbox kennt keine Lesesperren; ein Codex-Agent kann Dateien deines Benutzerkontos außerhalb des Projekts lesen. Nutze für heikle Umgebungen Claude-Agenten.
+- **Codex über ein Rechteprofil.** Codex-Agenten bekommen ein eigenes Rechteprofil mit denselben Lesesperren und Schreibgrenzen wie Claude-Agenten; es gilt für die Befehle, die der Agent ausführt. Dafür ist eine Codex-Version mit Rechteprofilen nötig (`default_permissions`). Ältere Versionen lehnen den Start ab, statt ohne Sperren zu laufen.
 - **Die Sandbox gehört dem Client.** Mochi Squad konfiguriert die Sandbox von Claude Code und Codex, baut aber keine eigene. Ihre Stärke hängt von der Version des Clients ab. Eigene Freigaben in deinen persönlichen Client-Einstellungen gelten zusätzlich.
 - **Lesen im Projekt.** Jeder Agent liest den ganzen Projektordner. Lege dort keine Geheimnisse ab (z. B. `.env` mit Produktionsschlüsseln).
 - **Internet in Routinen.** Eine Routine mit Internetzugang läuft unbeaufsichtigt und kann Inhalte aus dem Projekt an Webseiten senden, wenn sie dazu verleitet wird. Schalte das nur für Projekte ohne vertrauliche Inhalte ein.

@@ -9,6 +9,7 @@ import SwiftUI
     let routines = RoutineStore()
     let team = TeamLog()
     let transcript = TranscriptStore()
+    let chats = ChatIndex()
     let manager: SessionManager
 
     private init() {
@@ -29,6 +30,7 @@ struct MochiSquadApp: App {
                 .environmentObject(state.routines)
                 .environmentObject(state.team)
                 .environmentObject(state.transcript)
+                .environmentObject(state.chats)
                 .environmentObject(state.manager)
         }
         .windowStyle(.hiddenTitleBar)
@@ -113,14 +115,19 @@ enum Dock {
     /// Trägt die App ins Dock ein und lädt das Dock neu. Tut nichts, wenn sie schon dort liegt.
     static func keepApp() {
         guard !containsApp, Bundle.main.bundleURL.pathExtension == "app" else { return }
-        let path = Bundle.main.bundleURL.path
-            .replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
-        let entry = "<dict><key>tile-data</key><dict><key>file-data</key><dict><key>_CFURLString</key><string>" + path
-            + "</string><key>_CFURLStringType</key><integer>0</integer></dict></dict></dict>"
+        let entry = entry(for: Bundle.main.bundleURL)
         DispatchQueue.global(qos: .utility).async {
             run("/usr/bin/defaults", ["write", "com.apple.dock", "persistent-apps", "-array-add", entry])
             run("/usr/bin/killall", ["Dock"])
         }
+    }
+
+    /// Dock-Eintrag einer App als Property-List-Text für `defaults write … -array-add`.
+    static func entry(for app: URL) -> String {
+        let path = app.path
+            .replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
+        return "<dict><key>tile-data</key><dict><key>file-data</key><dict><key>_CFURLString</key><string>" + path
+            + "</string><key>_CFURLStringType</key><integer>0</integer></dict></dict></dict>"
     }
 
     private static func run(_ tool: String, _ args: [String]) {

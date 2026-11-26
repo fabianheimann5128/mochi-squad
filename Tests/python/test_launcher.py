@@ -164,9 +164,8 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(spec["outbox"], str(self.shared / "outbox" / "abc"))
         self.assertEqual(spec["contextFile"], str(self.session / "context.json"))
 
-    def test_read_only_codex_agent_gets_no_post(self):
-        self.assertNotIn("post", launcher.attach_runtime(self.spec(provider="codex"), self.session, shared=self.shared))
-        self.assertIn("post", launcher.attach_runtime(self.spec(provider="codex", canEdit=True), self.session, shared=self.shared))
+    def test_read_only_codex_agent_can_post(self):
+        self.assertIn("post", launcher.attach_runtime(self.spec(provider="codex"), self.session, shared=self.shared))
 
     def test_coordinator_needs_its_tool_config(self):
         with self.assertRaises(launcher.SpecError):
@@ -207,14 +206,48 @@ class ArgumentTests(unittest.TestCase):
     def test_unknown_effort_is_dropped(self):
         self.assertNotIn("--effort", launcher.claude_args(make_spec(self.dir.name, effort="ultra; rm")))
 
-    def test_codex_sandbox_follows_edit_right(self):
-        self.assertIn("read-only", launcher.codex_args(make_spec(self.dir.name)))
+    def test_codex_profile_follows_edit_right(self):
+        home = Path("/Users/test")
+        reader = launcher.build_codex_permissions(make_spec(self.dir.name), home=home)
+        self.assertEqual(reader["filesystem"][":project_roots"], {".": "read"})
+        self.assertNotIn(":tmpdir", reader["filesystem"])
+        self.assertFalse(reader["network"]["enabled"])
+        spec = make_spec(self.dir.name, canEdit=True)
+        spec.update(outbox="/x/outbox/abc", allowWeb=True)
+        editor = launcher.build_codex_permissions(spec, home=home)
+        self.assertEqual(editor["filesystem"][":project_roots"], {".": "write"})
+        self.assertEqual(editor["filesystem"]["/x/outbox/abc"], "write")
+        self.assertTrue(editor["network"]["enabled"])
+        for secret in (".ssh", ".codex", ".claude", "Library/Application Support"):
+            self.assertEqual(editor["filesystem"][str(home / secret)], "none")
+
+    def test_codex_args_use_profile_instead_of_sandbox_flag(self):
         spec = make_spec(self.dir.name, canEdit=True, effort="minimal")
-        spec["outbox"] = "/x/outbox/abc"
         args = launcher.codex_args(spec)
-        self.assertIn("workspace-write", args)
-        self.assertIn('sandbox_workspace_write.writable_roots=["/x/outbox/abc"]', args)
+        self.assertNotIn("--sandbox", args)
+        self.assertIn('default_permissions="mochi"', args)
+        profile = next(a for a in args if a.startswith("permissions.mochi="))
+        self.assertIn('":root" = "read"', profile)
+        self.assertIn('web_search="disabled"', args)
         self.assertIn('model_reasoning_effort="minimal"', args)
+
+    def test_codex_profile_check_fails_closed(self):
+        spec = make_spec(self.dir.name)
+        script = Path(self.dir.name) / "fake-codex"
+        # Ein Client, der das Profil übergeht: jeder Befehl gelingt.
+        script.write_text("#!/bin/sh\nexit 0\n")
+        script.chmod(0o755)
+        self.assertFalse(launcher.codex_profile_enforced(str(script), spec))
+        # Ein Client ohne Unterbefehl „sandbox“: nichts gelingt.
+        script.write_text("#!/bin/sh\nexit 2\n")
+        self.assertFalse(launcher.codex_profile_enforced(str(script), spec))
+        self.assertFalse(launcher.codex_profile_enforced(str(script) + "-fehlt", spec))
+        # Ein Client, der die Sperre durchsetzt: der Lesetest scheitert, der Leerlauf gelingt.
+        script.write_text('#!/bin/sh\nfor a; do last="$a"; done\ncase "$last" in /usr/bin/true) exit 0;; *) exit 1;; esac\n')
+        self.assertTrue(launcher.codex_profile_enforced(str(script), spec))
+
+    def test_toml_escapes_keys(self):
+        self.assertEqual(launcher._toml({'a "b"': {"c": True}}), '{"a \\"b\\"" = {"c" = true}}')
 
 
 if __name__ == "__main__":

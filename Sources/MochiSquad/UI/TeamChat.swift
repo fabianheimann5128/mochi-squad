@@ -10,7 +10,8 @@ struct TeamChat: View {
     @State private var draft = ""
     @FocusState private var focused: Bool
 
-    private var members: [Agent] { agents.agents(in: project).filter { !$0.isCoordinator } }
+    /// Der Koordinator steht vorn: Er antwortet, wenn niemand angesprochen ist.
+    private var members: [Agent] { agents.agents(in: project).sorted { $0.isCoordinator && !$1.isCoordinator } }
     private var typing: [String] { manager.teamTyping[project.path] ?? [] }
 
     var body: some View {
@@ -53,12 +54,12 @@ struct TeamChat: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
                         ForEach(members) { chip("@" + $0.name, avatar: $0.avatar, job: $0.jobTitle) }
-                        if members.count > 1 { chip("@alle", avatar: nil, job: nil) }
+                        if members.filter({ !$0.isCoordinator }).count > 1 { chip("@alle", avatar: nil, job: nil) }
                     }.padding(.horizontal, 4)
                 }
                 HStack(alignment: .bottom, spacing: 10) {
                     RoundGlyph(name: "at").accessibilityHidden(true)
-                    TextField("Nachricht ans Team – @Name holt einen Agenten dazu", text: $draft, axis: .vertical)
+                    TextField("Nachricht ans Team, @Name holt einen Agenten dazu", text: $draft, axis: .vertical)
                         .textFieldStyle(.plain).lineLimit(1...6).font(.system(size: 15)).focused($focused).onSubmit(send)
                         .padding(.vertical, 8).frame(minHeight: 34)
                     Button(action: send) { SendGlyph() }.buttonStyle(.plain).keyboardShortcut(.return, modifiers: .command)
@@ -70,9 +71,9 @@ struct TeamChat: View {
 
     private var intro: some View {
         VStack(spacing: 12) {
-            HStack(spacing: -8) { ForEach(members.prefix(4)) { BotAvatar(key: $0.avatar, size: 44) } }
-            Text("Hol dir einen Agenten in den Chat").font(.system(size: 17, weight: .semibold))
-            Text("Schreib zum Beispiel „@\(members.first?.name ?? "Name") schau dir das bitte an“. Der Agent antwortet hier, kennt den Verlauf und kann mit @Name selbst einen Kollegen dazuholen. Mit @alle fragst du das ganze Team.")
+            HStack(spacing: -8) { ForEach(members.prefix(4)) { MochiAvatar(key: $0.avatar, size: 44) } }
+            Text("Schreib einfach los").font(.system(size: 17, weight: .semibold))
+            Text("Ohne Anrede antwortet \(members.first?.name ?? "dein Koordinator"). Mit @Name holst du einen bestimmten Agenten dazu, mit @alle das ganze Team. Jeder kennt den Verlauf und kann selbst Kollegen einbeziehen.")
                 .font(.system(size: 14)).foregroundStyle(Desk.dim).multilineTextAlignment(.center)
         }.frame(maxWidth: 460).frame(maxWidth: .infinity).padding(.top, 110)
     }
@@ -83,7 +84,7 @@ struct TeamChat: View {
             focused = true
         } label: {
             HStack(spacing: 6) {
-                if let avatar { BotAvatar(key: avatar, size: 18) }
+                if let avatar { MochiAvatar(key: avatar, size: 18) }
                 Text(mention).font(.system(size: 13, weight: .medium))
                 if let job { Text(job).font(.system(size: 12)).foregroundStyle(Desk.faint) }
             }.padding(.leading, avatar == nil ? 12 : 6).padding(.trailing, 12).frame(height: 30)
@@ -116,7 +117,7 @@ private struct TeamLineView: View, Equatable {
             VStack(alignment: mine ? .trailing : .leading, spacing: 6) {
                 if !mine && head {
                     HStack(spacing: 6) {
-                        BotAvatar(key: agent?.avatar ?? line.from, size: 20)
+                        MochiAvatar(key: agent?.avatar ?? line.from, size: 20)
                         Text(line.from).font(.system(size: 14, weight: .semibold)).foregroundStyle(agent.map { MochiLook(key: $0.avatar).color } ?? Desk.accent)
                         if let job = agent?.jobTitle { Text(job).font(.system(size: 12)).foregroundStyle(Desk.faint) }
                     }

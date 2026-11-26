@@ -26,10 +26,10 @@
 - **Agenten nach deinen Vorstellungen.** Name, Job, Aufgaben, Charakter, Anbieter (Claude Code oder Codex), Modell und Denktiefe legst du frei fest. Jeder Agent bekommt seinen eigenen Mochi.
 - **Ein Koordinator.** Er kennt über eingebaute Werkzeuge den Stand aller Projekte und Agenten und verteilt Aufträge für dich.
 - **Chat statt Terminal.** Jede Sitzung läuft im echten Client. Du siehst sie als Chat und kannst jederzeit in die Konsole wechseln. Rückfragen des Clients beantwortest du per Klick.
-- **Team-Chat.** Hol Agenten mit `@Name` dazu. Sie lesen den Verlauf mit und können selbst Kollegen einbeziehen.
+- **Team-Chat.** Schreib einfach los: Ohne Anrede antwortet dein Koordinator, mit `@Name` holst du einen bestimmten Agenten dazu. Alle lesen den Verlauf mit und können selbst Kollegen einbeziehen.
 - **Computer-Ansicht.** Sieh live, woran ein Agent arbeitet und welche Dateien er zuletzt angefasst hat.
 - **Routinen.** Aufträge zu festen Zeiten über die Zeitplanung von macOS, auch wenn die App geschlossen ist.
-- **Klare Rechte.** Agenten lesen nur im Projekt. Schreiben darf nur, wem du es erlaubst, und dann nur in einer Sandbox. Details in [SECURITY.md](SECURITY.md).
+- **Klare Rechte.** Jeder Agent läuft in einer Sandbox, bei Claude Code wie bei Codex. Schreiben darf nur, wem du es erlaubst, und Zugangsdaten bleiben gesperrt. Details in [SECURITY.md](SECURITY.md).
 
 ## Voraussetzungen
 
@@ -54,7 +54,7 @@ cd mochi-squad
 Beim ersten Start führt dich Mochi Squad in drei Schritten durch die Einrichtung:
 
 1. **Name.** Wie du heißt und wie dein Koordinator heißen soll.
-2. **Projekt.** Der Ordner, in dem deine Agenten arbeiten.
+2. **Projekt.** Der Ordner, in dem deine Agenten arbeiten. Vorgeschlagen wird `~/Mochi Squad`; du kannst jeden anderen wählen.
 3. **Anmelden.** Ein Klick öffnet die Anmeldung von Claude Code oder Codex mit deinem Abo.
 
 Danach wartet dein Koordinator. Weitere Agenten legst du über **+** an: Vorlage wählen oder alles selbst festlegen. Im Team-Chat sprichst du sie mit `@Name` an.

@@ -239,7 +239,7 @@ private extension GraphicsContext {
 }
 
 /// Avatar eines Agenten. Statisch gezeichnet; nur wer gerade arbeitet, atmet und blinzelt (spart Rechenzeit).
-struct BotAvatar: View {
+struct MochiAvatar: View {
     let key: String
     let size: CGFloat
     var working = false
@@ -663,7 +663,7 @@ struct GroupAvatar: View {
             : [CGPoint(x: -size * 0.16, y: -size * 0.16), CGPoint(x: size * 0.16, y: size * 0.16)]
         ZStack {
             ForEach(Array(keys.prefix(3).enumerated()), id: \.offset) { index, key in
-                BotAvatar(key: key, size: tile)
+                MochiAvatar(key: key, size: tile)
                     .background(RoundedRectangle(cornerRadius: tile * 0.25, style: .continuous)
                         .fill(Color(.sRGB, red: 10 / 255, green: 10 / 255, blue: 10 / 255)).padding(-1.5))
                     .offset(x: spots[index].x, y: spots[index].y)

@@ -33,9 +33,18 @@ struct ActivityEvent: Decodable, Identifiable, Equatable {
     let file: String?
 }
 
+/// Liste der gespeicherten Chats eines Projekts. Getrennt vom offenen Verlauf, damit die Seitenleiste nicht bei jeder neuen Zeile neu zeichnet.
+@MainActor final class ChatIndex: ObservableObject {
+    @Published private(set) var entries = [ChatEntry]()
+
+    func refresh(_ project: URL) async {
+        let rows = (try? await PythonTool.run("history", ["list", project.path], as: [ChatEntry].self)) ?? []
+        if rows != entries { entries = rows }
+    }
+}
+
 /// Verlauf des geöffneten Chats. Neue Zeilen werden inkrementell gelesen und einmal zu Blasen aufbereitet.
 @MainActor final class TranscriptStore: ObservableObject {
-    @Published private(set) var entries = [ChatEntry]()
     @Published private(set) var bubbles = [Bubble]()
     @Published private(set) var lineCount = 0
     @Published private(set) var lastLine: ChatLine?
@@ -50,15 +59,6 @@ struct ActivityEvent: Decodable, Identifiable, Equatable {
     private var generation = UUID()
     private var limit = 40
     private var busy = false
-
-    func index(_ project: URL) async {
-        do {
-            let rows = try await PythonTool.run("history", ["list", project.path], as: [ChatEntry].self)
-            entries = rows
-        } catch {
-            entries = []
-        }
-    }
 
     func reset() {
         generation = UUID(); file = nil; position = 0; lines = []; bubbles = []; lineCount = 0; lastLine = nil

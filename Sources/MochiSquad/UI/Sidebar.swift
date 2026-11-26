@@ -16,7 +16,7 @@ struct Sidebar: View {
     @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var agents: AgentStore
     @EnvironmentObject private var team: TeamLog
-    @EnvironmentObject private var transcript: TranscriptStore
+    @EnvironmentObject private var chats: ChatIndex
     @EnvironmentObject private var manager: SessionManager
     @State private var search = ""
     @State private var searching = false
@@ -29,7 +29,7 @@ struct Sidebar: View {
     /// Chats, die keinem Agenten gehören (z. B. direkt im Terminal geführt).
     private var archive: [ChatEntry] {
         let known = Set(members.flatMap(\.journals))
-        return transcript.entries.filter { !known.contains($0.path) && matches($0.title) }
+        return chats.entries.filter { !known.contains($0.path) && matches($0.title) }
     }
 
     var body: some View {
@@ -235,7 +235,7 @@ private struct AgentRow: View {
             return text.replacingOccurrences(of: "\n", with: " ")
         }()
         return row(name: agent.name, job: agent.jobTitle, time: agent.updated, preview: preview, chosen: chosen, hoverID: hovered) {
-            BotAvatar(key: agent.avatar, size: 38, working: working)
+            MochiAvatar(key: agent.avatar, size: 38, working: working)
                 .overlay(alignment: .bottomTrailing) {
                     if running {
                         Circle().fill(Desk.working).frame(width: 9, height: 9)

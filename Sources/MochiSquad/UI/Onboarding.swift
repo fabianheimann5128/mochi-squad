@@ -8,6 +8,7 @@ struct ClientStatus: Decodable {
     let claude: Entry
     let codex: Entry
     func entry(_ provider: Provider) -> Entry { provider == .claude ? claude : codex }
+    var allReady: Bool { claude.loggedIn && codex.loggedIn }
     static func load() async -> ClientStatus? { try? await PythonTool.run("launcher", ["status"], as: ClientStatus.self) }
 }
 
@@ -101,6 +102,10 @@ private struct LoginTerminal: NSViewRepresentable {
         return view
     }
     func updateNSView(_ nsView: LocalProcessTerminalView, context: Context) {}
+    /// Wer das Fenster schließt, bricht auch die Anmeldung ab.
+    static func dismantleNSView(_ nsView: LocalProcessTerminalView, coordinator: Coordinator) {
+        if nsView.process.running { nsView.terminate() }
+    }
 }
 
 /// Ersteinrichtung in drei Schritten: Name, Projekt, Agent-Programme.
@@ -115,6 +120,8 @@ struct Onboarding: View {
     @State private var login: Provider?
     @State private var keepInDock = true
     private let toolsMissing = !AppPaths.pythonAvailable
+    /// Vorschlag für das erste Projekt, damit niemand erst einen Ordner suchen muss. Angelegt wird er erst am Ende.
+    static let starterFolder = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Mochi Squad", isDirectory: true)
 
     var body: some View {
         VStack(spacing: 0) {
@@ -141,7 +148,7 @@ struct Onboarding: View {
             // Vorname aus dem macOS-Konto vorschlagen, damit meist ein Klick auf „Weiter“ reicht.
             name = settings.value.ownerName.isEmpty ? String(NSFullUserName().split(separator: " ").first ?? "") : settings.value.ownerName
             coordinator = settings.value.coordinatorName
-            folder = settings.projects.first
+            folder = settings.projects.first ?? Self.starterFolder
         }
         .task { status = await ClientStatus.load() }
         .sheet(item: $login) { provider in
@@ -164,12 +171,13 @@ struct Onboarding: View {
 
     private var projectStep: some View {
         VStack(spacing: 14) {
-            title("Dein erstes Projekt", "Agenten arbeiten immer in einem Ordner: einem Code-Projekt, einer Textsammlung, was du willst. Weitere Projekte kannst du später hinzufügen.")
+            title("Dein erstes Projekt", "Agenten arbeiten immer in einem Ordner: einem Code-Projekt, einer Textsammlung, was du willst. Nimm den Vorschlag oder wähle einen eigenen Ordner. Weitere Projekte kannst du später hinzufügen.")
             Button(action: pickFolder) {
                 HStack {
                     Image(systemName: "folder").foregroundStyle(Desk.dim)
                     Text(folder?.path.replacingOccurrences(of: NSHomeDirectory(), with: "~") ?? "Ordner wählen …").lineLimit(1).truncationMode(.head)
                     Spacer()
+                    Text(folder.map { FileManager.default.fileExists(atPath: $0.path) } == false ? "wird angelegt" : "Ändern").foregroundStyle(Desk.faint)
                 }.font(.system(size: 13.5)).padding(.horizontal, 14).frame(height: 40).field(12).contentShape(Rectangle())
             }.buttonStyle(.plain)
             note("Agenten dürfen in diesem Ordner lesen. Schreiben dürfen nur die, denen du es erlaubst.", Desk.dim)
@@ -197,8 +205,8 @@ struct Onboarding: View {
         }
         .task {
             // Solange dieser Schritt offen ist, neu installierte oder angemeldete Programme von selbst erkennen.
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(4))
+            while !Task.isCancelled, status?.allReady != true {
+                try? await Task.sleep(for: .seconds(5))
                 if login == nil { status = await ClientStatus.load() }
             }
         }
@@ -217,7 +225,7 @@ struct Onboarding: View {
     }
 
     private func complete() {
-        guard let folder else { return }
+        guard let folder, (try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)) != nil else { return }
         settings.value.ownerName = name.trimmingCharacters(in: .whitespaces)
         settings.value.coordinatorName = coordinatorName
         settings.addProject(folder)

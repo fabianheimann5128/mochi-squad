@@ -22,7 +22,7 @@ struct AgentChat: View {
             ChatHeader(showRail: $showRail) {
                 Button(action: edit) {
                     GlassPill {
-                        BotAvatar(key: agent.avatar, size: 30)
+                        MochiAvatar(key: agent.avatar, size: 30)
                         Text(agent.name).font(.system(size: 15, weight: .medium)).lineLimit(1)
                         if let session { SessionStatus(session: session) }
                     }
@@ -216,7 +216,7 @@ struct BubbleView: View, Equatable {
             VStack(alignment: .leading, spacing: 4) {
                 if let sender = bubble.relayedFrom {
                     HStack(spacing: 6) {
-                        if let avatar { BotAvatar(key: avatar, size: 18) }
+                        if let avatar { MochiAvatar(key: avatar, size: 18) }
                         Text(sender).font(.system(size: 13, weight: .semibold)).foregroundStyle(avatar.map { MochiLook(key: $0).color } ?? Desk.accent)
                         Text(bubble.relayedVia ?? "").font(.system(size: 12)).foregroundStyle(Desk.dim)
                     }
@@ -294,7 +294,7 @@ private struct EmptyChat: View {
     }
     var body: some View {
         VStack(spacing: 12) {
-            BotAvatar(key: agent.avatar, size: 88)
+            MochiAvatar(key: agent.avatar, size: 88)
             Text(agent.name).font(.system(size: 22, weight: .semibold))
             Text(agent.instructions.isEmpty ? agent.jobTitle : agent.instructions)
                 .font(.system(size: 14)).foregroundStyle(Desk.dim).multilineTextAlignment(.center).lineLimit(4)

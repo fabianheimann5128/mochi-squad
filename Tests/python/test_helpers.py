@@ -14,6 +14,7 @@ import connectors  # noqa: E402
 import context  # noqa: E402
 import history  # noqa: E402
 import post  # noqa: E402
+import launcher  # noqa: E402
 import routine  # noqa: E402
 
 
@@ -123,6 +124,16 @@ class RoutineTests(unittest.TestCase):
             self.assertIsNone(routine.find_routine("nope", file))
             spec = routine.build_spec(found, "Alex", str(uuid.uuid4()))
             self.assertTrue(spec["unattended"] and spec["allowWeb"])
+
+    def test_coordinator_routine_runs_without_tool_claims(self):
+        with tempfile.TemporaryDirectory() as folder:
+            data = {"id": "r2", "provider": "claude", "project": folder, "task": "Fass den Stand zusammen.",
+                    "agent": {"id": "c", "name": "Mochi", "isCoordinator": True}}
+            spec = routine.build_spec(data, "Alex", str(uuid.uuid4()))
+            self.assertFalse(spec["agent"]["isCoordinator"])
+            self.assertEqual(spec["agent"]["job"], "Koordinator")
+            self.assertNotIn("start_named_agent", launcher.build_prompt(spec))
+            self.assertNotIn("--strict-mcp-config", launcher.claude_args(spec, interactive=False))
 
     def test_find_routine_survives_bad_file(self):
         with tempfile.TemporaryDirectory() as folder:

@@ -174,4 +174,12 @@ import Testing
         #expect(json["postEnabled"] as? Bool == true)
         for key in ["post", "outbox", "mcpConfig", "contextFile"] { #expect(json[key] == nil) }
     }
+
+    @Test func dockEntryIsAValidPropertyList() throws {
+        let entry = Dock.entry(for: URL(fileURLWithPath: "/Applications/Tom & Jerry <2>.app"))
+        let plist = try PropertyListSerialization.propertyList(from: Data(entry.utf8), format: nil) as? [String: Any]
+        let file = (plist?["tile-data"] as? [String: Any])?["file-data"] as? [String: Any]
+        #expect(file?["_CFURLString"] as? String == "/Applications/Tom & Jerry <2>.app")
+        #expect(file?["_CFURLStringType"] as? Int == 0)
+    }
 }

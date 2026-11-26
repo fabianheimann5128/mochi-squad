@@ -36,7 +36,7 @@ struct ProcessesView: View {
 
         var body: some View {
             HStack(spacing: 14) {
-                BotAvatar(key: agent.avatar, size: 40, working: session.working)
+                MochiAvatar(key: agent.avatar, size: 40, working: session.working)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(agent.name + " · " + agent.jobTitle + (sameProject ? "" : " · " + session.project.lastPathComponent))
                         .font(.system(size: 15, weight: .medium)).lineLimit(1)

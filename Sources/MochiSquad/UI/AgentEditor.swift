@@ -17,7 +17,7 @@ struct AgentEditor: View {
         VStack(spacing: 0) {
             Text(isNew ? "Neuer Agent" : "Agent bearbeiten").font(.system(size: 17, weight: .semibold)).padding(.top, 20)
             HStack(spacing: 16) {
-                BotAvatar(key: agent.avatar, size: 92)
+                MochiAvatar(key: agent.avatar, size: 92)
                 VStack(alignment: .leading, spacing: 8) {
                     Button { agent.avatar = MochiLook.random().key } label: { Label("Neu würfeln", systemImage: "dice") }.buttonStyle(.pill)
                     Menu("Anpassen") {

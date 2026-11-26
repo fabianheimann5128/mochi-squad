@@ -13,7 +13,7 @@ struct Workspace: View {
     @EnvironmentObject private var agents: AgentStore
     @EnvironmentObject private var routines: RoutineStore
     @EnvironmentObject private var team: TeamLog
-    @EnvironmentObject private var transcript: TranscriptStore
+    @EnvironmentObject private var chats: ChatIndex
     @EnvironmentObject private var manager: SessionManager
 
     @State private var project: URL?
@@ -124,7 +124,7 @@ struct Workspace: View {
         agents.ensureCoordinator(in: folder, name: settings.value.coordinatorName)
         team.open(folder.path)
         if selectedAgent?.project != folder.path { selection = agents.coordinator(in: folder).map { .agent($0.id) } }
-        await transcript.index(folder)
+        await chats.refresh(folder)
     }
 
     private func choose(_ folder: URL) {

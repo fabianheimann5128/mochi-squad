@@ -32,7 +32,10 @@ def find_routine(routine_id, path=None):
 
 
 def build_spec(routine, owner, session_id):
+    # Die Werkzeuge des Koordinators gibt es nur, solange die App läuft. In Routinen arbeitet er wie jeder andere Agent.
     agent = routine.get("agent") or {}
+    if isinstance(agent, dict) and agent.get("isCoordinator"):
+        agent = dict(agent, isCoordinator=False, job=agent.get("job") or "Koordinator")
     return launcher.validate_spec({
         "provider": routine.get("provider"), "project": routine.get("project"), "task": routine.get("task"),
         "sessionId": session_id, "owner": owner, "unattended": True, "allowWeb": routine.get("allowWeb") is True,
@@ -45,6 +48,8 @@ def execute(spec, binary):
     env = common.client_path_env(common.clean_child_env())
     prompt = launcher.build_prompt(spec)
     if spec["provider"] == "codex":
+        if not launcher.codex_profile_enforced(binary, spec):
+            return 1, launcher.OUTDATED_CODEX, None
         args = [binary, "exec", *launcher.codex_args(spec, interactive=False), "--skip-git-repo-check", prompt]
         journal = None
     else:
