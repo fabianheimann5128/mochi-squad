@@ -58,14 +58,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let manager = AppState.shared.manager
         if manager.runningCount > 0 {
-            let alert = NSAlert()
-            alert.messageText = "Mochi Squad beenden?"
             let count = manager.runningCount
-            alert.informativeText = (count == 1 ? "Es läuft noch eine Sitzung. Sie wird beendet" : "Es laufen noch \(count) Sitzungen. Sie werden beendet")
-                + "; die Verläufe bleiben erhalten."
-            alert.addButton(withTitle: "Weiterarbeiten")
+            let alert = NSAlert()
+            alert.messageText = count == 1 ? "Ein Agent arbeitet noch" : "\(count) Agenten arbeiten noch"
+            alert.informativeText = "Sollen sie im Hintergrund weiterlaufen? Mochi Squad bleibt dann geöffnet und ist nur ausgeblendet; "
+                + "über das Dock holst du es zurück. Beim Beenden werden die Sitzungen geschlossen, die Verläufe bleiben erhalten."
+            alert.addButton(withTitle: "Im Hintergrund weiterlaufen")
             alert.addButton(withTitle: "Beenden")
-            if alert.runModal() != .alertSecondButtonReturn { return .terminateCancel }
+            alert.addButton(withTitle: "Abbrechen")
+            switch alert.runModal() {
+            case .alertFirstButtonReturn:
+                // Die Sitzungen gehören zur App; im Hintergrund weiterlaufen heißt deshalb: ausblenden statt beenden.
+                NSApp.hide(nil)
+                return .terminateCancel
+            case .alertSecondButtonReturn: break
+            default: return .terminateCancel
+            }
         }
         manager.shutdown()
         return .terminateNow

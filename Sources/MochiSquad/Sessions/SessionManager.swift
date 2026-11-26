@@ -210,8 +210,8 @@ import Foundation
         let people = agents.agents(in: project).filter { $0.id != origin?.id && (origin == nil || !$0.isCoordinator) }
         var targets = people.filter { Mention.contains(text, $0.name) && !skip.contains($0.id) }
         if origin == nil {
-            // @alle meint die Fachagenten. Ohne Anrede geht es weiter mit den zuletzt Angesprochenen, sonst an den Koordinator.
-            if Mention.contains(text, "alle") || Mention.contains(text, "team") { targets = people.filter { !$0.isCoordinator } }
+            // @alle meint wirklich alle, auch den Koordinator. Ohne Anrede geht es weiter mit den zuletzt Angesprochenen, sonst an den Koordinator.
+            if Mention.contains(text, "alle") || Mention.contains(text, "team") { targets = people }
             if targets.isEmpty { targets = people.filter { (lastTeamTargets[project.path] ?? []).contains($0.id) } }
             if targets.isEmpty { targets = people.filter(\.isCoordinator) }
             guard !targets.isEmpty else {

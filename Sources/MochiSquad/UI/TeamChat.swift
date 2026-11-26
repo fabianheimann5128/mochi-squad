@@ -54,7 +54,7 @@ struct TeamChat: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
                         ForEach(members) { chip("@" + $0.name, avatar: $0.avatar, job: $0.jobTitle) }
-                        if members.filter({ !$0.isCoordinator }).count > 1 { chip("@alle", avatar: nil, job: nil) }
+                        if members.count > 1 { chip("@alle", avatar: nil, job: nil) }
                     }.padding(.horizontal, 4)
                 }
                 HStack(alignment: .bottom, spacing: 10) {
