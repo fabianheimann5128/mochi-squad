@@ -317,7 +317,9 @@ import Foundation
                 return ["error": "Agent nicht gefunden."]
             }
             guard allowRelays(1, project: project.path) else { return ["error": "Limit erreicht: höchstens \(Self.relayLimit) Aufträge je halbe Stunde."] }
-            switch hand(task, to: agent) {
+            // Als Nachricht des Koordinators kennzeichnen, damit der Auftrag im Chat nicht wie vom Nutzer getippt aussieht.
+            let sender = settings.value.coordinatorName + " (Koordinator)"
+            switch hand(RelayedMessage.postPrefix + sender + ": " + task, to: agent) {
             case .delivered(let s), .queued(let s), .started(let s): return ["session": s.id.uuidString, "state": s.status]
             case .failed(let reason): return ["error": reason]
             }

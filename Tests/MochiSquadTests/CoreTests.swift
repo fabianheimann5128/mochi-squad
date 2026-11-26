@@ -200,4 +200,10 @@ import Testing
         #expect(!TerminalPromptScanner.isInputPrompt("› x"))
         #expect(!TerminalPromptScanner.isInputPrompt(""))
     }
+
+    @Test func coordinatorTaskReadsAsRelayedMessage() {
+        let parsed = RelayedMessage.parse(RelayedMessage.postPrefix + "Mochi (Koordinator): Prüf bitte den Checkout: Handy zuerst.")
+        #expect(parsed?.sender == "Mochi")
+        #expect(parsed?.body == "Prüf bitte den Checkout: Handy zuerst.")
+    }
 }
