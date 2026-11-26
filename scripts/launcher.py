@@ -22,6 +22,9 @@ SECRET_PATHS = (".ssh", ".aws", ".gnupg", ".config/gh", ".config/gcloud", ".conf
                 "Library/Mail", "Library/Messages", "Library/Safari", "Library/Containers", "Library/Group Containers")
 # Im Projekt nie beschreibbar: Hier könnte sich ein Agent Rechte geben oder Code für spätere Sitzungen ablegen.
 CLIENT_FOLDERS = (".claude", ".codex", ".git/hooks")
+# MCP-Server, über die Codex den Computer steuert.
+COMPUTER_SERVERS = ("cua_repl",)
+EFFORT = __import__("re").compile(r"[a-z]{2,12}")
 SERVER_NAME = __import__("re").compile(r"[A-Za-z0-9_-]{1,64}")
 CHAT_ID = __import__("re").compile(r"[A-Za-z0-9-]{8,64}")
 
@@ -69,6 +72,7 @@ def validate_spec(spec):
         "effort": str(agent.get("effort", "")).strip(),
         "canEdit": agent.get("canEdit") is True,
         "fullAccess": agent.get("fullAccess") is True,
+        "computerUse": agent.get("computerUse") is True,
         "isCoordinator": agent.get("isCoordinator") is True,
     }
     spec["team"] = [str(x) for x in spec.get("team") or [] if str(x).strip()]
@@ -78,6 +82,7 @@ def validate_spec(spec):
     # Vollzugriff gibt es nur, wenn der Nutzer dabei ist: Routinen laufen immer in der Sandbox.
     if spec["unattended"]:
         spec["agent"]["fullAccess"] = False
+        spec["agent"]["computerUse"] = False
     spec["postEnabled"] = spec.get("postEnabled") is True
     account = str(spec.get("account") or "")
     if account and (spec["provider"] != "codex" or not common.ACCOUNT_ID.fullmatch(account)):
@@ -128,6 +133,10 @@ def build_prompt(spec):
         parts.append("Deine Aufgaben: " + agent["instructions"])
     if agent["persona"]:
         parts.append("Dein Charakter: " + agent["persona"] + ".")
+    if agent["computerUse"]:
+        parts.append("Du darfst den Computer bedienen: " + ("den Chrome-Browser über Claude in Chrome." if spec["provider"] == "claude"
+                     else "Programme und Browser über die Computersteuerung von Codex.") +
+                     f" Nutze das nur, wenn {owner} es verlangt, und sende, kaufe oder lösche darüber nichts ohne ausdrückliche Freigabe.")
     if agent["fullAccess"]:
         parts.append(f"Du hast Vollzugriff auf diesen Mac, ohne Sandbox und ohne Rückfragen. Geh sorgsam damit um: Arbeite "
                      f"im Projektordner, solange der Auftrag nichts anderes verlangt, und lösche oder überschreibe außerhalb "
@@ -142,7 +151,8 @@ def build_prompt(spec):
         parts.append((f"Dein Team in diesem Projekt: {team}. " if team else "")
                      + f"Andere Agenten erreichst du mit `{spec['post']} liste` und `{spec['post']} sende <Name> \"<Nachricht>\"`; "
                      "Rufe den Befehl einzeln auf, ohne Zusätze wie `; echo $?` oder `&&`, sonst braucht er eine Freigabe. "
-                     "Antworten erscheinen als „Nachricht von <Name>“ in deinem Chat. Beginnt eine Nachricht mit "
+                     "Antworten erscheinen als „Nachricht von <Name>“ in deinem Chat. Dem Koordinator antwortest du einfach hier "
+                     "im Chat; er liest deinen Verlauf und ist per Post nicht erreichbar. Beginnt eine Nachricht mit "
                      "„Team-Chat · <Name>:“, antwortest du für alle im Team-Chat; @Name holt dort einen Kollegen dazu.")
     if spec["unattended"]:
         parts.append(f"Dies ist eine geplante Routine; {owner} ist nicht am Rechner. Frage nichts nach, arbeite selbstständig "
@@ -182,6 +192,8 @@ def build_claude_settings(spec, home=None):
         allow.append("mcp__mochi")
     if spec.get("allowWeb"):
         allow += ["WebSearch", "WebFetch"]
+    if agent["computerUse"]:
+        allow.append("mcp__claude-in-chrome")
     settings = {
         "permissions": {"allow": allow, "deny": deny},
         "sandbox": {"enabled": True, "autoAllowBashIfSandboxed": True, "allowUnsandboxedCommands": False,
@@ -201,7 +213,9 @@ def _quote(value):
 
 def claude_args(spec, interactive=True):
     agent = spec["agent"]
-    args = ["--session-id", spec["sessionId"], "--settings", json.dumps(build_claude_settings(spec)), "--no-chrome"]
+    # Computer-Nutzung heißt bei Claude Code: den Chrome-Browser steuern.
+    args = ["--session-id", spec["sessionId"], "--settings", json.dumps(build_claude_settings(spec)),
+            "--chrome" if agent["computerUse"] else "--no-chrome"]
     if not interactive:
         args = ["-p"] + args + ["--output-format", "text"]
     args += ["--permission-mode", "bypassPermissions" if agent["fullAccess"] else "default"]
@@ -300,6 +314,9 @@ def codex_args(spec, interactive=True, servers=()):
     else:
         args = codex_profile_args(spec) + ["-c", "web_search=" + json.dumps("live" if spec.get("allowWeb") else "disabled")]
     for name, is_command in servers:
+        # Mit Computer-Nutzung bleibt Codex' eigene Computersteuerung eingeschaltet.
+        if agent["computerUse"] and name in COMPUTER_SERVERS:
+            continue
         # Server aus Plugins haben keinen Eintrag in der Konfiguration; erst mit einem Befehl ist der Eintrag gültig.
         if is_command:
             args += ["-c", f'mcp_servers.{name}.command="/usr/bin/false"']
@@ -308,7 +325,7 @@ def codex_args(spec, interactive=True, servers=()):
         args += ["--ask-for-approval", "never" if agent["fullAccess"] else "on-request"]
     if agent["model"]:
         args += ["--model", agent["model"]]
-    if agent["effort"] in {"minimal", "low", "medium", "high", "xhigh"}:
+    if EFFORT.fullmatch(agent["effort"]):
         args += ["-c", "model_reasoning_effort=" + json.dumps(agent["effort"])]
     if spec.get("contextFile") and interactive:
         hook = Path(__file__).with_name("context.py")

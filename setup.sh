@@ -48,4 +48,6 @@ fi
 echo; echo "App wird gebaut (beim ersten Mal einige Minuten) …"
 ./install.sh
 echo
-echo "Fertig. Öffne „Mochi Squad“ aus ~/Applications. Beim ersten Start führt dich die App durch die Einrichtung."
+echo "Fertig. Mochi Squad liegt in ~/Applications und öffnet sich jetzt; beim ersten Start führt dich die App durch die Einrichtung."
+# In automatischen Läufen (CI) nichts öffnen.
+[[ -n "${CI:-}" ]] || open "$HOME/Applications/Mochi Squad.app"

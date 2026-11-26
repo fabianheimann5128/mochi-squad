@@ -299,4 +299,19 @@ import Testing
         #expect(AgentSession.isJournal(path))
         #expect(!AgentSession.isJournal(AppPaths.support.appendingPathComponent("agents.jsonl").path))
     }
+
+    @Test func permissionAnswersGetGermanWording() {
+        #expect(PromptCard.wording("Yes").title == "Erlauben")
+        #expect(PromptCard.wording("No, and tell Claude what to do differently").title == "Ablehnen")
+        #expect(PromptCard.wording("Yes, and don't ask again for touch commands").title == "Erlauben und nicht mehr fragen")
+        #expect(PromptCard.wording("Etwas anderes").title == "Etwas anderes")
+    }
+
+    @Test func changedSettingsAreNoticed() {
+        var agent = Agent(name: "Emil", job: "Reviewer", project: "/tmp/p").withModel()
+        let before = agent.sessionSignature
+        agent.access = .full
+        #expect(agent.sessionSignature != before)
+        #expect(Agent.Access.read.rank < Agent.Access.edit.rank && Agent.Access.edit.rank < Agent.Access.full.rank)
+    }
 }

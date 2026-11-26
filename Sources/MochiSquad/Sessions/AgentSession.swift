@@ -18,7 +18,7 @@ struct ClientPrompt: Equatable {
 struct SessionSpec: Encodable {
     struct AgentPart: Encodable {
         let name, job, instructions, persona, model, effort: String
-        let canEdit, isCoordinator, fullAccess: Bool
+        let canEdit, isCoordinator, fullAccess, computerUse: Bool
     }
     let provider: String
     let project: String
@@ -40,7 +40,7 @@ struct SessionSpec: Encodable {
         self.owner = owner
         self.agent = AgentPart(name: agent.name, job: agent.jobTitle, instructions: agent.instructions, persona: agent.persona,
                                model: agent.model, effort: agent.effort, canEdit: agent.canEdit, isCoordinator: agent.isCoordinator,
-                               fullAccess: agent.fullAccess == true)
+                               fullAccess: agent.fullAccess == true, computerUse: agent.computerUse == true)
         self.team = team
         account = agent.provider == .codex ? agent.account ?? "" : ""
         self.parentChat = parentChat
@@ -63,8 +63,10 @@ enum LaunchError: LocalizedError {
     let agentID: UUID
     /// Zugriffsstufe, mit der diese Sitzung gestartet wurde; sie gilt, bis die Sitzung endet.
     let access: Agent.Access
-    /// Modell, mit dem diese Sitzung gestartet wurde.
-    let model: String
+    /// Einstellungen des Agenten beim Start (siehe Agent.sessionSignature).
+    let signature: String
+    /// Der Starter wartet in der Konsole auf eine Anmeldung beim Client.
+    @Published private(set) var needsLogin = false
     let project: URL
     let provider: Provider
     let task: String
@@ -98,7 +100,7 @@ enum LaunchError: LocalizedError {
     init(agent: Agent, project: URL, task: String) throws {
         agentID = agent.id
         access = agent.access
-        model = agent.model
+        signature = agent.sessionSignature
         self.project = project
         provider = agent.provider
         self.task = task
@@ -156,6 +158,13 @@ enum LaunchError: LocalizedError {
         self.timer = timer
     }
 
+    /// Sichtbarer Text der Konsole, höchstens die letzten `lines` nicht leeren Zeilen.
+    func screenText(lines: Int = 40) -> String {
+        let screen = terminal.getTerminal()
+        let rows = (0..<screen.rows).map { (screen.getLine(row: $0)?.translateToString(trimRight: true) ?? "").replacingOccurrences(of: "\u{0}", with: " ") }
+        return rows.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.suffix(lines).joined(separator: "\n")
+    }
+
     private func tick() {
         if let data = AppPaths.readSmallFile(folder.appendingPathComponent("context.json")),
            var next = try? JSONDecoder().decode(Usage.self, from: data) {
@@ -169,6 +178,9 @@ enum LaunchError: LocalizedError {
         if now != working { working = now }
         let ask = isRunning ? TerminalPromptScanner.scan(terminal) : nil
         if ask != prompt { prompt = ask }
+        // Solange noch kein Verlauf existiert, kann der Starter an der Anmeldung hängen.
+        let login = isRunning && usage.historyPath == nil && screenText().contains("musst du dich einmal bei")
+        if login != needsLogin { needsLogin = login }
         collectPost()
     }
 

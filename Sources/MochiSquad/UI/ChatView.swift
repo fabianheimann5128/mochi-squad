@@ -48,7 +48,23 @@ struct AgentChat: View {
                     if transcript.bubbles.isEmpty, !transcript.loading {
                         if let session { pending(session.task) } else { EmptyChat(agent: agent) { draft = $0 } }
                     }
-                    if let session { LiveExtras(session: session, name: agent.name) { console = true } }
+                    if let session {
+                        SessionNotice(session: session, name: agent.name) { console = true }
+                        LiveExtras(session: session, name: agent.name) { console = true }
+                    }
+                }
+                // Geänderte Einstellungen gelten erst nach einem Neustart der Sitzung; hier ist das immer sichtbar.
+                if let live = manager.liveSession(for: agent.id), live.signature != (agents.agent(agent.id) ?? agent).sessionSignature {
+                    HStack(spacing: 10) {
+                        Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 12)).foregroundStyle(Desk.dim)
+                        Text("Du hast \(agent.name) geändert. Die laufende Sitzung arbeitet noch mit den alten Einstellungen.")
+                            .font(.system(size: 12.5)).foregroundStyle(Desk.dim)
+                        Spacer(minLength: 8)
+                        Button("Sitzung neu starten") { manager.restart(agents.agent(agent.id) ?? agent) }.buttonStyle(.pill)
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 8).frame(maxWidth: 960)
+                    .background(Desk.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .padding(.horizontal, 24)
                 }
                 Composer(agent: agent, draft: $draft)
             }
@@ -70,7 +86,7 @@ struct AgentChat: View {
     private func pending(_ task: String) -> some View {
         HStack {
             Spacer(minLength: 120)
-            Text(task).font(.system(size: 15)).foregroundStyle(Desk.text).lineSpacing(4)
+            Text(Attachments.split(RelayedMessage.parse(task)?.body ?? task).text).font(.system(size: 15)).foregroundStyle(Desk.text).lineSpacing(4)
                 .padding(.horizontal, 16).padding(.vertical, 10)
                 .background(Desk.bubble, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
@@ -92,7 +108,9 @@ struct AgentChat: View {
         let fresh = agents.agent(agent.id) ?? agent
         let journals = fresh.journals.filter { FileManager.default.fileExists(atPath: $0) }
         guard let current = manager.latestSession(for: agent.id)?.usage.historyPath ?? journals.last else { return }
-        await transcript.load(current, provider: fresh.provider, earlier: journals.filter { $0 != current }, more: more)
+        // Der Verlauf gehört dem Programm, das ihn geschrieben hat, auch wenn der Agent inzwischen den Anbieter gewechselt hat.
+        let writer: Provider = URL(fileURLWithPath: current).lastPathComponent.hasPrefix("rollout-") ? .codex : .claude
+        await transcript.load(current, provider: writer, earlier: journals.filter { $0 != current }, more: more)
     }
 }
 
@@ -305,41 +323,104 @@ private struct LiveExtras: View {
 }
 
 /// Rückfrage des Clients als Karte: beantworten per Klick statt in der Konsole.
+/// Rückfrage des Clients als Karte: Was der Agent vorhat, und die Antworten als Knöpfe.
 struct PromptCard: View {
+    @ObservedObject var session: AgentSession
+    let name: String
+    /// Öffnet die Konsole, wo das geht; sonst entfällt der Verweis.
+    var openConsole: (() -> Void)?
+
+    var body: some View {
+        if let ask = session.prompt {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 10) {
+                    Image(systemName: "hand.raised.fill").font(.system(size: 13)).foregroundStyle(Desk.warning)
+                        .frame(width: 30, height: 30).background(Desk.warning.opacity(0.15), in: Circle())
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(name + " braucht deine Erlaubnis").font(.system(size: 14.5, weight: .semibold))
+                        Text("Lies kurz, was geplant ist, und entscheide.").font(.system(size: 12)).foregroundStyle(Desk.dim)
+                    }
+                }
+                if !ask.context.isEmpty {
+                    Text(ask.context.joined(separator: "\n")).font(.system(size: 13)).foregroundStyle(Desk.text.opacity(0.85))
+                        .lineSpacing(3).lineLimit(8).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12).padding(.vertical, 10)
+                        .background(Desk.canvas.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Desk.edge) }
+                }
+                VStack(spacing: 6) {
+                    ForEach(ask.options) { option in
+                        let primary = option.key == "1" || option.key == "pos:\(ask.marked ?? -1)"
+                        let text = Self.wording(option.label)
+                        Button { session.answer(option) } label: {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(text.title).font(.system(size: 13.5, weight: .semibold))
+                                if let detail = text.detail { Text(detail).font(.system(size: 11.5)).opacity(0.7).lineLimit(2) }
+                            }
+                            .multilineTextAlignment(.leading).foregroundStyle(primary ? Color.white : Desk.text)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 14).padding(.vertical, 9)
+                            .background(primary ? Desk.accent : Desk.pillSelected, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .contentShape(Rectangle())
+                        }.buttonStyle(.plain)
+                    }
+                }
+                if let openConsole {
+                    Button(action: openConsole) { Label("In der Konsole ansehen", systemImage: "terminal") }
+                        .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(Desk.dim)
+                }
+            }
+            .padding(18).frame(maxWidth: 560, alignment: .leading)
+            .background(Desk.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Desk.warning.opacity(0.25)) }
+        }
+    }
+
+    /// Die Clients fragen auf Englisch. Häufige Antworten bekommen eine deutsche Überschrift; das Original steht klein darunter.
+    static func wording(_ label: String) -> (title: String, detail: String?) {
+        let lower = label.lowercased()
+        if lower == "yes" || lower == "yes, proceed" || lower == "allow" { return ("Erlauben", nil) }
+        if lower == "no" || lower.hasPrefix("no,") || lower.hasPrefix("no ") || lower == "deny" { return ("Ablehnen", lower == "no" || lower == "deny" ? nil : label) }
+        if lower.hasPrefix("yes, and don't ask again") || lower.hasPrefix("yes, and dont ask again") { return ("Erlauben und nicht mehr fragen", label) }
+        if lower.hasPrefix("yes, allow all") || lower.hasPrefix("yes, and allow") { return ("Für diese Sitzung immer erlauben", label) }
+        if lower.hasPrefix("yes") { return ("Erlauben", label) }
+        return (label, nil)
+    }
+}
+
+/// Meldet im Chat, wenn eine Sitzung nicht arbeiten kann: Anmeldung nötig oder beim Start gescheitert.
+private struct SessionNotice: View {
     @ObservedObject var session: AgentSession
     let name: String
     let openConsole: () -> Void
 
     var body: some View {
-        if let ask = session.prompt {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) {
-                    Image(systemName: "hand.raised.fill").font(.system(size: 13)).foregroundStyle(Desk.warning)
-                    Text(name + " möchte fortfahren").font(.system(size: 14.5, weight: .semibold))
-                    Spacer()
-                    Text("Freigabe").font(.system(size: 11.5, weight: .semibold)).foregroundStyle(Desk.warning)
-                        .padding(.horizontal, 8).padding(.vertical, 3).background(Desk.warning.opacity(0.14), in: Capsule())
-                }
-                if !ask.context.isEmpty {
-                    Text(ask.context.joined(separator: "\n")).font(.system(size: 12.5, design: .monospaced)).foregroundStyle(Desk.dim)
-                        .lineLimit(8).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(10).background(Color.black.opacity(0.28), in: RoundedRectangle(cornerRadius: 10))
-                }
-                ForEach(ask.options) { option in
-                    let primary = option.key == "1" || option.key == "pos:\(ask.marked ?? -1)"
-                    Button { session.answer(option) } label: {
-                        Text(option.label).font(.system(size: 13.5, weight: .medium)).multilineTextAlignment(.leading)
-                            .foregroundStyle(primary ? Desk.onPrimary : Desk.text)
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 14).padding(.vertical, 9)
-                            .background(primary ? Desk.primary : Desk.selected, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .contentShape(Rectangle())
-                    }.buttonStyle(.plain)
-                }
-                Button("In der Konsole ansehen", action: openConsole).buttonStyle(.plain).font(.system(size: 12.5)).foregroundStyle(Desk.dim)
-            }
-            .padding(.horizontal, 20).padding(.vertical, 16).frame(maxWidth: 620, alignment: .leading)
-            .background(Desk.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        if session.needsLogin {
+            card("person.crop.circle.badge.exclamationmark", "\(name) wartet auf deine Anmeldung",
+                 "Das Programm dieses Agenten ist noch nicht angemeldet. Öffne die Konsole und melde dich mit deinem Abo an.", nil)
+        } else if !session.isRunning, session.usage.historyPath == nil {
+            card("exclamationmark.triangle.fill", "\(name) konnte nicht starten", "Die Sitzung ist beendet, bevor sie arbeiten konnte.", session.screenText(lines: 6))
         }
+    }
+
+    private func card(_ symbol: String, _ title: String, _ text: String, _ output: String?) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: symbol).font(.system(size: 13)).foregroundStyle(Desk.warning)
+                    .frame(width: 30, height: 30).background(Desk.warning.opacity(0.15), in: Circle())
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(.system(size: 14.5, weight: .semibold))
+                    Text(text).font(.system(size: 12.5)).foregroundStyle(Desk.dim).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            if let output, !output.isEmpty {
+                Text(output).font(.system(size: 12.5)).foregroundStyle(Desk.text.opacity(0.85)).lineLimit(6).textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 12).padding(.vertical, 10)
+                    .background(Desk.canvas.opacity(0.6), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            Button(action: openConsole) { Label("Konsole öffnen", systemImage: "terminal") }.buttonStyle(.pill)
+        }
+        .padding(18).frame(maxWidth: 560, alignment: .leading)
+        .background(Desk.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 }
 
@@ -434,7 +515,8 @@ private struct Composer: View {
             .composerCapsule()
             // Dateien lassen sich auch auf das Eingabefeld ziehen.
             .dropDestination(for: URL.self) { dropped, _ in
-                files += dropped.filter { $0.isFileURL && !files.contains($0) }
+                // Ordner werden nicht angehängt; sie würden komplett ins Projekt kopiert.
+                files += dropped.filter { $0.isFileURL && !$0.hasDirectoryPath && !files.contains($0) }
                 return !dropped.isEmpty
             }
         }.frame(maxWidth: 960).padding(.horizontal, 24).padding(.top, 6).padding(.bottom, 24).frame(maxWidth: .infinity)
@@ -455,7 +537,7 @@ private struct Composer: View {
             else if live.submitPending {
                 Task { @MainActor in try? await Task.sleep(for: .seconds(1.3)); send() }
             } else {
-                hint = "\(agent.name) wartet gerade auf eine Eingabe in der Konsole. Dein Text bleibt hier stehen."
+                hint = "\(agent.name) kann gerade keine Nachricht annehmen (startet noch oder wartet auf eine Antwort). Dein Text bleibt hier stehen."
             }
             return
         }

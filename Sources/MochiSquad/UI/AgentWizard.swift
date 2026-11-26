@@ -21,7 +21,8 @@ struct AgentWizard: View {
         case .job: return filled(agent.job)
         case .tasks: return filled(agent.instructions)
         case .manner: return filled(agent.persona)
-        case .engine: return !agent.model.isEmpty
+        // Kennt Codex seine Modelle noch nicht (frische Installation), geht es mit dessen Vorgabe weiter.
+        case .engine: return !agent.model.isEmpty || agent.provider.models.isEmpty
         case .rights: return true
         }
     }
@@ -143,6 +144,9 @@ struct AgentWizard: View {
             PillPicker(selection: $agent.access, options: Agent.Access.allCases.map { ($0, $0.title) })
             Text(agent.access.note).font(.system(size: 12.5)).foregroundStyle(agent.access == .full ? Desk.warning : Desk.dim)
                 .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+            Toggle(agent.provider == .claude ? "Darf den Chrome-Browser bedienen" : "Darf Programme und Browser bedienen",
+                   isOn: Binding(get: { agent.computerUse == true }, set: { agent.computerUse = $0 ? true : nil }))
+                .toggleStyle(.checkbox).font(.system(size: 13))
         }
     }
 

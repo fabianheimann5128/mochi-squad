@@ -99,8 +99,17 @@ import Foundation
     /// Startet die Sitzung eines Agenten neu, damit geändertes Modell oder geänderte Rechte sofort gelten. Claude-Agenten machen im selben Chat weiter.
     func restart(_ agent: Agent) {
         if let live = liveSession(for: agent.id) { close(live) }
-        let task = "Deine Einstellungen wurden gerade geändert (Modell: \(agent.model), Zugriff: \(agent.access.title)). Bestätige das kurz in einem Satz und mach dann dort weiter, wo wir waren."
+        // Nur Claude-Agenten setzen ihren Chat fort; Codex beginnt einen neuen.
+        let task = "Deine Einstellungen wurden gerade geändert (Modell: \(agent.model), Zugriff: \(agent.access.title)). Bestätige das kurz in einem Satz"
+            + (agent.provider == .claude ? " und mach dann dort weiter, wo wir waren." : ".")
         do { try launch(agent, task: task, parentChat: resumableChat(for: agent)) } catch { notice = error.localizedDescription }
+    }
+
+    /// Nach einer Änderung am Agenten: Hat er jetzt weniger Rechte als seine laufende Sitzung, endet sie sofort.
+    func settle(_ agent: Agent) {
+        guard let live = liveSession(for: agent.id), agent.access.rank < live.access.rank else { return }
+        close(live)
+        notice = "Die laufende Sitzung von \(agent.name) wurde beendet, damit „\(agent.access.title)“ sofort gilt."
     }
 
     func close(_ session: AgentSession) {
@@ -112,7 +121,19 @@ import Foundation
     }
 
     /// Beendete Sitzungen nach kurzer Zeit freigeben, sofern die Oberfläche sie nicht zeigt.
+    /// Hält macOS davon ab, die ausgeblendete App zu drosseln, solange Sitzungen laufen.
+    private var activity: NSObjectProtocol?
+    private func keepAwake() {
+        if runningCount > 0, activity == nil {
+            activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep], reason: "Agenten arbeiten")
+        } else if runningCount == 0, let held = activity {
+            ProcessInfo.processInfo.endActivity(held)
+            activity = nil
+        }
+    }
+
     private func prune() {
+        keepAwake()
         let stale = sessions.filter { s in
             !s.isRunning && !pinned.contains(s.id) && (s.endedAt.map { Date().timeIntervalSince($0) > 20 } ?? false)
         }
@@ -145,7 +166,9 @@ import Foundation
     /// Nachricht eines Agenten an einen anderen benannten Agenten desselben Projekts.
     func deliver(from origin: AgentSession, to name: String, text: String) -> String {
         // Der Koordinator ist für Agenten nicht erreichbar: Über seine Werkzeuge könnten sie sonst mehr anstoßen, als sie selbst dürfen.
-        let people = agents.agents(in: origin.project).filter { !$0.isCoordinator && $0.id != origin.agentID }
+        // Ebenso wenig Kollegen mit mehr Rechten als der Absender.
+        let limit = agents.agent(origin.agentID)?.access.rank ?? 0
+        let people = agents.agents(in: origin.project).filter { !$0.isCoordinator && $0.id != origin.agentID && $0.access.rank <= limit }
         let roster = people.map { "\($0.name) (\($0.jobTitle))" }.joined(separator: ", ")
         if name == "?" { return roster.isEmpty ? "Keine weiteren Agenten in diesem Projekt." : "Erreichbar: " + roster }
         guard let target = people.first(where: { $0.name.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }) else {
@@ -210,7 +233,11 @@ import Foundation
     @discardableResult
     private func relay(_ text: String, from origin: Agent?, project: URL, skip: Set<UUID> = []) -> Set<UUID> {
         // Den Koordinator ruft nur der Nutzer; Agenten erreichen ihn auch im Team-Chat nicht (siehe deliver).
-        let people = agents.agents(in: project).filter { $0.id != origin?.id && (origin == nil || !$0.isCoordinator) }
+        // Kollegen mit mehr Rechten als der Schreibende sind für ihn ebenfalls tabu.
+        let people = agents.agents(in: project).filter { other in
+            guard let origin else { return true }
+            return other.id != origin.id && !other.isCoordinator && other.access.rank <= origin.access.rank
+        }
         var targets = people.filter { Mention.contains(text, $0.name) && !skip.contains($0.id) }
         if origin == nil {
             // @alle meint wirklich alle, auch den Koordinator. Ohne Anrede geht es weiter mit den zuletzt Angesprochenen, sonst an den Koordinator.
@@ -280,6 +307,10 @@ import Foundation
             }
         }
         feeds = feeds.filter { id, _ in sessions.contains { $0.id == id } }
+        // Eine Teamfrage, auf die nichts mehr kommt, gilt nach zwei Minuten Ruhe als erledigt; sonst zeigte spätere Arbeit „schreibt …“.
+        for session in sessions where !session.working {
+            if let feed = feeds[session.id], !feed.answered, Date().timeIntervalSince(feed.asked) > 120 { feeds[session.id]?.answered = true }
+        }
         updateTyping()
     }
 
@@ -328,7 +359,7 @@ import Foundation
             }
             guard allowRelays(1, project: project.path) else { return ["error": "Limit erreicht: höchstens \(Self.relayLimit) Aufträge je halbe Stunde."] }
             // Als Nachricht des Koordinators kennzeichnen, damit der Auftrag im Chat nicht wie vom Nutzer getippt aussieht.
-            let sender = settings.value.coordinatorName + " (Koordinator)"
+            let sender = (agents.coordinator(in: project)?.name ?? settings.value.coordinatorName) + " (Koordinator)"
             switch hand(RelayedMessage.postPrefix + sender + ": " + task, to: agent) {
             case .delivered(let s), .queued(let s), .started(let s): return ["session": s.id.uuidString, "state": s.status]
             case .failed(let reason): return ["error": reason]

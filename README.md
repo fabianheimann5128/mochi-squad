@@ -28,6 +28,7 @@
 - **Chat statt Terminal.** Jede Sitzung läuft im echten Client. Du siehst sie als Chat und kannst jederzeit in die Konsole wechseln. Rückfragen des Clients beantwortest du per Klick. Bilder und Dateien hängst du per Klick oder Ziehen an, diktieren geht über das Mikrofon.
 - **Team-Chat.** Schreib einfach los: Ohne Anrede antwortet dein Koordinator, mit `@Name` holst du einen bestimmten Agenten dazu. Alle lesen den Verlauf mit und können selbst Kollegen einbeziehen.
 - **Computer-Ansicht.** Sieh live, woran ein Agent arbeitet und welche Dateien er zuletzt angefasst hat.
+- **Computer bedienen.** Auf Wunsch steuert ein Codex-Agent Programme und Browser, ein Claude-Agent den Chrome-Browser.
 - **Mehrere ChatGPT-Abos.** Lege in den Einstellungen weitere Abos an und wähle je Agent, mit welchem er arbeitet. Jedes Abo hat seine eigene Anmeldung.
 - **Routinen.** Aufträge zu festen Zeiten über die Zeitplanung von macOS, auch wenn die App geschlossen ist.
 - **Klare Rechte.** Drei Stufen je Agent: nur lesen, im Projekt ändern oder Vollzugriff. In den ersten beiden läuft der Agent in einer Sandbox mit gesperrten Zugangsdaten; Vollzugriff schaltest du bewusst ein. Details in [SECURITY.md](SECURITY.md).
@@ -48,7 +49,7 @@ cd mochi-squad
 ./setup.sh
 ```
 
-`setup.sh` prüft die Voraussetzungen, baut die App und legt sie nach `~/Applications/Mochi Squad.app`. Der erste Bau dauert ein paar Minuten.
+`setup.sh` prüft die Voraussetzungen, baut die App, legt sie nach `~/Applications/Mochi Squad.app` und öffnet sie. Der erste Bau dauert ein paar Minuten.
 
 ## Erste Schritte
 

@@ -38,6 +38,12 @@ Rückfragen des Clients (z. B. „Darf ich diesen Befehl ausführen?“) erschei
 
 Pro Agent lässt sich die Zugriffsstufe „Vollzugriff“ einschalten. Sie ist ausdrücklich das Gegenteil der Regeln oben: Der Agent läuft **ohne Sandbox und ohne Rückfragen** (Claude Code im Modus `bypassPermissions`, Codex mit `danger-full-access`) und kann alle Dateien und Programme deines Benutzerkontos lesen, ändern und löschen, auch Zugangsdaten, die Daten der App und die Postausgänge anderer Agenten. Keine der Zusagen dieses Dokuments gilt für einen solchen Agenten oder für das, was er anderen Agenten unterschiebt. Standard ist „Nur lesen“; Routinen laufen nie mit Vollzugriff. Nutze die Stufe nur für Agenten, denen du voll vertraust, und nicht für Agenten, die fremde Webseiten oder Dateien verarbeiten.
 
+## Computer bedienen
+
+Pro Agent lässt sich „Computer bedienen“ einschalten. Codex-Agenten behalten dann die Computersteuerung von Codex (Programme und Browser), Claude-Agenten steuern den Chrome-Browser über Claude in Chrome. Diese Werkzeuge laufen außerhalb der Sandbox: Was der Agent über Bildschirm oder Browser tut, unterliegt nicht den Dateigrenzen oben, und im Browser ist er mit deinen Anmeldungen unterwegs. Standard ist aus; Routinen bedienen den Computer nie.
+
+**Rechte zwischen Agenten.** Per Agenten-Post und im Team-Chat erreicht ein Agent nur Kollegen, die höchstens so viel dürfen wie er selbst. So kann ein Nur-Lesen-Agent keinem Agenten mit Vollzugriff Aufträge geben.
+
 ## Bekannte Grenzen
 
 - **Prompt-Injection.** Ein Agent, der Webseiten oder fremde Dateien liest, kann darin versteckten Anweisungen folgen. Die Rechte oben begrenzen den Schaden, verhindern ihn aber nicht vollständig. Gib Schreibrechte und Internetzugang nur Agenten, die sie brauchen, und halte wichtige Projekte unter Versionsverwaltung.

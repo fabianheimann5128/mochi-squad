@@ -196,9 +196,12 @@ struct Onboarding: View {
 
     private var clients: some View {
         VStack(spacing: 14) {
-            title("Mit deinem Abo anmelden", "Mochi Squad nutzt Claude Code und Codex mit deinem bestehenden Claude- oder ChatGPT-Abo. Eines davon genügt.")
+            title("Mit deinem Abo anmelden", "Mochi Squad nutzt Claude Code und Codex mit deinem bestehenden Claude- oder ChatGPT-Abo. Dein Koordinator läuft mit Claude Code; weitere Agenten auch mit Codex.")
             ForEach(Provider.allCases) { provider in
                 ClientRow(provider: provider, entry: status?.entry(provider)) { login = provider }
+            }
+            if status.map({ $0.claude.installed && !$0.claude.loggedIn || !$0.claude.installed && $0.codex.installed }) == true {
+                note("Ohne Claude Code kann der Koordinator nicht arbeiten. Agenten mit Codex funktionieren trotzdem.", Desk.warning)
             }
             if status.map({ !$0.claude.installed && !$0.codex.installed }) == true {
                 note("Installiere mindestens eines der Programme. Mochi Squad erkennt es danach von selbst.", Desk.warning)
@@ -272,6 +275,8 @@ struct SettingsView: View {
     @State private var status: ClientStatus?
     @State private var login: Provider?
     @State private var accountLogin: Account?
+    @State private var removing: Account?
+    @EnvironmentObject private var manager: SessionManager
     @State private var newAccount = ""
 
     var body: some View {
@@ -307,6 +312,21 @@ struct SettingsView: View {
         .sheet(item: $accountLogin) { account in
             LoginSheet(provider: .codex, account: account.id) { Task { status = await ClientStatus.load() } }
         }
+        .confirmationDialog("Abo „\(removing?.name ?? "")“ entfernen?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
+            Button("Abo und seine Verläufe entfernen", role: .destructive) {
+                guard let account = removing else { return }
+                // Erst die Sitzungen schließen, die noch mit diesem Abo laufen.
+                for agent in agents.agents where agent.account == account.id {
+                    if let live = manager.liveSession(for: agent.id) { manager.close(live) }
+                }
+                settings.removeAccount(account)
+                agents.releaseAccount(account.id)
+                removing = nil
+            }
+            Button("Abbrechen", role: .cancel) { removing = nil }
+        } message: {
+            Text("Die Anmeldung und alle Chat-Verläufe dieses Abos werden von diesem Mac gelöscht. Agenten, die es nutzen, arbeiten danach mit dem Haupt-Abo.")
+        }
     }
 
     /// Weitere ChatGPT-Abos: jedes mit eigener Anmeldung, je Agent wählbar.
@@ -324,8 +344,7 @@ struct SettingsView: View {
                     }
                     Spacer()
                     if !ready { Button("Anmelden") { accountLogin = account }.buttonStyle(.primaryPill) }
-                    Button { settings.removeAccount(account); agents.releaseAccount(account.id) } label: { Image(systemName: "trash") }
-                        .buttonStyle(.pill).help("Abo entfernen")
+                    Button { removing = account } label: { Image(systemName: "trash") }.buttonStyle(.pill).help("Abo entfernen")
                 }.padding(.horizontal, 12).frame(height: 48).field(12)
             }
             HStack(spacing: 8) {

@@ -36,7 +36,7 @@ struct TeamChat: View {
                                 .equatable().padding(.top, head ? 14 : 4)
                         }
                         ForEach(manager.teamPrompts(project: project)) { session in
-                            PromptCard(session: session, name: agents.agent(session.agentID)?.name ?? "Agent") {}.padding(.top, 12)
+                            PromptCard(session: session, name: agents.agent(session.agentID)?.name ?? "Agent").padding(.top, 12)
                         }
                         if !typing.isEmpty { TypingBubble(name: typing[0]).padding(.top, 10) }
                         Color.clear.frame(height: 1).id("end")

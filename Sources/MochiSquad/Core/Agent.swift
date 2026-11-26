@@ -53,6 +53,8 @@ struct Agent: Codable, Identifiable, Hashable {
     var canEdit = false
     /// Vollzugriff auf den ganzen Mac: ohne Sandbox und ohne Rückfragen. Nur auf ausdrücklichen Wunsch des Nutzers.
     var fullAccess: Bool?
+    /// Darf den Computer bedienen: bei Codex Programme und Browser, bei Claude Code den Chrome-Browser.
+    var computerUse: Bool?
     /// Kennung eines weiteren ChatGPT-Abos (nur Codex); nil nutzt die normale Anmeldung.
     var account: String?
     var journals: [String] = []
@@ -66,6 +68,8 @@ struct Agent: Codable, Identifiable, Hashable {
     enum Access: String, CaseIterable, Identifiable {
         case read, edit, full
         var id: String { rawValue }
+        /// Je höher, desto mehr darf der Agent.
+        var rank: Int { ["read": 0, "edit": 1, "full": 2][rawValue]! }
         var title: String { ["read": "Nur lesen", "edit": "Im Projekt ändern", "full": "Vollzugriff"][rawValue]! }
         var note: String {
             switch self {
@@ -82,6 +86,12 @@ struct Agent: Codable, Identifiable, Hashable {
         copy.model = first
         if !provider.efforts(for: first).contains(copy.effort) { copy.effort = "" }
         return copy
+    }
+
+    /// Alles, was beim Start einer Sitzung festgelegt wird. Weicht es später ab, braucht die Sitzung einen Neustart.
+    var sessionSignature: String {
+        [provider.rawValue, model, effort, access.rawValue, account ?? "", computerUse == true ? "cu" : "", name, job, instructions, persona]
+            .joined(separator: "\u{1f}")
     }
 
     var access: Access {

@@ -184,17 +184,30 @@ private struct ComputerView: View {
                 HStack {
                     Text("Zugriff").foregroundStyle(Desk.dim)
                     Spacer(minLength: 6)
-                    Picker("Zugriff", selection: Binding(get: { agent.access }, set: { level in agents.update(agent.id) { $0.access = level } })) {
+                    Picker("Zugriff", selection: Binding(get: { agent.access }, set: { level in
+                        agents.update(agent.id) { $0.access = level }
+                        if let changed = agents.agent(agent.id) { manager.settle(changed) }
+                    })) {
                         ForEach(Agent.Access.allCases) { Text($0.title).tag($0) }
                     }.labelsHidden().fixedSize().controlSize(.small)
                 }.font(.system(size: 12.5))
                 if agent.access == .full {
                     Text(Agent.Access.full.note).font(.system(size: 11.5)).foregroundStyle(Desk.warning).fixedSize(horizontal: false, vertical: true)
                 }
-                // Rechte stehen beim Start einer Sitzung fest; ein Neustart wendet die neue Stufe sofort an.
-                if let live = manager.liveSession(for: agent.id), live.access != agent.access || live.model != agent.model {
+                HStack {
+                    Text("Computer bedienen").foregroundStyle(Desk.dim)
+                    Spacer(minLength: 6)
+                    Toggle("Computer bedienen", isOn: Binding(get: { agent.computerUse == true }, set: { on in agents.update(agent.id) { $0.computerUse = on ? true : nil } }))
+                        .toggleStyle(.switch).controlSize(.mini).labelsHidden()
+                }.font(.system(size: 12.5))
+                if agent.computerUse == true {
+                    Text(agent.provider == .claude ? "Steuert den Chrome-Browser über Claude in Chrome." : "Steuert Programme und Browser über die Computersteuerung von Codex.")
+                        .font(.system(size: 11.5)).foregroundStyle(Desk.dim).fixedSize(horizontal: false, vertical: true)
+                }
+                // Was beim Start einer Sitzung festgelegt wurde, gilt bis zu ihrem Ende; ein Neustart wendet Änderungen sofort an.
+                if let live = manager.liveSession(for: agent.id), live.signature != agent.sessionSignature {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Die laufende Sitzung arbeitet noch mit \(live.model), „\(live.access.title)“.").font(.system(size: 11.5)).foregroundStyle(Desk.dim)
+                        Text("Die laufende Sitzung arbeitet noch mit den alten Einstellungen.").font(.system(size: 11.5)).foregroundStyle(Desk.dim)
                             .fixedSize(horizontal: false, vertical: true)
                         Button("Sitzung neu starten") { manager.restart(agent) }.buttonStyle(.pill)
                     }
@@ -285,6 +298,8 @@ private struct RoutinePanel: View {
     let agent: Agent
     @EnvironmentObject private var store: RoutineStore
     @State private var draft: Routine?
+    /// Kennung der Routine, deren Testlauf gerade läuft, und wie viele Läufe sie davor hatte.
+    @State private var testing: (id: String, runs: Int)?
     @State private var confirmDelete = false
     private let days = [(1, "Mo"), (2, "Di"), (3, "Mi"), (4, "Do"), (5, "Fr"), (6, "Sa"), (7, "So")]
 
@@ -347,7 +362,20 @@ private struct RoutinePanel: View {
                         Button("Routine löschen", role: .destructive) { store.remove(stored); draft = nil }
                         Button("Abbrechen", role: .cancel) {}
                     }
-                Button("Testlauf") { store.runNow(stored) }.buttonStyle(.pill).help("Jetzt einmal ausführen")
+                let running = testing?.id == stored.id
+                Button(running ? "Läuft …" : "Testlauf") {
+                    testing = (stored.id, store.runs(for: stored.id).count)
+                    store.runNow(stored)
+                }
+                .buttonStyle(.pill).help("Jetzt einmal ausführen").disabled(running)
+                // Solange der Testlauf läuft, öfter ins Protokoll sehen; der Knopf ist erst danach wieder frei.
+                .task(id: testing?.id) {
+                    while let current = testing, !Task.isCancelled {
+                        try? await Task.sleep(for: .seconds(2))
+                        store.readRuns()
+                        if store.runs(for: current.id).count > current.runs { testing = nil }
+                    }
+                }
             }
         }
         label("Auftrag")

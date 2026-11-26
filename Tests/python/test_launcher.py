@@ -344,6 +344,25 @@ class ArgumentTests(unittest.TestCase):
         self.assertFalse(spec["agent"]["fullAccess"])
         self.assertIn("sandbox", launcher.build_claude_settings(spec, home="/Users/test"))
 
+    def test_computer_use_switches_on_what_each_client_offers(self):
+        off = make_spec(self.dir.name)
+        self.assertIn("--no-chrome", launcher.claude_args(off))
+        on = make_spec(self.dir.name, computerUse=True)
+        self.assertIn("--chrome", launcher.claude_args(on))
+        self.assertIn("mcp__claude-in-chrome", launcher.build_claude_settings(on, home="/Users/test")["permissions"]["allow"])
+        servers = [("cua_repl", True), ("postiz", False)]
+        kept = launcher.codex_args(on, servers=servers)
+        self.assertNotIn("mcp_servers.cua_repl.enabled=false", kept)
+        self.assertIn("mcp_servers.postiz.enabled=false", kept)
+        self.assertIn("mcp_servers.cua_repl.enabled=false", launcher.codex_args(off, servers=servers))
+        routine = launcher.validate_spec({"provider": "claude", "project": self.dir.name, "task": "x", "unattended": True,
+                                          "sessionId": str(uuid.uuid4()), "owner": "Alex", "agent": {"name": "Mira", "computerUse": True}})
+        self.assertFalse(routine["agent"]["computerUse"])
+
+    def test_codex_effort_passes_any_plain_level(self):
+        self.assertIn('model_reasoning_effort="max"', launcher.codex_args(make_spec(self.dir.name, effort="max")))
+        self.assertFalse(any("reasoning_effort" in a for a in launcher.codex_args(make_spec(self.dir.name, effort="x; rm"))))
+
     def test_toml_escapes_keys(self):
         self.assertEqual(launcher._toml({'a "b"': {"c": True}}), '{"a \\"b\\"" = {"c" = true}}')
 

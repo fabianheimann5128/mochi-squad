@@ -28,6 +28,8 @@ import SwiftUI
     private var round = 0
     /// Text, der vor dem laufenden Abschnitt schon im Feld stand.
     private var committed = ""
+    /// Was die Erkennung zuletzt ins Feld geschrieben hat; weicht das Feld davon ab, hat der Nutzer getippt.
+    private var written = ""
     private var peak: CGFloat = 0
     private var lastLevel = Date.distantPast
 
@@ -60,6 +62,7 @@ import SwiftUI
         guard format.sampleRate > 0 else { issue = "Es wurde kein Mikrofon gefunden."; return }
         self.recognizer = recognizer
         committed = text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        written = text.wrappedValue
         input.removeTap(onBus: 0)
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self, feed] buffer, _ in
             feed.append(buffer)
@@ -94,8 +97,11 @@ import SwiftUI
             let final = result?.isFinal == true, failed = error != nil
             Task { @MainActor in
                 guard let self, self.round == current else { return }
+                // Hat der Nutzer zwischendurch getippt, zählt sein Text als Grundlage für alles Weitere.
+                if text.wrappedValue != self.written { self.committed = text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines) }
                 let joined = Self.join(self.committed, spoken)
                 if !spoken.isEmpty, text.wrappedValue != joined { text.wrappedValue = joined }
+                self.written = text.wrappedValue
                 if final {
                     self.committed = Self.join(self.committed, spoken)
                     self.recognize(into: text)

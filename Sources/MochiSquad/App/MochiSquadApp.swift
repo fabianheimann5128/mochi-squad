@@ -60,8 +60,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if manager.runningCount > 0 {
             let count = manager.runningCount
             let alert = NSAlert()
-            alert.messageText = count == 1 ? "Ein Agent arbeitet noch" : "\(count) Agenten arbeiten noch"
-            alert.informativeText = "Sollen sie im Hintergrund weiterlaufen? Mochi Squad bleibt dann geöffnet und ist nur ausgeblendet; "
+            alert.messageText = count == 1 ? "Eine Sitzung ist noch offen" : "\(count) Sitzungen sind noch offen"
+            alert.informativeText = "Sollen deine Agenten im Hintergrund weiterlaufen? Mochi Squad bleibt dann geöffnet und ist nur ausgeblendet; "
                 + "über das Dock holst du es zurück. Beim Beenden werden die Sitzungen geschlossen, die Verläufe bleiben erhalten."
             alert.addButton(withTitle: "Im Hintergrund weiterlaufen")
             alert.addButton(withTitle: "Beenden")
@@ -80,6 +80,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    /// Klick aufs Dock-Symbol: die ausgeblendete App samt Fenster zurückholen.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        sender.unhide(nil)
+        if !hasVisibleWindows { sender.windows.first { $0.canBecomeMain }?.makeKeyAndOrderFront(nil) }
+        return true
+    }
 }
 
 /// Zeigt die Ersteinrichtung, bis sie abgeschlossen ist, danach den Arbeitsbereich.

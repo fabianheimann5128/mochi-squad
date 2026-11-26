@@ -63,6 +63,8 @@ struct Workspace: View {
             while !Task.isCancelled {
                 routines.readRuns()
                 attachRoutineRuns()
+                // Auch die Liste „Weitere Chats“ bleibt so aktuell, etwa nach dem Entfernen eines Agenten.
+                if let project { await chats.refresh(project) }
                 try? await Task.sleep(for: .seconds(20))
             }
         }
@@ -70,6 +72,7 @@ struct Workspace: View {
         .sheet(item: $editing) { agent in
             let store: (Agent) -> Void = { saved in
                 agents.save(saved)
+                manager.settle(saved)
                 selection = .agent(saved.id); showProcesses = false
             }
             if agents.agent(agent.id) == nil {

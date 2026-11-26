@@ -79,7 +79,7 @@ struct ConnectorsView: View {
                 Spacer()
                 Button("Fertig") { dismiss() }.buttonStyle(.primaryPill).keyboardShortcut(.cancelAction)
             }
-            Text("Dienste, die deine Agenten nutzen dürfen (MCP-Server). Sie gehören zum jeweiligen Programm und gelten auch außerhalb von Mochi Squad.")
+            Text("Dienste (MCP-Server), die im jeweiligen Programm eingerichtet sind; sie gelten auch außerhalb von Mochi Squad. Claude-Agenten können sie nutzen und fragen vorher nach. Codex-Agenten bekommen sie nur mit Vollzugriff, der Koordinator arbeitet mit seinen eigenen Werkzeugen.")
                 .font(.system(size: 12.5)).foregroundStyle(Desk.dim).fixedSize(horizontal: false, vertical: true)
             PillPicker(selection: $provider, options: Provider.allCases.map { ($0, $0.title) }).disabled(busy)
             ScrollView {
