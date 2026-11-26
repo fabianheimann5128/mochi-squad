@@ -41,6 +41,7 @@ TOKEN_VARIABLE = "MOCHI_TOKEN"
 EFFORT = re.compile(r"[a-z]{2,12}")
 SERVER_NAME = re.compile(r"[A-Za-z0-9_-]{1,64}")
 CHAT_ID = re.compile(r"[A-Za-z0-9-]{8,64}")
+SKILL_ID = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
 LOCAL_URL = re.compile(r"http://127\.0\.0\.1:\d{2,5}/mcp")
 
 CHAT_STYLE = ("Your answers appear in Mochi Squad as chat messages. Write the way a good colleague writes in a messenger: "
@@ -111,9 +112,39 @@ def validate_spec(spec):
     parent = spec.get("parentChat")
     spec["parentChat"] = parent if isinstance(parent, str) and CHAT_ID.fullmatch(parent) else None
     # Runtime paths are set by attach_runtime only; they are never taken from the file.
-    for key in ("post", "outbox", "contextFile", "mcpConfig", "toolUrl"):
+    for key in ("post", "outbox", "contextFile", "mcpConfig", "toolUrl", "skills"):
         spec.pop(key, None)
+    try:
+        spec["agentId"] = str(uuid.UUID(str(spec.get("agentId", "")))).upper()
+    except ValueError:
+        spec["agentId"] = ""
     return spec
+
+
+def attach_skills(spec, data=None, shared=None):
+    """Adds the skills this agent has: name, description and the file to read.
+
+    The list and its assignment come from the app's skills.json; the files lie in the shared area, which agents may
+    read but sandboxed agents cannot change. A skill whose file is missing is left out.
+    """
+    index = common.read_json(Path(data or common.DATA) / "skills.json", [])
+    root = Path(shared or common.SHARED) / "skills"
+    skills = []
+    for entry in index if isinstance(index, list) else []:
+        if not isinstance(entry, dict) or not SKILL_ID.fullmatch(str(entry.get("id", ""))):
+            continue
+        agents = entry.get("agents")
+        if isinstance(agents, list) and spec.get("agentId", "") not in [str(a).upper() for a in agents]:
+            continue
+        file = root / entry["id"] / "SKILL.md"
+        if file.is_file():
+            skills.append({"name": _line(entry.get("name"), 80), "description": _line(entry.get("description"), 300), "file": str(file)})
+    return dict(spec, skills=skills[:40], skillsFolder=str(root))
+
+
+def _line(value, limit):
+    """One line of plain text for the briefing."""
+    return " ".join(str(value or "").split())[:limit]
 
 
 def attach_runtime(spec, session_dir, shared=None):
@@ -183,6 +214,10 @@ def build_prompt(spec):
                      "Answers appear as \"Message from <name>\" in your chat. You answer the coordinator simply here in the "
                      "chat; it reads your history and cannot be reached by post. When a message starts with "
                      "\"Team chat · <name>:\", you answer for everyone in the team chat; @name brings a colleague in there.")
+    if spec.get("skills"):
+        parts.append(f"You have skills: instructions for particular kinds of work that {owner} gave you. Before you start a "
+                     "task that fits one of them, read its file completely and follow it; files it mentions lie next to it.\n"
+                     + "\n".join(f"- {s['name']}: {s['description']} (`{s['file']}`)" for s in spec["skills"]))
     if spec["unattended"]:
         parts.append(f"This is a scheduled routine; {owner} is not at the computer. Do not ask questions, work on your own "
                      "and save results as a file in the project.")
@@ -227,6 +262,8 @@ def build_claude_settings(spec, home=None):
     locked = locked_paths(home)
     # A leading double slash marks an absolute path in permission rules.
     allow = [f"Read(/{project}/**)"]
+    if spec.get("skills"):
+        allow.append(f"Read(/{spec['skillsFolder']}/**)")
     # Edit rules apply to every tool that changes files; Read rules also to search tools.
     deny = ([f"Edit(/{project}/{p}/**)" for p in CLIENT_FOLDERS] + [f"Edit(/{project}/{p})" for p in CLIENT_FILES]
             + [rule for path in locked for rule in (f"Read(/{path})", f"Read(/{path}/**)")])
@@ -490,7 +527,7 @@ def run(spec_path):
         if session_dir.parent != common.SESSIONS.resolve():
             raise SpecError(t("The session description is not in Mochi Squad's session area.",
                               "Die Sitzungsbeschreibung liegt nicht im Sitzungsbereich von Mochi Squad."))
-        spec = attach_runtime(load_spec(spec_path), session_dir)
+        spec = attach_skills(attach_runtime(load_spec(spec_path), session_dir))
     except SpecError as error:
         raise SystemExit(str(error))
     provider = spec["provider"]

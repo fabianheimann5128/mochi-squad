@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Narrow bar on the far left with round buttons. Top: new agent, processes, connectors.
+/// Narrow bar on the far left with round buttons. Top: new agent, processes, connectors, skills.
 /// Bottom: what's new, suggest a feature, report a bug, and the user's initial for the settings.
 /// While the chat list is hidden, the middle shows the agents so every chat stays one click away.
 struct IconRail: View {
@@ -13,6 +13,7 @@ struct IconRail: View {
     let newAgent: () -> Void
     let openSettings: () -> Void
     let openConnectors: () -> Void
+    let openSkills: () -> Void
 
     @EnvironmentObject private var settings: SettingsStore
     @EnvironmentObject private var agents: AgentStore
@@ -37,6 +38,9 @@ struct IconRail: View {
             }
             RailButton(label: t("Connectors: services your agents may use", "Konnektoren: Dienste, die deine Agenten nutzen dürfen"), action: openConnectors) {
                 Image(systemName: "puzzlepiece.extension")
+            }
+            RailButton(label: t("Skills: what your agents know how to do", "Skills: was deine Agenten können"), action: openSkills) {
+                Image(systemName: "wand.and.stars")
             }
             if showsAgents {
                 Rectangle().fill(Desk.rule).frame(width: 28, height: 1).padding(.vertical, 2)

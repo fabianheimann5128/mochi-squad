@@ -28,6 +28,7 @@
 - **From your phone.** Connect Telegram or WhatsApp and write to your team chat on the go; the answers come back to the messenger.
 - **Computer view.** Watch live what an agent is working on and which files it touched last.
 - **Operate the computer.** If you allow it, an agent takes over screen, mouse and keyboard: Codex through its computer control, Claude through its desktop control and the Chrome extension.
+- **Skills.** Teach your agents how you want a kind of work done. Take skills that are already on your Mac with one click, or drop a skill folder or .zip into the app. A skill works for Claude and Codex agents alike and is for all agents unless you narrow it down.
 - **Several ChatGPT plans.** Add more plans in Settings and choose per agent which one it works with.
 - **Routines.** Tasks at fixed times through the macOS scheduler, even when the app is closed.
 - **Clear rights.** Three levels per agent: read only, edit in project, or full access. In the first two the agent runs in a sandbox with locked credentials; full access is something you switch on deliberately. Details in [SECURITY.md](SECURITY.md).
@@ -85,6 +86,7 @@ Mochi Squad stores everything it keeps on your Mac and runs no server of its own
 | Chat histories of the agents | with Claude Code (`~/.claude`) or Codex (`~/.codex`) |
 | Sign-in and histories of **extra** ChatGPT plans | `~/Library/Application Support/Mochi Squad/accounts/` |
 | Sign-in of your main subscriptions | in the respective program; Mochi Squad stores no credentials of them |
+| Skills you added | `~/Library/Application Support/Mochi Squad/skills/`, with a copy for the agents in `~/Library/Caches/dev.mochisquad.app/skills/` |
 | Telegram bot token | in your macOS keychain |
 | WhatsApp session | `~/Library/Application Support/Mochi Squad/messengers/` |
 | Files you attach to a message | in the project, under `.mochi-squad/attachments` |

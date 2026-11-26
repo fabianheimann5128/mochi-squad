@@ -499,6 +499,41 @@ class ArgumentTests(unittest.TestCase):
         with mock.patch.object(launcher, "CHROME", self.dir.name + "/missing.app"):
             self.assertFalse(launcher.open_chrome(fake(running=False)))
 
+    def test_agents_get_their_skills_and_only_theirs(self):
+        root = Path(self.dir.name).resolve()
+        data, shared, mine = root / "data", root / "shared", str(uuid.uuid4())
+        for skill in ("reviews-1a2b", "videos-3c4d", "gone-5e6f"):
+            (shared / "skills" / skill).mkdir(parents=True)
+        (shared / "skills" / "reviews-1a2b" / "SKILL.md").write_text("---\nname: reviews\n---\n")
+        (shared / "skills" / "videos-3c4d" / "SKILL.md").write_text("---\nname: videos\n---\n")
+        data.mkdir()
+        (data / "skills.json").write_text(json.dumps([
+            {"id": "reviews-1a2b", "name": "reviews", "description": "How reviews\nare written"},
+            {"id": "videos-3c4d", "name": "videos", "description": "x", "agents": [str(uuid.uuid4()).upper()]},
+            {"id": "gone-5e6f", "name": "gone", "description": "file missing"},
+            {"id": "../../etc", "name": "evil", "description": "x"}, "broken"]))
+        project = root / "work"
+        project.mkdir()
+        spec = make_spec(str(project))
+        spec["agentId"] = mine.upper()
+        with_skills = launcher.attach_skills(spec, data=data, shared=shared)
+        self.assertEqual([s["name"] for s in with_skills["skills"]], ["reviews"])
+        self.assertEqual(with_skills["skills"][0]["description"], "How reviews are written")
+        prompt = launcher.build_prompt(with_skills)
+        self.assertIn(str(shared / "skills" / "reviews-1a2b" / "SKILL.md"), prompt)
+        self.assertNotIn("videos", prompt)
+        self.assertIn(f"Read(/{shared / 'skills'}/**)", launcher.build_claude_settings(with_skills, home="/Users/test")["permissions"]["allow"])
+        # A skill narrowed down to this agent is included, whatever the letter case of the id.
+        index = json.loads((data / "skills.json").read_text())
+        index[1]["agents"] = [mine.lower()]
+        (data / "skills.json").write_text(json.dumps(index))
+        self.assertEqual(len(launcher.attach_skills(spec, data=data, shared=shared)["skills"]), 2)
+        # Skills never come from the session file, and no skills means no word about them.
+        clean = launcher.validate_spec(dict(spec, skills=[{"name": "x", "description": "y", "file": "/etc/passwd"}], agentId="nonsense"))
+        self.assertNotIn("skills", clean)
+        self.assertEqual(clean["agentId"], "")
+        self.assertNotIn("You have skills", launcher.build_prompt(launcher.attach_skills(clean, data=root / "none", shared=shared)))
+
     def test_codex_effort_passes_any_plain_level(self):
         self.assertIn('model_reasoning_effort="max"', launcher.codex_args(make_spec(self.dir.name, effort="max")))
         self.assertFalse(any("reasoning_effort" in a for a in launcher.codex_args(make_spec(self.dir.name, effort="x; rm"))))

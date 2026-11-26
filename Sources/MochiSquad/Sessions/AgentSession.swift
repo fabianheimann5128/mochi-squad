@@ -24,6 +24,8 @@ struct SessionSpec: Encodable {
     let project: String
     let task: String
     let sessionId: String
+    /// The launcher looks up the agent's skills by this id.
+    let agentId: String
     let owner: String
     /// Interface language: the fallback when the language of a message is unclear.
     let language: String
@@ -39,6 +41,7 @@ struct SessionSpec: Encodable {
         self.project = project.path
         self.task = task
         sessionId = sessionID.uuidString.lowercased()
+        agentId = agent.id.uuidString
         self.owner = owner
         language = L10n.language.rawValue
         self.agent = AgentPart(name: agent.name, job: agent.jobTitle, instructions: agent.instructions, persona: agent.persona,

@@ -8,6 +8,7 @@
 - **WhatsApp.** Erreiche deinen Team-Chat über den Chat „Nachricht an mich selbst“ (inoffizielle Anbindung, siehe Hinweis bei der Einrichtung).
 - **Neue Symbolleiste.** Neuer Agent, Prozesse, Konnektoren, Neuigkeiten, Rückmeldung und Einstellungen sitzen in einer Leiste links.
 - **Chats lesen sich besser.** Listen mit sauberem Einzug, hervorgehobene Dateinamen, kürzere Zeilen.
+- **Skills.** Bring deinen Agenten bei, wie du etwas haben willst: Skills, die schon auf deinem Mac liegen, mit einem Klick übernehmen oder einen Ordner oder eine .zip hineinziehen. Sie funktionieren für Claude- und Codex-Agenten.
 - **Der ganze Computer.** Mit „Computer bedienen“ übernehmen Claude-Agenten jetzt den Bildschirm in jedem Programm, nicht nur Chrome; einmalige Hinweise des Clients lassen eine Sitzung nicht mehr warten.
 - **Koordinator mit Codex.** Der Koordinator kann auch mit Codex laufen, ein Abo genügt also.
 - **Verlässliche Routinen.** Probleme mit dem Zeitplan werden angezeigt, eine Routine läuft nie doppelt, und Codex-Läufe erscheinen im Chat des Agenten.

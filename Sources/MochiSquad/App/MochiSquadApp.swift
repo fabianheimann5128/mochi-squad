@@ -10,6 +10,7 @@ import SwiftUI
     let team = TeamLog()
     let transcript = TranscriptStore()
     let chats = ChatIndex()
+    let skills = SkillStore()
     let manager: SessionManager
     let messengers: MessengerHub
 
@@ -33,6 +34,7 @@ struct MochiSquadApp: App {
                 .environmentObject(state.team)
                 .environmentObject(state.transcript)
                 .environmentObject(state.chats)
+                .environmentObject(state.skills)
                 .environmentObject(state.manager)
                 .environmentObject(state.messengers)
         }

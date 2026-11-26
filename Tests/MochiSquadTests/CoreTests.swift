@@ -602,4 +602,55 @@ import Testing
         #expect(TelegramLink.token(in: "12345:short") == nil)
         #expect(QRCode.image("https://t.me/my_bot?start=abc") != nil)
     }
+
+    /// Skills: import from a folder or archive, assignment, and the copy agents read.
+    @MainActor @Test func skillsAreImportedAssignedAndPublished() throws {
+        let home = try folder(), fm = FileManager.default
+        defer { try? fm.removeItem(at: home) }
+        let source = home.appendingPathComponent("src/reviews"), mirror = home.appendingPathComponent("shared/skills")
+        try fm.createDirectory(at: source.appendingPathComponent("refs"), withIntermediateDirectories: true)
+        try fm.createDirectory(at: home.appendingPathComponent("library"), withIntermediateDirectories: true)
+        try Data("---\nname: reviews\ndescription: >\n  How reviews are written,\n  step by step\n---\n# Body".utf8).write(to: source.appendingPathComponent("SKILL.md"))
+        try Data("x".utf8).write(to: source.appendingPathComponent("refs/checklist.md"))
+        try fm.createSymbolicLink(at: source.appendingPathComponent("secret"), withDestinationURL: URL(fileURLWithPath: "/etc/hosts"))
+        func store() -> SkillStore { SkillStore(index: home.appendingPathComponent("skills.json"), library: home.appendingPathComponent("library"), mirror: mirror) }
+        let skills = store()
+        let skill = try skills.add(from: source)
+        #expect(skill.name == "reviews" && skill.description == "How reviews are written, step by step" && skill.agents == nil)
+        #expect(skill.id.range(of: "^[a-z0-9][a-z0-9-]{0,63}$", options: .regularExpression) != nil)
+        #expect(fm.fileExists(atPath: mirror.appendingPathComponent(skill.id + "/refs/checklist.md").path))
+        // A link out of the skill's folder is not taken along.
+        #expect(!fm.fileExists(atPath: mirror.appendingPathComponent(skill.id + "/secret").path))
+        // Assignment: everyone by default, then only the chosen agent.
+        let mira = Agent(name: "Mira", job: "", project: "/tmp/p"), otto = Agent(name: "Otto", job: "", project: "/tmp/p")
+        #expect(skills.skills(for: otto).count == 1)
+        skills.assign(skill, to: [mira.id])
+        #expect(skills.skills(for: mira).count == 1 && skills.skills(for: otto).isEmpty)
+        // Importing the same skill again replaces it and keeps the assignment; it survives a restart.
+        let again = try skills.add(from: source.appendingPathComponent("SKILL.md"))
+        #expect(skills.skills.count == 1 && again.agents == [mira.id] && again.id != skill.id)
+        #expect(!fm.fileExists(atPath: mirror.appendingPathComponent(skill.id).path))
+        #expect(store().skills == [again])
+        // Not a skill, and removal.
+        try fm.createDirectory(at: home.appendingPathComponent("empty"), withIntermediateDirectories: true)
+        #expect(throws: SkillStore.Failure.self) { try skills.add(from: home.appendingPathComponent("empty")) }
+        // A folder that holds exactly one skill one level down is taken as that skill, as archives are packed that way.
+        #expect(try skills.add(from: home.appendingPathComponent("src")).name == "reviews")
+        #expect(skills.skills.count == 1)
+        #expect(SkillStore.parse("no front matter") == nil && SkillStore.parse("---\ndescription: x\n---") == nil)
+        #expect(SkillStore.parse("---\nname: \"quoted name\"\ndescription: 'd'\n---")?.name == "quoted name")
+        skills.skills.forEach(skills.remove)
+        #expect(skills.skills.isEmpty)
+        #expect(try fm.contentsOfDirectory(atPath: mirror.path).isEmpty)
+        // What the clients already have is offered, minus what is in the library.
+        let userHome = home.appendingPathComponent("user")
+        for (root, name) in [(".claude/skills", "videos"), (".codex/skills", "videos"), (".codex/skills", "deploy")] {
+            let folder = userHome.appendingPathComponent(root + "/" + name)
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Data("---\nname: \(name)\ndescription: d\n---".utf8).write(to: folder.appendingPathComponent("SKILL.md"))
+        }
+        #expect(skills.found(home: userHome).map(\.name).sorted() == ["deploy", "videos"])
+        try skills.add(from: userHome.appendingPathComponent(".codex/skills/deploy"))
+        #expect(skills.found(home: userHome).map(\.name) == ["videos"])
+    }
 }

@@ -64,6 +64,10 @@ A routine runs while you are away, so it trusts less than a chat does:
 - The same routine never runs twice at once.
 - Rights, model and subscription of a routine always follow the agent as it is now. A form left open cannot bring back rights you took away.
 
+## Skills
+
+A skill is a folder with instructions (`SKILL.md`) and sometimes scripts. Whatever a skill says, an agent that has it will try to do, within its rights: **add only skills from sources you trust**, as you would with any program. Mochi Squad keeps added skills in its own data, where agents can neither read nor change them, and gives the agents a copy to read. Sandboxed agents cannot change that copy; an agent with full access can, until the app rebuilds it at the next launch or change. Links inside a skill are removed on import, so a skill cannot point at files outside its folder. Which agent gets which skill is decided by the list in the app's data, never by anything in a project or a session file.
+
 ## Messengers
 
 Telegram and WhatsApp let you write to the team chat of one project from your phone. A message from a messenger does what the same message typed in the app would do, with one exception: **agents with full access or computer use are not reachable this way** unless you allow it in Settings.
