@@ -20,6 +20,8 @@ mkdir -p "$app/Contents/MacOS" "$resources"
 install -m 755 "$bin/MochiSquad" "$app/Contents/MacOS/MochiSquad"
 cp Resources/Info.plist "$app/Contents/Info.plist"
 cp Resources/AppIcon.icns "$resources/"
+# Leerer Sprachordner: Damit zeigt macOS die Standardmenüs der App auf Deutsch.
+mkdir -p "$resources/de.lproj"
 cp scripts/*.py "$resources/"
 cp LICENSE NOTICE "$resources/"
 install -m 644 .build/checkouts/SwiftTerm/LICENSE "$resources/SwiftTerm-LICENSE.txt"

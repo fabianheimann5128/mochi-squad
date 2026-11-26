@@ -22,6 +22,7 @@ struct Sidebar: View {
     @State private var searching = false
     @State private var showArchive = false
     @State private var hovered: UUID?
+    @State private var confirmRemoval = false
 
     private var members: [Agent] { agents.agents(in: project) }
     private var crew: [Agent] { members.filter { !$0.isCoordinator } }
@@ -155,11 +156,15 @@ struct Sidebar: View {
             Menu {
                 Button("Im Finder öffnen") { NSWorkspace.shared.open(project) }
                 if settings.projects.count > 1 {
-                    Button("Projekt aus Mochi Squad entfernen", role: .destructive) { removeProject(project) }
+                    Button("Projekt aus Mochi Squad entfernen …", role: .destructive) { confirmRemoval = true }
                 }
             } label: {
                 Image(systemName: "ellipsis").font(.system(size: 13)).foregroundStyle(Desk.dim).frame(width: 26, height: 22).contentShape(Rectangle())
             }.menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize().accessibilityLabel("Projektaktionen")
+                .confirmationDialog("„\(project.lastPathComponent)“ aus Mochi Squad entfernen?", isPresented: $confirmRemoval) {
+                    Button("Projekt entfernen", role: .destructive) { removeProject(project) }
+                    Button("Abbrechen", role: .cancel) {}
+                } message: { Text("Die Agenten dieses Projekts werden entfernt. Der Ordner und die Verläufe bleiben erhalten.") }
         }
     }
 

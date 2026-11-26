@@ -206,4 +206,26 @@ import Testing
         #expect(parsed?.sender == "Mochi")
         #expect(parsed?.body == "Prüf bitte den Checkout: Handy zuerst.")
     }
+
+    @MainActor @Test func projectsCanBeAddedAndRemovedWithTheirAgents() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let settings = SettingsStore(file: folder.appendingPathComponent("settings.json"))
+        let agents = AgentStore(file: folder.appendingPathComponent("agents.json"))
+        // Die Projektliste zeigt nur Ordner, die es gibt.
+        let first = folder.appendingPathComponent("eins").resolvingSymlinksInPath(), second = folder.appendingPathComponent("zwei").resolvingSymlinksInPath()
+        for project in [first, second] { try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true) }
+        #expect(settings.addProject(first) && settings.addProject(second) && settings.addProject(first))
+        #expect(settings.projects.map(\.path) == [first.path, second.path])
+        #expect(!settings.addProject(FileManager.default.homeDirectoryForCurrentUser))
+        for project in [first, second] { agents.ensureCoordinator(in: project, name: "Mochi") }
+        agents.ensureCoordinator(in: first, name: "Mochi")
+        agents.save(Agent(name: "Mira", job: "Researcherin", project: second.path))
+        #expect(agents.agents(in: first).count == 1 && agents.agents(in: second).count == 2)
+        agents.removeProject(second)
+        settings.removeProject(second)
+        #expect(agents.agents(in: second).isEmpty && agents.coordinator(in: first) != nil)
+        #expect(settings.projects.map(\.path) == [first.path])
+    }
 }
