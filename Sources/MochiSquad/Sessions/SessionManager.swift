@@ -122,8 +122,11 @@ import Foundation
     /// Chat-ID des letzten Verlaufs eines Claude-Agenten, um dort weiterzumachen.
     func resumableChat(for agent: Agent) -> String? {
         guard agent.provider == .claude else { return nil }
-        return agent.journals.reversed().first { FileManager.default.fileExists(atPath: $0) }
+        // Nur Verläufe von Claude Code lassen sich fortsetzen; nach einem Anbieterwechsel liegen auch Codex-Verläufe in der Liste.
+        return agent.journals.reversed().lazy
+            .filter { FileManager.default.fileExists(atPath: $0) }
             .map { URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent }
+            .first { UUID(uuidString: $0) != nil }
     }
 
     // MARK: Agenten-Post

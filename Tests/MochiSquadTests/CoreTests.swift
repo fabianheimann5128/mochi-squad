@@ -293,4 +293,10 @@ import Testing
         agent.provider = .codex
         #expect(Provider.codex.models.contains(agent.withModel().model))
     }
+
+    @Test func journalsOfExtraAccountsCount() {
+        let path = AppPaths.support.appendingPathComponent("accounts/codex/arbeit-1a2b/sessions/2026/rollout-x.jsonl").path
+        #expect(AgentSession.isJournal(path))
+        #expect(!AgentSession.isJournal(AppPaths.support.appendingPathComponent("agents.jsonl").path))
+    }
 }

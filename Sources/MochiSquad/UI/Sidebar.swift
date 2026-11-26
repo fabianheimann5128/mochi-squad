@@ -234,7 +234,9 @@ private struct AgentRow: View {
         let preview: String = {
             if waiting { return "✋ braucht deine Antwort" }
             if working { return "schreibt …" }
-            let text = agent.lastLine ?? agent.lastTask
+            // Angehängte Dateien erscheinen in der Vorschau als kurzer Hinweis, nicht als Pfadliste.
+            let parts = Attachments.split(agent.lastLine ?? agent.lastTask)
+            let text = parts.files.isEmpty ? parts.text : (parts.text.isEmpty ? "" : parts.text + " ") + "📎 " + (parts.files.count == 1 ? "Anhang" : "\(parts.files.count) Anhänge")
             if text.isEmpty { return agent.isCoordinator ? "Behält den Überblick über dein Team" : "Noch kein Verlauf" }
             if let relay = RelayedMessage.parse(text) { return relay.sender + ": " + relay.body }
             return text.replacingOccurrences(of: "\n", with: " ")

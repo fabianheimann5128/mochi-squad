@@ -176,7 +176,9 @@ enum LaunchError: LocalizedError {
     nonisolated static func isJournal(_ path: String) -> Bool {
         let resolved = URL(fileURLWithPath: path).standardizedFileURL.resolvingSymlinksInPath().path
         let env = ProcessInfo.processInfo.environment
-        let roots = [(env["CLAUDE_CONFIG_DIR"] ?? NSHomeDirectory() + "/.claude") + "/projects", (env["CODEX_HOME"] ?? NSHomeDirectory() + "/.codex")]
+        // Auch die Codex-Ordner weiterer ChatGPT-Abos zählen dazu.
+        let roots = [(env["CLAUDE_CONFIG_DIR"] ?? NSHomeDirectory() + "/.claude") + "/projects", (env["CODEX_HOME"] ?? NSHomeDirectory() + "/.codex"),
+                     AppPaths.support.appendingPathComponent("accounts/codex").path]
         return resolved.hasSuffix(".jsonl") && roots.contains {
             resolved.hasPrefix(URL(fileURLWithPath: $0).standardizedFileURL.resolvingSymlinksInPath().path + "/")
         }

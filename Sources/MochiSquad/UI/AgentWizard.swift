@@ -6,6 +6,7 @@ struct AgentWizard: View {
     let save: (Agent) -> Void
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var settings: SettingsStore
+    @EnvironmentObject private var agents: AgentStore
     @State private var step = Step.name
     @FocusState private var focus: Step?
 
@@ -16,7 +17,7 @@ struct AgentWizard: View {
     private var canContinue: Bool {
         func filled(_ text: String) -> Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         switch step {
-        case .name: return filled(agent.name)
+        case .name: return filled(agent.name) && !nameTaken
         case .job: return filled(agent.job)
         case .tasks: return filled(agent.instructions)
         case .manner: return filled(agent.persona)
@@ -54,7 +55,8 @@ struct AgentWizard: View {
         }
         .frame(width: 520)
         .onAppear {
-            if agent.name.isEmpty { agent.name = Self.names.randomElement() ?? "" }
+            // Vorschlag, der im Projekt noch frei ist.
+            if agent.name.isEmpty { agent.name = Self.names.filter { !taken.contains($0.lowercased()) }.randomElement() ?? "" }
             focus = .name
         }
     }
@@ -66,6 +68,10 @@ struct AgentWizard: View {
             question("Wie soll dein Mochi heißen?", "Mit diesem Namen sprichst du ihn im Team-Chat an.")
             TextField("Name", text: $agent.name).textFieldStyle(.plain).font(.system(size: 15)).multilineTextAlignment(.center)
                 .focused($focus, equals: .name).padding(.horizontal, 14).frame(width: 240, height: 40).field(12)
+            if nameTaken {
+                Text("Diesen Namen gibt es in diesem Projekt schon. Im Team-Chat wäre unklar, wer gemeint ist.")
+                    .font(.system(size: 12.5)).foregroundStyle(Desk.warning).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+            }
             Button { agent.avatar = MochiLook.random().key } label: { Label("Aussehen würfeln", systemImage: "dice") }.buttonStyle(.pill)
         }
     }
@@ -141,6 +147,12 @@ struct AgentWizard: View {
     }
 
     // MARK: Hilfen
+
+    /// Namen der anderen Agenten im Projekt, kleingeschrieben.
+    private var taken: Set<String> {
+        Set(agents.agents(in: URL(fileURLWithPath: agent.project)).filter { $0.id != agent.id }.map { $0.name.lowercased() })
+    }
+    private var nameTaken: Bool { taken.contains(agent.name.trimmingCharacters(in: .whitespaces).lowercased()) }
 
     private var shownName: String {
         let trimmed = agent.name.trimmingCharacters(in: .whitespaces)
