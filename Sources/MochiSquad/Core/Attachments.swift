@@ -58,5 +58,9 @@ enum Attachments {
 
 /// Diktat von macOS im gerade aktiven Eingabefeld (wie die Diktiertaste).
 enum Dictation {
-    @MainActor static func start() { NSApp.sendAction(Selector(("startDictation:")), to: nil, from: nil) }
+    @MainActor static func start() {
+        // Derselbe Befehl wie „Bearbeiten › Diktat starten …“; NSApplication führt ihn selbst aus.
+        let command = Selector(("startDictation:"))
+        if NSApp.responds(to: command) { NSApp.perform(command, with: nil) }
+    }
 }
