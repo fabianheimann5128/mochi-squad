@@ -10,6 +10,8 @@ enum AppPaths {
         .appendingPathComponent(appName, isDirectory: true))
 
     static func file(_ name: String) -> URL { support.appendingPathComponent(name) }
+    /// Codex-Ordner eines weiteren ChatGPT-Abos (wie common.account_home).
+    static func accountHome(_ id: String) -> URL { support.appendingPathComponent("accounts/codex/" + id, isDirectory: true) }
     static func folder(_ name: String) -> URL { directory(support.appendingPathComponent(name, isDirectory: true)) }
 
     /// Startdaten je Sitzung. Liegt in den App-Daten, die Agenten weder lesen noch beschreiben dürfen.

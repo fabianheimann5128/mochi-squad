@@ -51,6 +51,8 @@ struct Agent: Codable, Identifiable, Hashable {
     var isCoordinator = false
     /// Darf im Projekt Dateien ändern; Befehle laufen dann in der Sandbox des Clients.
     var canEdit = false
+    /// Kennung eines weiteren ChatGPT-Abos (nur Codex); nil nutzt die normale Anmeldung.
+    var account: String?
     var journals: [String] = []
     var lastTask = ""
     var lastLine: String?
@@ -112,6 +114,12 @@ struct AgentTemplate: Identifiable {
     func ensureCoordinator(in project: URL, name: String) {
         guard coordinator(in: project) == nil else { return }
         agents.append(.coordinator(name: name, project: project.path))
+        persist()
+    }
+
+    /// Agenten eines entfernten Abos arbeiten wieder mit der normalen Anmeldung.
+    func releaseAccount(_ id: String) {
+        for index in agents.indices where agents[index].account == id { agents[index].account = nil }
         persist()
     }
 

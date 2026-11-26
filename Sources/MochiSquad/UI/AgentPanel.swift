@@ -166,11 +166,13 @@ private struct ComputerView: View {
         let extra: (String, String)?
         @EnvironmentObject private var agents: AgentStore
         @EnvironmentObject private var manager: SessionManager
+        @EnvironmentObject private var settings: SettingsStore
         var body: some View {
             VStack(alignment: .leading, spacing: 9) {
                 line("Arbeitsordner", URL(fileURLWithPath: agent.project).lastPathComponent)
                 line("Anbieter", agent.provider.title)
                 line("Modell", agent.model.isEmpty ? "Standard" : agent.model)
+                if let account = settings.accounts.first(where: { $0.id == agent.account }) { line("ChatGPT-Abo", account.name) }
                 HStack {
                     Text("Dateien ändern").foregroundStyle(Desk.dim)
                     Spacer(minLength: 6)

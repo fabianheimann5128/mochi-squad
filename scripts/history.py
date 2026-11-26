@@ -88,9 +88,15 @@ def list_chats(project):
                                   modified=path.stat().st_mtime))
         except OSError:
             continue
-    home = common.codex_home()
-    db_root = Path(os.environ.get("CODEX_SQLITE_HOME", home))
+    for index, home in enumerate(common.codex_homes()):
+        items += codex_threads(Path(os.environ.get("CODEX_SQLITE_HOME", home)) if index == 0 else home, project)
+    return sorted(items, key=lambda x: -x["modified"])
+
+
+def codex_threads(db_root, project):
+    """Chats eines Codex-Ordners für ein Projekt, aus der neuesten lesbaren Datenbank."""
     for dbfile in sorted(db_root.glob("state_*.sqlite"), key=lambda p: p.stat().st_mtime, reverse=True):
+        items = []
         try:
             with sqlite3.connect(dbfile.as_uri() + "?mode=ro", uri=True, timeout=1) as db:
                 rows = db.execute("SELECT id, rollout_path, title, first_user_message, updated_at FROM threads WHERE cwd=? AND archived=0 ORDER BY updated_at DESC", (project,))
@@ -101,10 +107,10 @@ def list_chats(project):
                     if (first or "").startswith("Sitzung "):
                         label = user_text(first)
                     items.append(dict(id=ident, path=path, provider="codex", title=" ".join(label.split())[:120], modified=updated))
-            break
+            return items
         except (OSError, sqlite3.Error):
             continue
-    return sorted(items, key=lambda x: -x["modified"])
+    return []
 
 
 def read(path, provider, offset, count):

@@ -39,7 +39,7 @@ def build_spec(routine, owner, session_id):
     return launcher.validate_spec({
         "provider": routine.get("provider"), "project": routine.get("project"), "task": routine.get("task"),
         "sessionId": session_id, "owner": owner, "unattended": True, "allowWeb": routine.get("allowWeb") is True,
-        "agent": agent,
+        "agent": agent, "account": agent.get("account") or "" if isinstance(agent, dict) else "",
     })
 
 
@@ -48,6 +48,9 @@ def execute(spec, binary):
     env = common.client_path_env(common.clean_child_env())
     prompt = launcher.build_prompt(spec)
     if spec["provider"] == "codex":
+        # Auch die Prüfaufrufe unten sollen im Ordner des gewählten Abos laufen.
+        common.use_account(spec["account"])
+        common.use_account(spec["account"], env)
         if not launcher.codex_profile_enforced(binary, spec):
             return 1, launcher.OUTDATED_CODEX, None
         servers = launcher.codex_servers(binary)

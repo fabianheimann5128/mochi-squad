@@ -75,6 +75,10 @@ def validate_spec(spec):
     spec["unattended"] = spec.get("unattended") is True
     spec["allowWeb"] = spec.get("allowWeb") is True
     spec["postEnabled"] = spec.get("postEnabled") is True
+    account = str(spec.get("account") or "")
+    if account and (spec["provider"] != "codex" or not common.ACCOUNT_ID.fullmatch(account)):
+        raise SpecError("Das gewählte Abo ist ungültig.")
+    spec["account"] = account
     parent = spec.get("parentChat")
     spec["parentChat"] = parent if isinstance(parent, str) and CHAT_ID.fullmatch(parent) else None
     # Laufzeitpfade bestimmt nur attach_runtime; aus der Datei werden sie nie übernommen.
@@ -292,11 +296,11 @@ def codex_args(spec, interactive=True, servers=()):
     return args
 
 
-def login_state(provider, binary, timeout=20):
+def login_state(provider, binary, timeout=20, env=None):
     """(angemeldet, Hinweis). Jede Anmeldeart zählt; Abo, API-Schlüssel oder Cloud-Zugang entscheidet der Nutzer."""
     args = ["login", "status"] if provider == "codex" else ["auth", "status", "--json"]
     try:
-        result = subprocess.run([binary, *args], capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run([binary, *args], capture_output=True, text=True, timeout=timeout, env=env)
     except (OSError, subprocess.TimeoutExpired):
         return False, "Der Client antwortet nicht."
     if provider == "codex":
@@ -315,6 +319,12 @@ def status():
         binary = common.find_client(provider)
         logged_in, detail = login_state(provider, binary) if binary else (False, "")
         report[provider] = {"installed": bool(binary), "path": binary or "", "loggedIn": logged_in, "detail": detail}
+    # Weitere ChatGPT-Abos: je Ordner ein eigener Anmeldestand.
+    codex, accounts = common.find_client("codex"), {}
+    for home in common.codex_homes()[1:]:
+        if codex and common.ACCOUNT_ID.fullmatch(home.name):
+            accounts[home.name] = login_state("codex", codex, env=dict(os.environ, CODEX_HOME=str(home)))[0]
+    report["accounts"] = accounts
     return report
 
 
@@ -332,6 +342,7 @@ def run(spec_path):
     label = "Claude Code" if provider == "claude" else "Codex"
     if not binary:
         raise SystemExit(f"{label} ist auf diesem Mac nicht installiert. Installiere es und starte die Sitzung erneut.")
+    common.use_account(spec["account"])
     if not login_state(provider, binary)[0]:
         print(f"Für diesen Agenten musst du dich einmal bei {label} anmelden.", flush=True)
         subprocess.run([binary, *(["login"] if provider == "codex" else ["auth", "login"])])
@@ -358,11 +369,16 @@ def run(spec_path):
     os.execv(binary, [binary, *claude_args(spec), prompt])
 
 
-def login(provider):
+def login(provider, account=""):
     binary = common.find_client(provider)
     if not binary:
         raise SystemExit("Das Programm ist auf diesem Mac nicht installiert.")
     env = common.client_path_env(common.clean_child_env())
+    if provider == "codex":
+        try:
+            common.use_account(account, env)
+        except ValueError as error:
+            raise SystemExit(str(error))
     os.environ.clear()
     os.environ.update(env)
     os.execv(binary, [binary, *(["login"] if provider == "codex" else ["auth", "login"])])
@@ -371,8 +387,8 @@ def login(provider):
 def main(argv):
     if argv[:1] == ["status"]:
         print(json.dumps(status()))
-    elif len(argv) == 2 and argv[0] == "login" and argv[1] in common.PROVIDERS:
-        login(argv[1])
+    elif len(argv) in (2, 3) and argv[0] == "login" and argv[1] in common.PROVIDERS:
+        login(*argv[1:])
     elif len(argv) == 2 and argv[0] == "run":
         run(argv[1])
     else:

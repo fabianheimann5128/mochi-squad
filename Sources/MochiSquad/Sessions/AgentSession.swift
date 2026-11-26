@@ -27,6 +27,8 @@ struct SessionSpec: Encodable {
     let owner: String
     let agent: AgentPart
     let team: [String]
+    /// Weiteres ChatGPT-Abo oder leer für die normale Anmeldung.
+    let account: String
     let postEnabled = true
     var parentChat: String?
 
@@ -39,6 +41,7 @@ struct SessionSpec: Encodable {
         self.agent = AgentPart(name: agent.name, job: agent.jobTitle, instructions: agent.instructions, persona: agent.persona,
                                model: agent.model, effort: agent.effort, canEdit: agent.canEdit, isCoordinator: agent.isCoordinator)
         self.team = team
+        account = agent.provider == .codex ? agent.account ?? "" : ""
         self.parentChat = parentChat
     }
 }
@@ -134,6 +137,10 @@ enum LaunchError: LocalizedError {
             process.executableURL = AppPaths.python
             process.arguments = ["-B", monitor.path, "codex", folder.appendingPathComponent("context.json").path, project.path,
                                  spec.sessionId, String(getpid())]
+            // Der Beobachter liest den Verlauf im Ordner des gewählten Abos.
+            if !spec.account.isEmpty {
+                process.environment = ProcessInfo.processInfo.environment.merging(["CODEX_HOME": AppPaths.accountHome(spec.account).path]) { $1 }
+            }
             if (try? process.run()) != nil { watcher = process }
         }
         // .common: läuft auch, während der Nutzer scrollt oder ein Menü offen hat.

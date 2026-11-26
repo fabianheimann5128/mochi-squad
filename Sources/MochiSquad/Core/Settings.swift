@@ -1,11 +1,26 @@
 import Foundation
 
+/// Ein weiteres ChatGPT-Abo mit eigener Anmeldung. Die Kennung benennt seinen Ordner in den App-Daten.
+struct Account: Codable, Equatable, Identifiable, Hashable {
+    let id: String
+    var name: String
+
+    /// Kennung aus dem Namen: Kleinbuchstaben, Ziffern und Bindestriche, mit Zufallsteil gegen Doppelte.
+    static func makeID(from name: String) -> String {
+        let slug = name.lowercased().unicodeScalars.map { CharacterSet.alphanumerics.contains($0) && $0.isASCII ? Character($0) : "-" }
+        let base = String(String(slug).split(separator: "-").joined(separator: "-").prefix(24))
+        return (base.isEmpty ? "abo" : base) + "-" + String(UUID().uuidString.prefix(4)).lowercased()
+    }
+}
+
 /// Einstellungen des Nutzers. Liegen in settings.json; die Python-Helfer lesen davon nur den Namen.
 struct AppSettings: Codable, Equatable {
     var ownerName = ""
     var coordinatorName = "Mochi"
     var projects: [String] = []
     var onboarded = false
+    /// Weitere ChatGPT-Abos; nil, solange keines angelegt wurde.
+    var accounts: [Account]?
 
     /// Anzeigename des Nutzers in Briefings; leer, solange die Einrichtung fehlt.
     var owner: String { ownerName.trimmingCharacters(in: .whitespaces).isEmpty ? "dem Nutzer" : ownerName }
@@ -43,6 +58,20 @@ struct AppSettings: Codable, Equatable {
         let path = folder.standardizedFileURL.resolvingSymlinksInPath().path
         if !value.projects.contains(path) { value.projects.append(path) }
         return true
+    }
+
+    var accounts: [Account] { value.accounts ?? [] }
+
+    func addAccount(named name: String) -> Account {
+        let account = Account(id: Account.makeID(from: name), name: name)
+        value.accounts = accounts + [account]
+        return account
+    }
+
+    /// Entfernt das Abo samt seiner Anmeldung auf diesem Mac.
+    func removeAccount(_ account: Account) {
+        value.accounts = accounts.filter { $0.id != account.id }
+        try? FileManager.default.removeItem(at: AppPaths.accountHome(account.id))
     }
 
     func removeProject(_ folder: URL) {

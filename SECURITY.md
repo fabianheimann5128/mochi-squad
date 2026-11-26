@@ -32,7 +32,7 @@ Rückfragen des Clients (z. B. „Darf ich diesen Befehl ausführen?“) erschei
 
 **Zusammenarbeit.** Agenten können sich Nachrichten schicken und im Team-Chat Kollegen dazuholen. Den Koordinator erreichst nur du, im eigenen Chat oder im Team-Chat. Agenten können ihm nichts schicken, weil er über seine Werkzeuge projektübergreifend Aufträge vergeben und Verläufe lesen kann. Das ist je Projekt auf 24 Weitergaben pro halbe Stunde und insgesamt auf 8 gleichzeitige Sitzungen begrenzt, damit keine Schleifen entstehen.
 
-**Zugangsdaten.** Mochi Squad speichert keine Passwörter oder Tokens deiner Abos. Die Anmeldung gehört Claude Code bzw. Codex.
+**Zugangsdaten.** Mochi Squad speichert keine Passwörter oder Tokens deiner Abos. Die Anmeldung gehört Claude Code bzw. Codex. Für weitere ChatGPT-Abos legt Codex seine Anmeldung in einen eigenen Ordner unter `~/Library/Application Support/Mochi Squad/accounts/`; dieser Bereich ist für alle Agenten gesperrt.
 
 ## Bekannte Grenzen
 

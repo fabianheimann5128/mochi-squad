@@ -5,6 +5,7 @@ struct AgentWizard: View {
     @State var agent: Agent
     let save: (Agent) -> Void
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var settings: SettingsStore
     @State private var step = Step.name
     @FocusState private var focus: Step?
 
@@ -93,7 +94,7 @@ struct AgentWizard: View {
     private var engine: some View {
         VStack(spacing: 16) {
             question("Welchen Anbieter und welches Modell soll \(shownName) haben?", "Beide laufen über dein bestehendes Abo. Du kannst das jederzeit ändern.")
-            PillPicker(selection: Binding(get: { agent.provider }, set: { agent.provider = $0; agent.model = ""; agent.effort = "" }),
+            PillPicker(selection: Binding(get: { agent.provider }, set: { agent.provider = $0; agent.model = ""; agent.effort = ""; agent.account = nil }),
                        options: Provider.allCases.map { ($0, $0.vendor + " · " + $0.title) })
             HStack(spacing: 8) {
                 Picker("", selection: $agent.model) {
@@ -105,6 +106,15 @@ struct AgentWizard: View {
                     Text("Denktiefe automatisch").tag("")
                     ForEach(agent.provider.efforts(for: agent.model), id: \.self) { Text($0).tag($0) }
                 }.labelsHidden().fixedSize()
+            }
+            if agent.provider == .codex, !settings.accounts.isEmpty {
+                HStack(spacing: 8) {
+                    Text("ChatGPT-Abo").font(.system(size: 13)).foregroundStyle(Desk.dim)
+                    Picker("", selection: Binding(get: { agent.account ?? "" }, set: { agent.account = $0.isEmpty ? nil : $0 })) {
+                        Text("Standard-Abo").tag("")
+                        ForEach(settings.accounts) { Text($0.name).tag($0.id) }
+                    }.labelsHidden().fixedSize()
+                }
             }
             Text("Wenn du unsicher bist, lass beides auf Standard.").font(.system(size: 12.5)).foregroundStyle(Desk.dim)
         }

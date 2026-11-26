@@ -6,9 +6,11 @@ struct Routine: Codable, Identifiable, Equatable {
     struct AgentSnapshot: Codable, Equatable {
         var id: String, name: String, job: String, instructions: String, persona: String
         var model: String, effort: String, canEdit: Bool, isCoordinator: Bool
+        var account: String?
         init(_ agent: Agent) {
             id = agent.id.uuidString; name = agent.name; job = agent.jobTitle; instructions = agent.instructions
             persona = agent.persona; model = agent.model; effort = agent.effort; canEdit = agent.canEdit; isCoordinator = agent.isCoordinator
+            account = agent.provider == .codex ? agent.account : nil
         }
     }
 

@@ -228,4 +228,20 @@ import Testing
         #expect(agents.agents(in: second).isEmpty && agents.coordinator(in: first) != nil)
         #expect(settings.projects.map(\.path) == [first.path])
     }
+
+    @Test func accountsGetSafeIdentifiersAndApplyOnlyToCodex() throws {
+        let id = Account.makeID(from: "Arbeit & Büro / 2")
+        #expect(id.range(of: "^[a-z0-9][a-z0-9-]{0,39}$", options: .regularExpression) != nil)
+        #expect(id.hasPrefix("arbeit-b-ro-2-"))
+        #expect(Account.makeID(from: "…").hasPrefix("abo-"))
+        var agent = Agent(name: "Otto", job: "", project: "/tmp/p")
+        agent.account = id
+        func account(_ agent: Agent) throws -> String? {
+            let spec = SessionSpec(agent: agent, project: URL(fileURLWithPath: "/tmp/p"), task: "x", sessionID: UUID(), owner: "Alex", team: [], parentChat: nil)
+            return (try JSONSerialization.jsonObject(with: JSONEncoder().encode(spec)) as? [String: Any])?["account"] as? String
+        }
+        #expect(try account(agent) == "")
+        agent.provider = .codex
+        #expect(try account(agent) == id)
+    }
 }

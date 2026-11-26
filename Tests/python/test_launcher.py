@@ -294,6 +294,32 @@ class ArgumentTests(unittest.TestCase):
         self.assertIsNone(launcher.codex_servers(str(script)))
         self.assertIsNone(launcher.codex_servers(str(script) + "-fehlt"))
 
+    def test_account_selects_its_own_codex_home(self):
+        original = common.DATA
+        common.DATA = Path(self.dir.name)
+        try:
+            env = common.use_account("arbeit-1a2b", {})
+            home = Path(self.dir.name) / "accounts" / "codex" / "arbeit-1a2b"
+            self.assertEqual(env, {"CODEX_HOME": str(home)})
+            self.assertEqual(home.stat().st_mode & 0o777, 0o700)
+            self.assertEqual(common.use_account("", {}), {})
+            self.assertEqual(common.codex_homes()[1:], [home])
+        finally:
+            common.DATA = original
+        for bad in ("../x", "A", "a/b", "-a", "a" * 41):
+            with self.assertRaises(ValueError):
+                common.account_home(bad)
+
+    def test_spec_accepts_accounts_only_for_codex(self):
+        def spec(provider, account):
+            return launcher.validate_spec({"provider": provider, "project": self.dir.name, "task": "x", "account": account,
+                                           "sessionId": str(uuid.uuid4()), "owner": "Alex", "agent": {"name": "Otto"}})
+        self.assertEqual(spec("codex", "arbeit-1a2b")["account"], "arbeit-1a2b")
+        self.assertEqual(spec("claude", "")["account"], "")
+        for provider, account in (("claude", "arbeit-1a2b"), ("codex", "../../etc"), ("codex", "Gross")):
+            with self.assertRaises(launcher.SpecError):
+                spec(provider, account)
+
     def test_toml_escapes_keys(self):
         self.assertEqual(launcher._toml({'a "b"': {"c": True}}), '{"a \\"b\\"" = {"c" = true}}')
 

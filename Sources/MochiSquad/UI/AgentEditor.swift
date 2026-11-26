@@ -6,6 +6,7 @@ struct AgentEditor: View {
     let save: (Agent) -> Void
     let remove: () -> Void
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var settings: SettingsStore
     @State private var confirmRemove = false
 
     private var look: MochiLook { MochiLook(key: agent.avatar) }
@@ -59,7 +60,7 @@ struct AgentEditor: View {
                         .font(.system(size: 13.5)).padding(.horizontal, 12).frame(height: 32).field(8)
                 }
                 row("Anbieter") {
-                    PillPicker(selection: Binding(get: { agent.provider }, set: { agent.provider = $0; agent.model = ""; agent.effort = "" }),
+                    PillPicker(selection: Binding(get: { agent.provider }, set: { agent.provider = $0; agent.model = ""; agent.effort = ""; agent.account = nil }),
                                options: Provider.allCases.map { ($0, $0.vendor + " · " + $0.title) })
                         .frame(maxWidth: .infinity, alignment: .leading).disabled(agent.isCoordinator)
                 }
@@ -75,6 +76,15 @@ struct AgentEditor: View {
                             ForEach(agent.provider.efforts(for: agent.model), id: \.self) { Text($0).tag($0) }
                         }.labelsHidden().fixedSize()
                         Spacer()
+                    }
+                }
+                if agent.provider == .codex, !settings.accounts.isEmpty {
+                    row("ChatGPT-Abo") {
+                        Picker("", selection: Binding(get: { agent.account ?? "" }, set: { agent.account = $0.isEmpty ? nil : $0 })) {
+                            Text("Standard-Abo").tag("")
+                            ForEach(settings.accounts) { Text($0.name).tag($0.id) }
+                        }.labelsHidden().fixedSize()
+                            .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
                 do {

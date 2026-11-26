@@ -31,6 +31,38 @@ def codex_home():
     return Path(os.environ.get("CODEX_HOME") or HOME / ".codex")
 
 
+ACCOUNT_ID = re.compile(r"[a-z0-9][a-z0-9-]{0,39}")
+
+
+def account_home(account, root=None):
+    """Eigener Codex-Ordner eines weiteren ChatGPT-Abos; None für das Standard-Abo.
+
+    Der Ordner liegt in den Daten der App und damit hinter der Lesesperre der Sandbox.
+    """
+    if not account:
+        return None
+    if not ACCOUNT_ID.fullmatch(account):
+        raise ValueError("Ungültiges Abo.")
+    return Path(root or DATA / "accounts") / "codex" / account
+
+
+def use_account(account, env=None):
+    """Richtet die Umgebung auf das gewählte Abo aus und legt dessen Ordner an."""
+    env = os.environ if env is None else env
+    home = account_home(account)
+    if home is not None:
+        home.mkdir(parents=True, exist_ok=True)
+        os.chmod(home, 0o700)
+        env["CODEX_HOME"] = str(home)
+    return env
+
+
+def codex_homes():
+    """Der Standardordner von Codex und die Ordner aller weiteren Abos."""
+    extra = DATA / "accounts" / "codex"
+    return [codex_home()] + (sorted(p for p in extra.iterdir() if p.is_dir()) if extra.is_dir() else [])
+
+
 def project_allowed(project, home=None):
     """Ein Projekt liegt unterhalb des Benutzerordners oder außerhalb davon, aber nie darüber und nie in ~/Library.
 

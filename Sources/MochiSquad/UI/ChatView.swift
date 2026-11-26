@@ -288,20 +288,46 @@ struct PromptCard: View {
 private struct EmptyChat: View {
     let agent: Agent
     let suggest: (String) -> Void
-    private var examples: [String] {
-        agent.isCoordinator ? ["Wie ist der Stand in meinen Projekten?", "Welche Agenten sollte ich für dieses Projekt anlegen?"]
-            : ["Stell dich kurz vor und sag mir, wobei du helfen kannst.", "Sieh dir das Projekt an und fasse es in fünf Sätzen zusammen."]
+    @State private var hovered: String?
+
+    private var examples: [(symbol: String, text: String)] {
+        agent.isCoordinator
+            ? [("chart.bar.xaxis", "Wie ist der Stand in meinen Projekten?"),
+               ("person.badge.plus", "Welche Agenten sollte ich für dieses Projekt anlegen?"),
+               ("checklist", "Was sollte ich als Nächstes erledigen lassen?")]
+            : [("hand.wave", "Stell dich kurz vor und sag mir, wobei du helfen kannst."),
+               ("folder", "Sieh dir das Projekt an und fasse es in fünf Sätzen zusammen."),
+               ("lightbulb", "Schlag mir drei Aufgaben vor, die du übernehmen könntest.")]
     }
+
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 0) {
             MochiAvatar(key: agent.avatar, size: 88)
-            Text(agent.name).font(.system(size: 22, weight: .semibold))
+            Text(agent.name).font(.system(size: 22, weight: .semibold)).padding(.top, 14)
             Text(agent.instructions.isEmpty ? agent.jobTitle : agent.instructions)
-                .font(.system(size: 14)).foregroundStyle(Desk.dim).multilineTextAlignment(.center).lineLimit(4)
-            ForEach(examples, id: \.self) { example in
-                Button { suggest(example) } label: { Text(example) }.buttonStyle(.pill)
+                .font(.system(size: 14)).foregroundStyle(Desk.dim).multilineTextAlignment(.center).lineLimit(3).padding(.top, 4)
+            // Vorschläge als ruhige Liste: gleiche Breite, links ausgerichtet, ein Klick übernimmt den Text.
+            VStack(spacing: 0) {
+                ForEach(Array(examples.enumerated()), id: \.element.text) { index, example in
+                    if index > 0 { Rectangle().fill(Desk.rule).frame(height: 1).padding(.leading, 44) }
+                    Button { suggest(example.text) } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: example.symbol).font(.system(size: 13)).foregroundStyle(Desk.dim).frame(width: 20)
+                            Text(example.text).font(.system(size: 13.5)).foregroundStyle(Desk.text).lineLimit(1)
+                            Spacer(minLength: 8)
+                            Image(systemName: "arrow.up.left").font(.system(size: 11, weight: .medium)).foregroundStyle(Desk.faint)
+                        }
+                        .padding(.horizontal, 14).frame(height: 44)
+                        .background(hovered == example.text ? Desk.pillSelected.opacity(0.5) : .clear)
+                        .contentShape(Rectangle())
+                    }.buttonStyle(.plain).onHover { hovered = $0 ? example.text : (hovered == example.text ? nil : hovered) }
+                }
             }
-        }.frame(maxWidth: 440).frame(maxWidth: .infinity).padding(.top, 90)
+            .background(Desk.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Desk.edge) }
+            .padding(.top, 26)
+        }.frame(maxWidth: 460).frame(maxWidth: .infinity).padding(.top, 80)
     }
 }
 

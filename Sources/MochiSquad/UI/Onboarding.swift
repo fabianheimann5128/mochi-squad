@@ -7,6 +7,8 @@ struct ClientStatus: Decodable {
     struct Entry: Decodable { let installed, loggedIn: Bool; let path, detail: String }
     let claude: Entry
     let codex: Entry
+    /// Anmeldestand weiterer ChatGPT-Abos, nach Kennung.
+    let accounts: [String: Bool]?
     func entry(_ provider: Provider) -> Entry { provider == .claude ? claude : codex }
     var allReady: Bool { claude.loggedIn && codex.loggedIn }
     static func load() async -> ClientStatus? { try? await PythonTool.run("launcher", ["status"], as: ClientStatus.self) }
@@ -49,6 +51,8 @@ struct ClientRow: View {
 /// Anmeldung im echten Client: Der Browser öffnet sich, danach schließt sich das Fenster von selbst.
 struct LoginSheet: View {
     let provider: Provider
+    /// Weiteres ChatGPT-Abo, das angemeldet wird; leer für die normale Anmeldung.
+    var account = ""
     let done: () -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -61,7 +65,7 @@ struct LoginSheet: View {
             }
             Text("Gleich öffnet sich dein Browser. Bestätige dort die Anmeldung mit deinem Abo; falls ein Code verlangt wird, füge ihn unten ein.")
                 .font(.system(size: 12.5)).foregroundStyle(Desk.dim).fixedSize(horizontal: false, vertical: true)
-            LoginTerminal(provider: provider) { dismiss(); done() }
+            LoginTerminal(provider: provider, account: account) { dismiss(); done() }
                 .frame(width: 640, height: 300).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }.padding(20).dialogStyle()
     }
@@ -69,6 +73,7 @@ struct LoginSheet: View {
 
 private struct LoginTerminal: NSViewRepresentable {
     let provider: Provider
+    let account: String
     let finished: () -> Void
 
     final class Coordinator: NSObject, LocalProcessTerminalViewDelegate {
@@ -95,7 +100,7 @@ private struct LoginTerminal: NSViewRepresentable {
             var env = ProcessInfo.processInfo.environment
             env["TERM"] = "xterm-256color"
             env["PATH"] = (env["PATH"] ?? "/usr/bin:/bin") + ":" + NSHomeDirectory() + "/.local/bin:/opt/homebrew/bin:/usr/local/bin"
-            view.startProcess(executable: AppPaths.python.path, args: ["-B", launcher.path, "login", provider.rawValue],
+            view.startProcess(executable: AppPaths.python.path, args: ["-B", launcher.path, "login", provider.rawValue] + (account.isEmpty ? [] : [account]),
                               environment: env.map { $0.key + "=" + $0.value })
         }
         DispatchQueue.main.async { view.window?.makeFirstResponder(view) }
@@ -266,6 +271,8 @@ struct SettingsView: View {
     @State private var coordinator = ""
     @State private var status: ClientStatus?
     @State private var login: Provider?
+    @State private var accountLogin: Account?
+    @State private var newAccount = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -284,6 +291,8 @@ struct SettingsView: View {
             Text("Angemeldet wird im jeweiligen Programm mit deinem Abo. Mochi Squad speichert keine Zugangsdaten.")
                 .font(.system(size: 12)).foregroundStyle(Desk.dim).fixedSize(horizontal: false, vertical: true)
             Rectangle().fill(Desk.rule).frame(height: 1)
+            accountsSection
+            Rectangle().fill(Desk.rule).frame(height: 1)
             HStack {
                 Button("Im Dock behalten") { Dock.keepApp() }.buttonStyle(.pill).disabled(Dock.containsApp)
                 Button("Daten im Finder zeigen") { NSWorkspace.shared.open(AppPaths.support) }.buttonStyle(.pill)
@@ -295,6 +304,46 @@ struct SettingsView: View {
         .sheet(item: $login) { provider in
             LoginSheet(provider: provider) { Task { status = await ClientStatus.load() } }
         }
+        .sheet(item: $accountLogin) { account in
+            LoginSheet(provider: .codex, account: account.id) { Task { status = await ClientStatus.load() } }
+        }
+    }
+
+    /// Weitere ChatGPT-Abos: jedes mit eigener Anmeldung, je Agent wählbar.
+    private var accountsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Weitere ChatGPT-Abos").font(.system(size: 13, weight: .semibold)).foregroundStyle(Desk.dim)
+            ForEach(settings.accounts) { account in
+                let ready = status?.accounts?[account.id] == true
+                HStack(spacing: 10) {
+                    Image(systemName: ready ? "checkmark.circle.fill" : "person.crop.circle.badge.exclamationmark")
+                        .font(.system(size: 16)).foregroundStyle(ready ? Desk.success : Desk.faint)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(account.name).font(.system(size: 13.5, weight: .medium))
+                        Text(ready ? "angemeldet" : "noch nicht angemeldet").font(.system(size: 12)).foregroundStyle(Desk.dim)
+                    }
+                    Spacer()
+                    if !ready { Button("Anmelden") { accountLogin = account }.buttonStyle(.primaryPill) }
+                    Button { settings.removeAccount(account); agents.releaseAccount(account.id) } label: { Image(systemName: "trash") }
+                        .buttonStyle(.pill).help("Abo entfernen")
+                }.padding(.horizontal, 12).frame(height: 48).field(12)
+            }
+            HStack(spacing: 8) {
+                TextField("Name, z. B. Arbeit", text: $newAccount).textFieldStyle(.plain).padding(.horizontal, 12).frame(height: 32).field(8)
+                    .onSubmit(addAccount)
+                Button("Abo hinzufügen", action: addAccount).buttonStyle(.pill)
+                    .disabled(newAccount.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            Text("Lege hier ein zweites oder drittes ChatGPT-Abo an und wähle beim Agenten, mit welchem er arbeitet. So verteilst du die Nutzung auf mehrere Abos.")
+                .font(.system(size: 12)).foregroundStyle(Desk.dim).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func addAccount() {
+        let name = newAccount.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        newAccount = ""
+        accountLogin = settings.addAccount(named: name)
     }
 
     private func apply() {
