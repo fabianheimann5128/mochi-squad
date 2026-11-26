@@ -526,6 +526,7 @@ def run(spec_path):
         os.execv(binary, [binary, *codex_args(spec, servers=servers), prompt])
     if spec["agent"]["computerUse"]:
         prepare_desktop_control(binary, spec["project"])
+        open_chrome()
     journal = common.claude_journal(spec["project"], spec["sessionId"])
     common.write_private(spec["contextFile"], json.dumps({"historyPath": str(journal)}))
     os.execv(binary, [binary, *claude_args(spec), prompt])
@@ -543,6 +544,21 @@ def prepare_desktop_control(binary, project):
         computer.ensure(binary, project)
     except Exception:  # noqa: BLE001 – a convenience step; the client reports itself if the tools are missing
         pass
+
+
+CHROME = "/Applications/Google Chrome.app"
+
+
+def open_chrome(run=subprocess.run):
+    """The Claude extension can only connect while Chrome is running. Start it in the background if it is
+    installed and closed, so that an agent that may use the browser finds it on the first try."""
+    try:
+        if not Path(CHROME).is_dir() or run(["/usr/bin/pgrep", "-x", "Google Chrome"], capture_output=True).returncode == 0:
+            return False
+        run(["/usr/bin/open", "-g", "-a", CHROME], capture_output=True)
+        return True
+    except OSError:
+        return False
 
 
 def login(provider, account=""):

@@ -483,6 +483,22 @@ class ArgumentTests(unittest.TestCase):
                                           "sessionId": str(uuid.uuid4()), "owner": "Alex", "agent": {"name": "Mira", "computerUse": True}})
         self.assertFalse(routine["agent"]["computerUse"])
 
+    def test_chrome_is_opened_only_when_it_is_closed(self):
+        calls = []
+
+        def fake(running):
+            def run(command, **_):
+                calls.append(command[0])
+                return mock.Mock(returncode=0 if running else 1)
+            return run
+        with mock.patch.object(launcher, "CHROME", self.dir.name):
+            self.assertFalse(launcher.open_chrome(fake(running=True)))
+            self.assertEqual(calls, ["/usr/bin/pgrep"])
+            self.assertTrue(launcher.open_chrome(fake(running=False)))
+            self.assertEqual(calls[-1], "/usr/bin/open")
+        with mock.patch.object(launcher, "CHROME", self.dir.name + "/missing.app"):
+            self.assertFalse(launcher.open_chrome(fake(running=False)))
+
     def test_codex_effort_passes_any_plain_level(self):
         self.assertIn('model_reasoning_effort="max"', launcher.codex_args(make_spec(self.dir.name, effort="max")))
         self.assertFalse(any("reasoning_effort" in a for a in launcher.codex_args(make_spec(self.dir.name, effort="x; rm"))))
