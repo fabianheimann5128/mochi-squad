@@ -185,7 +185,9 @@ enum LaunchError: LocalizedError {
             if next != usage { usage = next }
         }
         let touched = usage.historyPath.flatMap { try? FileManager.default.attributesOfItem(atPath: $0)[.modificationDate] as? Date }
-        let now = isRunning && touched.map { Date().timeIntervalSince($0) < 7 } == true
+        // Busy means: the history was written just now, or the client itself says it can be interrupted. The second
+        // sign covers long steps (a command that runs for minutes) during which nothing is written.
+        let now = isRunning && (touched.map { Date().timeIntervalSince($0) < 7 } == true || Self.showsBusy(screenText(lines: 8)))
         if now != working { working = now }
         var ask = isRunning ? TerminalPromptScanner.scan(terminal) : nil
         // The client introduces Claude in Chrome once with a screen that only waits for Return. The user already
@@ -199,6 +201,11 @@ enum LaunchError: LocalizedError {
         let login = isRunning && usage.historyPath == nil && screenText().contains("MOCHI-SIGN-IN")
         if login != needsLogin { needsLogin = login }
         collectPost()
+    }
+
+    /// Both clients show "esc to interrupt" in their status line for as long as a turn is running.
+    nonisolated static func showsBusy(_ screen: String) -> Bool {
+        screen.lowercased().filter { !$0.isWhitespace }.contains("esctointerrupt")
     }
 
     /// Only history files in the clients' folders count (links resolved).

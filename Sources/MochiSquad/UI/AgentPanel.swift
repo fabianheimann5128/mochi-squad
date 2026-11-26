@@ -204,7 +204,8 @@ private struct ComputerView: View {
                         .toggleStyle(.switch).controlSize(.mini).labelsHidden()
                 }.font(.system(size: 12.5))
                 if agent.computerUse == true {
-                    Text(agent.provider == .claude ? t("Controls the Chrome browser through Claude in Chrome.", "Steuert den Chrome-Browser über Claude in Chrome.")
+                    Text(agent.provider == .claude ? t("Controls the Chrome browser through the Claude extension. Chrome must be open with the extension signed in to the same account; after switching this on for the first time, quit and reopen Chrome once.",
+                                                    "Steuert den Chrome-Browser über die Claude-Erweiterung. Chrome muss offen und die Erweiterung mit demselben Konto angemeldet sein; nach dem ersten Einschalten Chrome einmal beenden und neu öffnen.")
                          : t("Controls apps and the browser through Codex's computer control.", "Steuert Programme und Browser über die Computersteuerung von Codex."))
                         .font(.system(size: 11.5)).foregroundStyle(Desk.dim).fixedSize(horizontal: false, vertical: true)
                 }

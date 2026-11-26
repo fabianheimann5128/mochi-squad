@@ -570,6 +570,17 @@ import Testing
         #expect(reports.count == 2)
     }
 
+    /// A relayed message never lands in the middle of an answer, and never waits forever either.
+    @Test func relayedMessagesWaitForAnIdleAgent() {
+        #expect(SessionManager.shouldHold(working: true, waited: 0))
+        #expect(SessionManager.shouldHold(working: true, waited: 600))
+        #expect(!SessionManager.shouldHold(working: false, waited: 0))
+        #expect(!SessionManager.shouldHold(working: true, waited: SessionManager.patience + 1))
+        #expect(AgentSession.showsBusy("✻ Brewing…\n⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt"))
+        #expect(AgentSession.showsBusy("• Working (12s • Esc to interrupt)"))
+        #expect(!AgentSession.showsBusy("❯ \n⏵⏵ bypass permissions on (shift+tab to cycle)"))
+    }
+
     @MainActor @Test func coordinatorFollowsTheInstalledProgramAndTheLanguage() {
         let codex = Agent.coordinator(name: "Mochi", project: "/tmp/p", provider: .codex)
         #expect(codex.provider == .codex && codex.isCoordinator && codex.jobTitle == "Coordinator")

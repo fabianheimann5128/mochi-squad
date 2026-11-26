@@ -176,10 +176,18 @@ import Foundation
 
     // MARK: Agent post
 
-    /// Hands a message to an agent's running session or starts the agent with it.
+    /// How long a relayed message waits for a busy agent before it is delivered anyway.
+    nonisolated static let patience: TimeInterval = 900
+
+    /// Should a relayed message wait? While an agent is in the middle of an answer, a message slipped in would
+    /// be read as part of that turn: the rest of a private answer would then land in the team chat, or a team
+    /// answer would stop halfway. So it waits until the agent is idle, but not forever.
+    nonisolated static func shouldHold(working: Bool, waited: TimeInterval) -> Bool { working && waited < patience }
+
+    /// Hands a message from an agent or the team chat to an agent's running session, or starts the agent with it.
     func hand(_ message: String, to agent: Agent) -> Handover {
         if let live = liveSession(for: agent.id) {
-            if live.send(message) { return .delivered(live) }
+            if !Self.shouldHold(working: live.working, waited: 0), live.send(message) { return .delivered(live) }
             waiting.append(WaitingPost(session: live.id, agent: agent.id, message: message, since: Date()))
             return .queued(live)
         }
@@ -257,12 +265,16 @@ import Foundation
             func tell(_ text: String) {
                 if forTeam, let agent { team.notice(text, project: agent.project) } else { notice = text }
             }
-            if Date().timeIntervalSince(item.since) > 900 {
+            let waited = Date().timeIntervalSince(item.since)
+            if let live = sessions.first(where: { $0.id == item.session }), live.isRunning {
+                // First the agent finishes what it is saying; after a quarter of an hour the message goes in regardless.
+                if Self.shouldHold(working: live.working, waited: waited) { waiting.append(item); continue }
+                if live.send(item.message) { continue }
+                if waited <= Self.patience + 300 { waiting.append(item); continue }
+                // The input stayed blocked (for example by an unanswered question of the client): give up and say so.
                 feeds[item.session]?.answered = true
-                tell(t("A message for \(agent?.name ?? "an agent") could not be delivered for 15 minutes.",
-                       "Eine Nachricht an \(agent?.name ?? "einen Agenten") konnte 15 Minuten lang nicht zugestellt werden."))
-            } else if let live = sessions.first(where: { $0.id == item.session }), live.isRunning {
-                if !live.send(item.message) { waiting.append(item) }
+                tell(t("A message for \(agent?.name ?? "an agent") could not be delivered for 20 minutes.",
+                       "Eine Nachricht an \(agent?.name ?? "einen Agenten") konnte 20 Minuten lang nicht zugestellt werden."))
             } else if let agent {
                 // The session is gone (ended or restarted): the agent's current or a fresh session takes the message.
                 let result = hand(item.message, to: agent)
