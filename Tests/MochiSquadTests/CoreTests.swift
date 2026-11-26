@@ -323,4 +323,32 @@ import Testing
         let parts = WhatsNew.sections("# Was ist neu\n\n## 0.2.0\n- A\n- B\n\n## 0.1.0\n- C")
         #expect(parts.map(\.title) == ["0.2.0", "0.1.0"] && parts[0].items == ["A", "B"])
     }
+
+    @Test func attachmentPathsFromMessagesCannotLeaveTheAttachmentFolder() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).resolvingSymlinksInPath()
+        let project = root.appendingPathComponent("projekt")
+        try FileManager.default.createDirectory(at: project.appendingPathComponent(".mochi-squad/anhaenge"), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try Data("x".utf8).write(to: project.appendingPathComponent(".mochi-squad/anhaenge/bild.png"))
+        try Data("x".utf8).write(to: project.appendingPathComponent("run.command"))
+        #expect(Attachments.resolve(".mochi-squad/anhaenge/bild.png", in: project) != nil)
+        for bad in ["run.command", "../../Downloads/x.app", ".mochi-squad/anhaenge/../../run.command", "/etc/passwd"] {
+            #expect(Attachments.resolve(bad, in: project) == nil, "\(bad)")
+        }
+        // Ein Verweis im Anhang-Ordner, der nach außen zeigt, zählt ebenfalls nicht.
+        try FileManager.default.createSymbolicLink(at: project.appendingPathComponent(".mochi-squad/anhaenge/link"), withDestinationURL: root)
+        #expect(Attachments.resolve(".mochi-squad/anhaenge/link/projekt/run.command", in: project) == nil)
+        // Weitergeleitete Nachrichten von Agenten werden nie als Dateiliste gelesen.
+        let relayed = RelayedMessage.postPrefix + "Nora (Reviewer): Schau mal" + Attachments.marker + "- run.command"
+        #expect(Bubble.make(from: [ChatLine(id: 1, role: "user", text: relayed, timestamp: "")])[0].attachments.isEmpty)
+    }
+
+    @MainActor @Test func accountFoldersAndHiddenProjectsAreRefused() {
+        #expect(AppPaths.accountHome("arbeit-1a2b") != nil)
+        for bad in ["", "..", "../../..", "A", "a/b"] { #expect(AppPaths.accountHome(bad) == nil, "\(bad)") }
+        let home = URL(fileURLWithPath: "/Users/alex")
+        for bad in ["/Users/alex/.ssh", "/Users/alex/.claude/projects", "/Users/alex/Applications", "/Users/alex/Applications/Mochi Squad.app"] {
+            #expect(!SettingsStore.projectAllowed(URL(fileURLWithPath: bad), home: home), "\(bad)")
+        }
+    }
 }

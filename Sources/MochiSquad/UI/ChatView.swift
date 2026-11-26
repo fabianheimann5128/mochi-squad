@@ -244,7 +244,10 @@ struct AttachmentPreview: View {
     private static let limit = CGSize(width: 320, height: 240)
 
     var body: some View {
-        Button { NSWorkspace.shared.open(file) } label: {
+        // Bilder öffnen sich in der Vorschau; alles andere wird nur im Finder gezeigt, nie direkt ausgeführt.
+        Button {
+            if Attachments.isImage(file) { NSWorkspace.shared.open(file) } else { NSWorkspace.shared.activateFileViewerSelecting([file]) }
+        } label: {
             if Attachments.isImage(file), let image = NSImage(contentsOf: file), image.size.width > 0, image.size.height > 0 {
                 let size = compact ? CGSize(width: 44, height: 44) : Self.fitted(image.size)
                 let shape = RoundedRectangle(cornerRadius: compact ? 9 : 14, style: .continuous)
@@ -283,7 +286,7 @@ struct BubbleView: View, Equatable {
             VStack(alignment: outgoing ? .trailing : .leading, spacing: 6) {
                 // Anhänge stehen wie in Messengern als eigene Kacheln über dem Text, nicht in der farbigen Blase.
                 if let project {
-                    ForEach(bubble.attachments, id: \.self) { AttachmentPreview(file: project.appendingPathComponent($0)) }
+                    ForEach(bubble.attachments.compactMap { Attachments.resolve($0, in: project) }, id: \.self) { AttachmentPreview(file: $0) }
                 }
                 if !bubble.plain.isEmpty || bubble.attachments.isEmpty || project == nil { textBubble(outgoing: outgoing) }
             }

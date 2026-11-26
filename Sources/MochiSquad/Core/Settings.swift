@@ -47,8 +47,10 @@ struct AppSettings: Codable, Equatable {
     static func projectAllowed(_ folder: URL, home: URL = FileManager.default.homeDirectoryForCurrentUser) -> Bool {
         let path = folder.standardizedFileURL.resolvingSymlinksInPath().path
         let home = home.standardizedFileURL.resolvingSymlinksInPath().path
-        let library = home + "/Library"
-        return path != home && !(home + "/").hasPrefix(path == "/" ? "/" : path + "/") && path != library && !path.hasPrefix(library + "/")
+        if path == home || (home + "/").hasPrefix(path == "/" ? "/" : path + "/") { return false }
+        // Im Benutzerordner sind ~/Library, ~/Applications und versteckte Ordner wie ~/.ssh, ~/.claude oder ~/.codex tabu.
+        guard path.hasPrefix(home + "/"), let first = path.dropFirst(home.count + 1).split(separator: "/").first else { return true }
+        return first != "Library" && first != "Applications" && !first.hasPrefix(".")
     }
 
     /// Nimmt den Ordner als Projekt auf. `false`, wenn er als Projekt nicht erlaubt ist.
@@ -71,7 +73,7 @@ struct AppSettings: Codable, Equatable {
     /// Entfernt das Abo samt seiner Anmeldung auf diesem Mac.
     func removeAccount(_ account: Account) {
         value.accounts = accounts.filter { $0.id != account.id }
-        try? FileManager.default.removeItem(at: AppPaths.accountHome(account.id))
+        if let home = AppPaths.accountHome(account.id) { try? FileManager.default.removeItem(at: home) }
     }
 
     func removeProject(_ folder: URL) {

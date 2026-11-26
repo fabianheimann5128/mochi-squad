@@ -9,6 +9,7 @@ Auftrag eines Agenten bestimmen, stehen in reinen Funktionen und sind in tests/ 
 """
 import json
 import os
+import secrets
 import subprocess
 import sys
 import uuid
@@ -22,6 +23,8 @@ SECRET_PATHS = (".ssh", ".aws", ".gnupg", ".config/gh", ".config/gcloud", ".conf
                 "Library/Mail", "Library/Messages", "Library/Safari", "Library/Containers", "Library/Group Containers")
 # Im Projekt nie beschreibbar: Hier könnte sich ein Agent Rechte geben oder Code für spätere Sitzungen ablegen.
 CLIENT_FOLDERS = (".claude", ".codex", ".git/hooks")
+# Einzelne Dateien mit derselben Wirkung: Über .git/config ließen sich Hooks und Hilfsprogramme umleiten.
+CLIENT_FILES = (".git/config",)
 # MCP-Server, über die Codex den Computer steuert.
 COMPUTER_SERVERS = ("cua_repl",)
 EFFORT = __import__("re").compile(r"[a-z]{2,12}")
@@ -180,9 +183,10 @@ def build_claude_settings(spec, home=None):
         return settings
     allow = [f"Read(/{project}/**)"]
     # Edit-Regeln gelten für alle Werkzeuge, die Dateien ändern.
-    deny = [f"Edit(/{project}/{p}/**)" for p in CLIENT_FOLDERS] + [f"Read(/{home / 'Library/Application Support'}/**)"]
+    deny = ([f"Edit(/{project}/{p}/**)" for p in CLIENT_FOLDERS] + [f"Edit(/{project}/{p})" for p in CLIENT_FILES]
+            + [f"Read(/{home / 'Library/Application Support'}/**)"])
     filesystem = {"denyRead": [str(home / p) for p in SECRET_PATHS],
-                  "denyWrite": [str(Path(project) / p) for p in CLIENT_FOLDERS] if agent["canEdit"] else [project]}
+                  "denyWrite": [str(Path(project) / p) for p in CLIENT_FOLDERS + CLIENT_FILES] if agent["canEdit"] else [project]}
     if agent["canEdit"]:
         allow.append(f"Edit(/{project}/**)")
     if spec.get("post") and spec.get("outbox"):
@@ -248,7 +252,7 @@ def build_codex_permissions(spec, home=None):
     edit = spec["agent"]["canEdit"]
     roots = {".": "write" if edit else "read"}
     if edit:
-        roots.update({p: "read" for p in CLIENT_FOLDERS})
+        roots.update({p: "read" for p in CLIENT_FOLDERS + CLIENT_FILES})
     # Fremde Postausgänge sind gesperrt; der eigene wird unten wieder freigegeben.
     files = {":root": "read", ":project_roots": roots, str(common.OUTBOXES): "none"}
     if edit:
@@ -260,8 +264,13 @@ def build_codex_permissions(spec, home=None):
 
 
 def codex_profile_args(spec):
-    # Ein eigenes Profil statt --sandbox: Nur Profile kennen Lesesperren.
-    return ["-c", 'default_permissions="mochi"', "-c", "permissions.mochi=" + _toml(build_codex_permissions(spec))]
+    """Ein eigenes Profil statt --sandbox: Nur Profile kennen Lesesperren.
+
+    Der Profilname ist je Start zufällig. Codex mischt Einträge aus einer `.codex/config.toml` im Projekt in gleichnamige
+    Profile; mit einem unvorhersehbaren Namen kann ein Projekt das Profil nicht erweitern.
+    """
+    name = spec.setdefault("profileName", "mochi_" + secrets.token_hex(8))
+    return ["-c", f'default_permissions="{name}"', "-c", f"permissions.{name}=" + _toml(build_codex_permissions(spec))]
 
 
 def codex_profile_enforced(binary, spec, home=None, timeout=20):
@@ -291,10 +300,27 @@ def codex_servers(binary, timeout=20):
         return None
     if result.returncode != 0 or not isinstance(rows, list):
         return None
-    servers = [(str(row.get("name", "")), "url" not in (row.get("transport") or {}))
+    servers = [(str(row.get("name", "")), "url" not in (row.get("transport") or {}), str((row.get("transport") or {}).get("command") or ""))
                for row in rows if isinstance(row, dict) and row.get("enabled") is not False]
     # Ein Name, der sich nicht als Schlüssel schreiben lässt, ließe sich nicht abschalten.
-    return servers if all(SERVER_NAME.fullmatch(name) for name, _ in servers) else None
+    return servers if all(SERVER_NAME.fullmatch(server[0]) for server in servers) else None
+
+
+def trusted_computer_server(name, command, project, home=None):
+    """Codex' Computersteuerung bleibt nur an, wenn sie wirklich die von OpenAI ist.
+
+    Ein Projekt könnte in seiner `.codex/config.toml` einen gleichnamigen Server mit eigenem Befehl mitbringen.
+    """
+    home = Path(home or common.HOME)
+    own = Path(project) / ".codex" / "config.toml"
+    try:
+        if own.is_file() and any(server in own.read_text(errors="replace") for server in COMPUTER_SERVERS):
+            return False
+    except OSError:
+        return False
+    roots = ("/Applications/ChatGPT.app/Contents/Resources/", str(home / ".codex/plugins/cache/openai-bundled") + "/",
+             str(home / ".codex/computer-use") + "/")
+    return name in COMPUTER_SERVERS and command.startswith(roots)
 
 
 OUTDATED_CODEX = ("Diese Codex-Version kennt keine Rechteprofile, die Lesesperren würden nicht greifen. "
@@ -312,12 +338,12 @@ def codex_args(spec, interactive=True, servers=()):
         # Vom Nutzer ausdrücklich eingeschaltet: Codex ohne Sandbox und ohne Rückfragen, mit seinen eigenen Werkzeugen.
         # Nur die Computersteuerung richtet sich weiter nach ihrem eigenen Schalter.
         args = ["--sandbox", "danger-full-access", "-c", 'web_search="live"']
-        servers = () if agent["computerUse"] else [(name, True) for name in COMPUTER_SERVERS]
+        servers = () if agent["computerUse"] else [(name, True, "") for name in COMPUTER_SERVERS]
     else:
         args = codex_profile_args(spec) + ["-c", "web_search=" + json.dumps("live" if spec.get("allowWeb") else "disabled")]
-    for name, is_command in servers:
-        # Mit Computer-Nutzung bleibt Codex' eigene Computersteuerung eingeschaltet.
-        if agent["computerUse"] and name in COMPUTER_SERVERS:
+    for name, is_command, *rest in servers:
+        # Mit Computer-Nutzung bleibt Codex' eigene Computersteuerung eingeschaltet, sofern sie echt ist.
+        if agent["computerUse"] and trusted_computer_server(name, rest[0] if rest else "", spec["project"]):
             continue
         # Server aus Plugins haben keinen Eintrag in der Konfiguration; erst mit einem Befehl ist der Eintrag gültig.
         if is_command:
@@ -329,6 +355,9 @@ def codex_args(spec, interactive=True, servers=()):
         args += ["--model", agent["model"]]
     if EFFORT.fullmatch(agent["effort"]):
         args += ["-c", "model_reasoning_effort=" + json.dumps(agent["effort"])]
+    if not interactive:
+        # In Routinen läuft kein Benachrichtigungsprogramm, auch keines aus einer Projektkonfiguration.
+        args += ["-c", "notify=[]"]
     if spec.get("contextFile") and interactive:
         hook = Path(__file__).with_name("context.py")
         args += ["-c", "notify=" + json.dumps([sys.executable, str(hook), "bind", spec["contextFile"]])]

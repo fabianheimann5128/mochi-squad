@@ -152,8 +152,8 @@ enum LaunchError: LocalizedError {
             process.arguments = ["-B", monitor.path, "codex", folder.appendingPathComponent("context.json").path, project.path,
                                  spec.sessionId, String(getpid())]
             // Der Beobachter liest den Verlauf im Ordner des gewählten Abos.
-            if !spec.account.isEmpty {
-                process.environment = ProcessInfo.processInfo.environment.merging(["CODEX_HOME": AppPaths.accountHome(spec.account).path]) { $1 }
+            if let home = AppPaths.accountHome(spec.account) {
+                process.environment = ProcessInfo.processInfo.environment.merging(["CODEX_HOME": home.path]) { $1 }
             }
             if (try? process.run()) != nil { watcher = process }
         }

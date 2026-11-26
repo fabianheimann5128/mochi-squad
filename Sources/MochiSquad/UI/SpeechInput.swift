@@ -202,5 +202,8 @@ struct MicControl: View {
         // Wird das Feld geleert (gesendet), endet die Aufnahme; sonst käme der Text gleich wieder hinein.
         .onChange(of: draft) { _, text in if text.isEmpty { speech.stop() } }
         .onDisappear { speech.stop() }
+        // Das Mikrofon bleibt nie offen, wenn die App ausgeblendet wird oder in den Hintergrund geht.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in speech.stop() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didHideNotification)) { _ in speech.stop() }
     }
 }

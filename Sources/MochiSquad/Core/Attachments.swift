@@ -7,11 +7,12 @@ enum Attachments {
     static let maxBytes = 100 * 1024 * 1024
 
     enum Failure: LocalizedError {
-        case tooLarge(String), unreadable(String)
+        case tooLarge(String), unreadable(String), unsafeFolder
         var errorDescription: String? {
             switch self {
             case .tooLarge(let name): return "„\(name)“ ist größer als 100 MB und wurde nicht angehängt."
             case .unreadable(let name): return "„\(name)“ konnte nicht kopiert werden."
+            case .unsafeFolder: return "Der Anhang-Ordner des Projekts verweist nach außen. Die Dateien wurden nicht angehängt."
             }
         }
     }
@@ -20,9 +21,12 @@ enum Attachments {
     static func stage(_ files: [URL], in project: URL) throws -> [String] {
         let target = project.appendingPathComponent(folder, isDirectory: true)
         try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        // Ein Agent könnte den Ordner durch einen Verweis ersetzt haben; kopiert wird nur innerhalb des Projekts.
+        guard inside(target, project) else { throw Failure.unsafeFolder }
         return try files.map { file in
-            let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-            guard size <= maxBytes else { throw Failure.tooLarge(file.lastPathComponent) }
+            let values = try? file.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey])
+            guard values?.isRegularFile == true else { throw Failure.unreadable(file.lastPathComponent) }
+            guard (values?.fileSize ?? 0) <= maxBytes else { throw Failure.tooLarge(file.lastPathComponent) }
             let copy = freeName(for: file.lastPathComponent, in: target)
             do { try FileManager.default.copyItem(at: file, to: copy) } catch { throw Failure.unreadable(file.lastPathComponent) }
             return folder + "/" + copy.lastPathComponent
@@ -44,6 +48,20 @@ enum Attachments {
         let rows = message[cut.upperBound...].split(separator: "\n").map(String.init)
         guard !rows.isEmpty, rows.allSatisfy({ $0.hasPrefix("- ") }) else { return (message, []) }
         return (String(message[..<cut.lowerBound]), rows.map { String($0.dropFirst(2)) })
+    }
+
+    /// Liegt `file` nach dem Auflösen aller Verweise in `folder`?
+    static func inside(_ file: URL, _ folder: URL) -> Bool {
+        let base = folder.standardizedFileURL.resolvingSymlinksInPath().path
+        return file.standardizedFileURL.resolvingSymlinksInPath().path.hasPrefix(base + "/")
+    }
+
+    /// Datei eines Anhangs im Projekt. nil für alles, was nicht wirklich im Anhang-Ordner liegt:
+    /// Die Pfade stammen aus Nachrichtentext und sind damit nicht vertrauenswürdig.
+    static func resolve(_ relative: String, in project: URL) -> URL? {
+        guard relative.hasPrefix(folder + "/"), !relative.contains("..") else { return nil }
+        let file = project.appendingPathComponent(relative)
+        return inside(file, project.appendingPathComponent(folder, isDirectory: true)) ? file : nil
     }
 
     static func isImage(_ file: URL) -> Bool {

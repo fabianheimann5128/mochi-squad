@@ -70,8 +70,13 @@ def project_allowed(project, home=None):
     """
     home = Path(home or HOME).resolve()
     project = Path(project).resolve()
-    library = home / "Library"
-    return project != home and project not in home.parents and project != library and library not in project.parents
+    if project == home or project in home.parents:
+        return False
+    # Im Benutzerordner sind ~/Library, ~/Applications und versteckte Ordner wie ~/.ssh, ~/.claude oder ~/.codex tabu.
+    if home in project.parents:
+        first = project.relative_to(home).parts[0]
+        return first not in ("Library", "Applications") and not first.startswith(".")
+    return True
 
 
 def project_key(project):

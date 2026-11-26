@@ -40,7 +40,9 @@ struct Bubble: Identifiable, Equatable {
             previousRole = line.role
             if line.role == "user" {
                 let relay = RelayedMessage.parse(line.text)
-                let parts = Attachments.split(relay?.body ?? line.text), shown = parts.text
+                // Anhänge gibt es nur an eigenen Nachrichten; weitergeleiteter Text von Agenten wird nicht als Dateiliste gelesen.
+                let parts = relay == nil ? Attachments.split(line.text) : (text: relay!.body, files: [])
+                let shown = parts.text
                 result.append(Bubble(id: "\(line.id).0", kind: .user, text: AttributedString(shown), plain: shown,
                                      relayedFrom: relay?.sender, relayedVia: relay?.via, attachments: parts.files, day: day,
                                      gap: first ? 0 : (follows ? 4 : 14)))

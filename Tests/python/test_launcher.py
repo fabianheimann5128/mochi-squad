@@ -225,8 +225,14 @@ class ArgumentTests(unittest.TestCase):
         spec = make_spec(self.dir.name, canEdit=True, effort="minimal")
         args = launcher.codex_args(spec)
         self.assertNotIn("--sandbox", args)
-        self.assertIn('default_permissions="mochi"', args)
-        profile = next(a for a in args if a.startswith("permissions.mochi="))
+        name = spec["profileName"]
+        self.assertRegex(name, r"^mochi_[0-9a-f]{16}$")
+        self.assertIn(f'default_permissions="{name}"', args)
+        profile = next(a for a in args if a.startswith(f"permissions.{name}="))
+        # Jeder Start bekommt einen eigenen Namen; ein Projekt kann das Profil so nicht vorab erweitern.
+        other = make_spec(self.dir.name)
+        launcher.codex_args(other)
+        self.assertNotEqual(other["profileName"], name)
         self.assertIn('":root" = "read"', profile)
         self.assertIn('web_search="disabled"', args)
         self.assertIn('model_reasoning_effort="minimal"', args)
@@ -250,6 +256,9 @@ class ArgumentTests(unittest.TestCase):
         spec = make_spec(self.dir.name, canEdit=True)
         codex = launcher.build_codex_permissions(spec, home=Path("/Users/test"))
         claude = launcher.build_claude_settings(spec, home=Path("/Users/test"))
+        self.assertEqual(codex["filesystem"][":project_roots"][".git/config"], "read")
+        self.assertIn(f"Edit(/{spec['project']}/.git/config)", claude["permissions"]["deny"])
+        self.assertIn(str(Path(spec["project"]) / ".git/config"), claude["sandbox"]["filesystem"]["denyWrite"])
         for folder in (".claude", ".codex", ".git/hooks"):
             self.assertEqual(codex["filesystem"][":project_roots"][folder], "read")
             self.assertIn(str(Path(spec["project"]) / folder), claude["sandbox"]["filesystem"]["denyWrite"])
@@ -267,6 +276,10 @@ class ArgumentTests(unittest.TestCase):
         home = Path(self.dir.name).resolve()
         (home / "Library" / "Caches").mkdir(parents=True)
         (home / "Projekt").mkdir()
+        for hidden in (".ssh", ".claude", "Applications"):
+            (home / hidden / "x").mkdir(parents=True)
+            self.assertFalse(common.project_allowed(home / hidden, home=home), hidden)
+            self.assertFalse(common.project_allowed(home / hidden / "x", home=home), hidden)
         for bad in (home, home.parent, Path("/"), home / "Library", home / "Library" / "Caches"):
             self.assertFalse(common.project_allowed(bad, home=home), bad)
         self.assertTrue(common.project_allowed(home / "Projekt", home=home))
@@ -281,7 +294,7 @@ class ArgumentTests(unittest.TestCase):
         script.write_text('#!/bin/sh\necho \'[{"name":"postiz","enabled":true,"transport":{"url":"https://x"}},{"name":"aus","enabled":false},{"name":"node_repl","transport":{"command":"node"}}]\'\n')
         script.chmod(0o755)
         servers = launcher.codex_servers(str(script))
-        self.assertEqual(servers, [("postiz", False), ("node_repl", True)])
+        self.assertEqual(servers, [("postiz", False, ""), ("node_repl", True, "node")])
         args = launcher.codex_args(make_spec(self.dir.name), servers=servers)
         self.assertIn("mcp_servers.postiz.enabled=false", args)
         self.assertIn("mcp_servers.node_repl.enabled=false", args)
@@ -355,11 +368,19 @@ class ArgumentTests(unittest.TestCase):
         on = make_spec(self.dir.name, computerUse=True)
         self.assertIn("--chrome", launcher.claude_args(on))
         self.assertIn("mcp__claude-in-chrome", launcher.build_claude_settings(on, home="/Users/test")["permissions"]["allow"])
-        servers = [("cua_repl", True), ("postiz", False)]
+        genuine = "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl"
+        servers = [("cua_repl", True, genuine), ("postiz", False, "")]
         kept = launcher.codex_args(on, servers=servers)
         self.assertNotIn("mcp_servers.cua_repl.enabled=false", kept)
         self.assertIn("mcp_servers.postiz.enabled=false", kept)
         self.assertIn("mcp_servers.cua_repl.enabled=false", launcher.codex_args(off, servers=servers))
+        # Ein gleichnamiger Server mit fremdem Befehl oder aus der Projektkonfiguration bleibt aus.
+        fake = [("cua_repl", True, "/bin/sh")]
+        self.assertIn("mcp_servers.cua_repl.enabled=false", launcher.codex_args(make_spec(self.dir.name, computerUse=True), servers=fake))
+        config = Path(self.dir.name) / ".codex"
+        config.mkdir()
+        (config / "config.toml").write_text('[mcp_servers.cua_repl]\ncommand = "/bin/sh"\n')
+        self.assertIn("mcp_servers.cua_repl.enabled=false", launcher.codex_args(make_spec(self.dir.name, computerUse=True), servers=servers))
         routine = launcher.validate_spec({"provider": "claude", "project": self.dir.name, "task": "x", "unattended": True,
                                           "sessionId": str(uuid.uuid4()), "owner": "Alex", "agent": {"name": "Mira", "computerUse": True}})
         self.assertFalse(routine["agent"]["computerUse"])

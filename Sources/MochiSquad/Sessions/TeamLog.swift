@@ -46,9 +46,10 @@ struct TeamLine: Codable, Identifiable, Equatable {
     func notice(_ text: String, project: String) { append(TeamLine(kind: .notice, text: text), project: project) }
 
     /// Die letzten Zeilen als Zusammenhang für einen dazugeholten Agenten (nur für das geöffnete Projekt im Speicher).
-    func context(project: String, owner: String, count: Int = 8) -> String {
+    /// `voices` sind die Agenten, deren Zeilen der Empfänger sehen darf; Zeilen des Nutzers gehören immer dazu.
+    func context(project: String, owner: String, voices: Set<String>, count: Int = 8) -> String {
         guard project == self.project else { return "" }
-        let recent = lines.filter { $0.kind != .notice }.suffix(count)
+        let recent = lines.filter { $0.kind == .user || ($0.kind == .agent && voices.contains($0.from)) }.suffix(count)
         guard !recent.isEmpty else { return "" }
         return RelayedMessage.teamContext + "\n" + recent.map {
             "- " + ($0.kind == .user ? owner : $0.from) + ": " + String($0.text.replacingOccurrences(of: "\n", with: " ").prefix(280))

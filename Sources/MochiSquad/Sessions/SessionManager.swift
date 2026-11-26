@@ -172,10 +172,14 @@ import Foundation
     /// Darf `sender` von sich aus `target` ansprechen? Ein Agent mit Vollzugriff oder Computer-Nutzung nimmt Aufträge nur von
     /// Kollegen mit denselben Rechten an; sonst könnte ein eingeschränkter Agent über ihn mehr anstoßen, als er selbst darf.
     /// Antworten an jemanden, der einem in der letzten halben Stunde geschrieben hat, gehen immer.
-    func mayReach(_ sender: Agent, _ target: Agent) -> Bool {
-        if let asked = contacts[sender.id]?[target.id], Date().timeIntervalSince(asked) < 1800 { return true }
-        let full = target.access != .full || sender.access == .full
-        let computer = target.computerUse != true || sender.computerUse == true || sender.access == .full
+    func mayReach(_ sender: Agent, _ target: Agent, replies: Bool = true) -> Bool {
+        if replies, let asked = contacts[sender.id]?[target.id], Date().timeIntervalSince(asked) < 1800 { return true }
+        // Es zählt, was die laufende Sitzung des Absenders darf, nicht was inzwischen eingestellt ist.
+        let live = liveSession(for: sender.id)
+        let senderFull = sender.access == .full && (live.map { $0.access == .full } ?? true)
+        let senderComputer = sender.computerUse == true && (live.map(\.computerUse) ?? true)
+        let full = target.access != .full || senderFull
+        let computer = target.computerUse != true || senderComputer || senderFull
         return full && computer
     }
 
@@ -284,11 +288,13 @@ import Foundation
             }
         }
         let sender = origin?.name ?? settings.value.owner
-        let message = RelayedMessage.teamPrefix + sender + ": " + String(text.prefix(8000))
-            + team.context(project: project.path, owner: settings.value.owner) + RelayedMessage.teamHint
-            + "Antworte kurz für alle im Team-Chat. Mit @Name holst du einen Kollegen dazu, wenn seine Rolle gefragt ist; sonst erwähne niemanden."
         for target in targets {
             if let origin { contacts[target.id, default: [:]][origin.id] = Date() }
+            // Der Verlauf enthält nur Stimmen, die diesen Empfänger auch direkt ansprechen dürften; der Koordinator sieht nur dich.
+            let voices = Set(everyone.filter { $0.id == target.id || (!target.isCoordinator && mayReach($0, target, replies: false)) }.map(\.name))
+            let message = RelayedMessage.teamPrefix + sender + ": " + String(text.prefix(8000))
+                + team.context(project: project.path, owner: settings.value.owner, voices: voices) + RelayedMessage.teamHint
+                + "Antworte kurz für alle im Team-Chat. Mit @Name holst du einen Kollegen dazu, wenn seine Rolle gefragt ist; sonst erwähne niemanden."
             track(hand(message, to: target), agent: target)
         }
         return Set(targets.map(\.id))
@@ -386,6 +392,11 @@ import Foundation
         case "start_named_agent":
             guard let agent = team.first(where: { $0.id.uuidString == args["agent"] }), let task = args["task"] else {
                 return ["error": "Agent nicht gefunden."]
+            }
+            // Der Koordinator liest Verläufe und Aufgaben anderer Agenten. Agenten mit Vollzugriff oder Computer-Nutzung
+            // beauftragt er deshalb nur, wenn er selbst dasselbe darf; sonst bleibt das dem Nutzer vorbehalten.
+            if let lead = agents.coordinator(in: project), !mayReach(lead, agent, replies: false) {
+                return ["error": "\(agent.name) hat Vollzugriff oder bedient den Computer. Solche Aufträge vergibt nur \(settings.value.owner) selbst; bitte darum, \(agent.name) direkt zu schreiben."]
             }
             guard allowRelays(1, project: project.path) else { return ["error": "Limit erreicht: höchstens \(Self.relayLimit) Aufträge je halbe Stunde."] }
             // Als Nachricht des Koordinators kennzeichnen, damit der Auftrag im Chat nicht wie vom Nutzer getippt aussieht.

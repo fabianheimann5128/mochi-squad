@@ -8,14 +8,14 @@ Bitte **nicht** als öffentliches Issue. Nutze „Report a vulnerability“ unte
 
 ## Sicherheitsmodell
 
-**Jeder Agent läuft in einer Sandbox und kann sie nicht verlassen.** Was er darin darf, legst du pro Agent fest.
+**Jeder Agent läuft in einer Sandbox,** solange du ihm nicht ausdrücklich Vollzugriff oder die Bedienung des Computers gibst (siehe unten). Was er darin darf, legst du pro Agent fest. Die Sandbox stellen Claude Code und Codex; die Grenzen dieses Ansatzes stehen unter „Bekannte Grenzen“.
 
 | Recht | Standard | Umsetzung (Claude Code) |
 |---|---|---|
 | Projekt lesen | immer | Leseregel der Dateiwerkzeuge nur für den Projektordner. Befehle in der Sandbox können auch außerhalb lesen, außer an den gesperrten Orten unten |
 | Dateien im Projekt ändern | aus | nur mit „Darf Dateien ändern“; sonst sperrt die Sandbox das Schreiben im Projekt |
 | Befehle außerhalb der Sandbox | nie | `allowUnsandboxedCommands: false` |
-| Einstellungen der Clients und Git-Hooks im Projekt (`.claude/`, `.codex/`, `.git/hooks/`) ändern | nie | Sperrregel und Schreibsperre, damit sich ein Agent nicht selbst mehr Rechte gibt oder Code für spätere Sitzungen ablegt |
+| Einstellungen der Clients und Git-Hooks im Projekt (`.claude/`, `.codex/`, `.git/hooks/`, `.git/config`) ändern | nie | Sperrregel und Schreibsperre, damit sich ein Agent nicht selbst mehr Rechte gibt oder Code für spätere Sitzungen ablegt |
 | Zugangsdaten und fremde Daten lesen | nie | Lesesperre für `~/.ssh`, `~/.aws`, `~/.codex`, `~/.claude`, Schlüsselbund, `~/Library/Application Support`, Browser- und Maildaten u. a. |
 | Internet in Routinen | aus | je Routine einschaltbar |
 | Veröffentlichen, Hochladen, Bezahlen | nie von selbst | Anweisung im Briefing; alles Riskante fragt der Client nach |
@@ -24,7 +24,7 @@ Rückfragen des Clients (z. B. „Darf ich diesen Befehl ausführen?“) erschei
 
 **Startdaten sind für Agenten unerreichbar.** Was eine Sitzung darf, schreibt die App in einen Sitzungsordner in ihren eigenen Daten. Agenten können dort weder lesen noch schreiben, und der Starter nimmt Startdaten nur aus diesem Ordner an. Pfade zu Werkzeugen stehen nie in diesen Daten, sondern ergeben sich aus dem Ordner.
 
-**Projektordner.** Als Projekt nimmt Mochi Squad weder deinen Benutzerordner noch einen Ordner darüber noch etwas in `~/Library` an. Sonst lägen Zugangsdaten und die Daten der App im Arbeitsbereich eines Agenten.
+**Projektordner.** Als Projekt nimmt Mochi Squad weder deinen Benutzerordner noch einen Ordner darüber an, und im Benutzerordner weder `~/Library` noch `~/Applications` noch versteckte Ordner wie `~/.ssh`, `~/.claude` oder `~/.codex`. Sonst lägen Zugangsdaten und die Daten der App im Arbeitsbereich eines Agenten.
 
 **Agenten-Post.** Jede Sitzung hat einen eigenen Postausgang. Nur ihre eigene Sandbox darf hineinschreiben; damit steht der Absender einer Nachricht fest. Das Post-Werkzeug selbst liegt an einem Ort, den keine Sandbox beschreiben kann.
 
@@ -42,14 +42,26 @@ Pro Agent lässt sich die Zugriffsstufe „Vollzugriff“ einschalten. Sie ist a
 
 Pro Agent lässt sich „Computer bedienen“ einschalten. Codex-Agenten behalten dann die Computersteuerung von Codex (Programme und Browser), Claude-Agenten steuern den Chrome-Browser über Claude in Chrome. Diese Werkzeuge laufen außerhalb der Sandbox: Was der Agent über Bildschirm oder Browser tut, unterliegt nicht den Dateigrenzen oben, und im Browser ist er mit deinen Anmeldungen unterwegs. Standard ist aus; Routinen bedienen den Computer nie.
 
-**Rechte zwischen Agenten.** Einen Agenten mit Vollzugriff oder Computer-Nutzung kann von sich aus nur ein Kollege ansprechen, der dasselbe darf. So kann ein eingeschränkter Agent nicht über ihn mehr anstoßen, als er selbst dürfte. Antworten an jemanden, der einem in der letzten halben Stunde geschrieben hat, sind immer möglich. Zwischen „Nur lesen“ und „Im Projekt ändern“ gibt es keine Sperre; beide arbeiten in der Sandbox.
+## Rechte zwischen Agenten
+
+Einen Agenten mit Vollzugriff oder Computer-Nutzung kann von sich aus nur ein Kollege ansprechen, der dasselbe darf; maßgeblich ist, was dessen laufende Sitzung darf. Das gilt für Agenten-Post, für Erwähnungen im Team-Chat und für Aufträge des Koordinators: Er beauftragt solche Agenten nur, wenn er selbst dieselben Rechte hat. Sonst bleibt das dir vorbehalten. Antworten an jemanden, der einem in der letzten halben Stunde geschrieben hat, sind immer möglich. Den Verlauf des Team-Chats bekommt ein Agent nur mit den Stimmen mitgeliefert, die ihn auch direkt ansprechen dürften; der Koordinator bekommt nur deine Zeilen. Zwischen „Nur lesen“ und „Im Projekt ändern“ gibt es keine Sperre; beide arbeiten in der Sandbox.
+
+Diese Regeln senken das Risiko, schließen es aber nicht aus: Ein Agent mit Vollzugriff liest Dateien im Projekt, die ein eingeschränkter Agent dort abgelegt hat.
+
+## Anhänge, Spracheingabe, Hintergrund
+
+- **Anhänge** werden nach `<Projekt>/.mochi-squad/anhaenge` kopiert und bleiben dort; jeder Agent des Projekts kann sie lesen. Vorschauen zeigt die App nur für Dateien in diesem Ordner und nur an deinen eigenen Nachrichten. Ein Klick öffnet Bilder; andere Dateien werden im Finder gezeigt und nie direkt ausgeführt.
+- **Spracheingabe** nutzt das Mikrofon und die Spracherkennung von macOS. Wo macOS die Erkennung auf dem Gerät anbietet, bleibt der Ton auf dem Mac; sonst verarbeitet ihn Apple. Die Aufnahme endet beim Senden, beim Stopp-Knopf und sobald die App in den Hintergrund geht.
+- **Im Hintergrund weiterlaufen** heißt: Die App bleibt geöffnet und ist nur ausgeblendet. Offene Sitzungen arbeiten weiter, auch solche mit Vollzugriff.
 
 ## Bekannte Grenzen
 
 - **Prompt-Injection.** Ein Agent, der Webseiten oder fremde Dateien liest, kann darin versteckten Anweisungen folgen. Die Rechte oben begrenzen den Schaden, verhindern ihn aber nicht vollständig. Gib Schreibrechte und Internetzugang nur Agenten, die sie brauchen, und halte wichtige Projekte unter Versionsverwaltung.
-- **Codex über ein Rechteprofil.** Codex-Agenten bekommen ein eigenes Rechteprofil mit denselben Lesesperren und Schreibgrenzen wie Claude-Agenten; es gilt für die Befehle, die der Agent ausführt. Vor jedem Start prüft Mochi Squad mit `codex sandbox`, dass der installierte Client das Profil durchsetzt (ein gesperrter Ort ist weder lesbar noch beschreibbar), und startet sonst nicht. Die Prüfung läuft über diesen Unterbefehl, nicht in der Sitzung selbst.
-- **Eigene Werkzeugserver.** Werkzeugserver (MCP) aus deiner persönlichen Konfiguration liefen außerhalb der Sandbox. Für Codex-Agenten schaltet Mochi Squad sie deshalb beim Start ab; lässt sich die Liste nicht lesen, startet der Agent nicht. Der Koordinator lädt nur die Werkzeuge von Mochi Squad. Andere Claude-Agenten laden deine Claude-Code-Server; deren Werkzeuge fragen nach, bevor sie laufen.
+- **Codex über ein Rechteprofil.** Codex-Agenten bekommen ein eigenes Rechteprofil mit denselben Lesesperren und Schreibgrenzen wie Claude-Agenten; es gilt für die Befehle, die der Agent ausführt. Der Profilname ist bei jedem Start zufällig, damit eine `.codex/config.toml` im Projekt das Profil nicht erweitern kann. Vor jedem Start prüft Mochi Squad mit `codex sandbox`, dass der installierte Client das Profil durchsetzt, und startet sonst nicht. Die Prüfung läuft über diesen Unterbefehl, nicht in der Sitzung selbst.
+- **Eigene Werkzeugserver.** Werkzeugserver (MCP) aus deiner persönlichen oder einer Projektkonfiguration liefen außerhalb der Sandbox. Für Codex-Agenten ohne Vollzugriff schaltet Mochi Squad sie deshalb beim Start ab; mit „Computer bedienen“ bleibt nur die Computersteuerung von OpenAI an, und auch nur, wenn sie aus der ChatGPT-App stammt und das Projekt keinen gleichnamigen Server mitbringt. Der Koordinator lädt nur die Werkzeuge von Mochi Squad. Andere Claude-Agenten laden deine Claude-Code-Server; deren Werkzeuge fragen nach, bevor sie laufen. Mit „Computer bedienen“ ist die Chrome-Steuerung vorab freigegeben und fragt nicht nach.
 - **Fremde Postausgänge bei Claude-Agenten.** Codex-Agenten sehen nur ihren eigenen Postausgang. Claude-Agenten können die Postausgänge anderer Sitzungen lesen, aber nicht beschreiben.
+- **Fremde Projekte mit eigener Konfiguration.** Ein Repository kann Einstellungen für Claude Code (`.claude/settings.json`, etwa Hooks) oder Codex mitbringen. Die Programme fragen beim ersten Öffnen, ob du dem Ordner vertraust; diese Frage erscheint als gewöhnliche Karte im Chat. Bestätige sie nur für Projekte, deren Herkunft du kennst, denn solche Einstellungen können Befehle außerhalb der Sandbox auslösen.
+- **Git im Projekt.** Agenten mit Schreibrecht können `.git/hooks` und `.git/config` nicht ändern. Dadurch scheitern in der Sandbox auch harmlose Befehle wie `git init` oder `git remote add`; die machst du selbst.
 - **Die Sandbox gehört dem Client.** Mochi Squad konfiguriert die Sandbox von Claude Code und Codex, baut aber keine eigene. Ihre Stärke hängt von der Version des Clients ab. Eigene Freigaben in deinen persönlichen Client-Einstellungen gelten zusätzlich.
 - **Lesen im Projekt.** Jeder Agent liest den ganzen Projektordner. Lege dort keine Geheimnisse ab (z. B. `.env` mit Produktionsschlüsseln).
 - **Internet in Routinen.** Eine Routine mit Internetzugang läuft unbeaufsichtigt und kann Inhalte aus dem Projekt an Webseiten senden, wenn sie dazu verleitet wird. Schalte das nur für Projekte ohne vertrauliche Inhalte ein.
