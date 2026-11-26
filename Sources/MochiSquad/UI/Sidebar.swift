@@ -48,7 +48,10 @@ struct IconRail: View {
                     VStack(spacing: 8) {
                         if members.count > 1 {
                             Button { selection = .team; showProcesses = false } label: {
-                                GroupAvatar(keys: members.prefix(3).map(\.avatar), size: 40, round: true).avatarRing(selection == .team && !showProcesses)
+                                // The three Mochis sit inside one round tile, like the single avatars below, so the ring fits around them.
+                                GroupAvatar(keys: members.prefix(3).map(\.avatar), size: 40, round: true).scaleEffect(0.74)
+                                    .frame(width: 40, height: 40).background(Desk.card, in: Circle()).clipShape(Circle())
+                                    .avatarRing(selection == .team && !showProcesses)
                             }.buttonStyle(.plain).help("Team").accessibilityLabel("Team")
                         }
                         ForEach(members) { agent in
