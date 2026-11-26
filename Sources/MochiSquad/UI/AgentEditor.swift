@@ -16,102 +16,94 @@ struct AgentEditor: View {
     private var nameTaken: Bool { agents.nameTaken(agent.name, by: agent) }
 
     var body: some View {
-        VStack(spacing: 0) {
-            Text(t("Edit agent", "Agent bearbeiten")).font(.system(size: 17, weight: .semibold)).padding(.top, 20)
-            HStack(spacing: 16) {
-                MochiAvatar(key: agent.avatar, size: 92)
-                VStack(alignment: .leading, spacing: 8) {
-                    Button { agent.avatar = MochiLook.random().key } label: { Label(t("Shuffle", "Neu würfeln"), systemImage: "dice") }.buttonStyle(.pill)
-                    Menu(t("Customise", "Anpassen")) {
-                        part(t("Body", "Körper"), Self.builds, look.build.rawValue, set { $0.build = .init(rawValue: $1)! })
-                        part(t("Head", "Kopf"), Self.tops, look.top.rawValue, set { $0.top = .init(rawValue: $1)! })
-                        part(t("Eyes", "Augen"), Self.eyes, look.eyes.rawValue, set { $0.eyes = .init(rawValue: $1)! })
-                        part("Extra", Self.extras, look.extra.rawValue, set { $0.extra = .init(rawValue: $1)! })
-                        Menu(t("Colour", "Farbe")) {
-                            ForEach(MochiLook.palette, id: \.hex) { color in
-                                Button { var next = look; next.hex = color.hex; agent.avatar = next.key } label: {
-                                    if look.hex == color.hex { Label(color.name, systemImage: "checkmark") } else { Text(color.name) }
-                                }
-                            }
-                        }
-                    }.menuStyle(.borderlessButton).fixedSize()
-                }
-                Spacer()
-            }.padding(.horizontal, 26).padding(.top, 16).padding(.bottom, 14)
-            VStack(spacing: 12) {
-                row("Name") {
-                    TextField(t("e.g. Mira", "z. B. Mira"), text: $agent.name).textFieldStyle(.plain).font(.system(size: 13.5))
-                        .padding(.horizontal, 12).frame(height: 32).field(8)
-                }
-                if nameTaken {
-                    row("") {
-                        Text(AgentWizard.nameTakenText)
-                            .font(.system(size: 12)).foregroundStyle(Desk.warning).frame(maxWidth: .infinity, alignment: .leading)
+        VStack(alignment: .leading, spacing: 0) {
+            Text(t("Edit agent", "Agent bearbeiten")).font(.system(size: 20, weight: .semibold))
+                .padding(.horizontal, 24).padding(.top, 22).padding(.bottom, 18)
+            // Who it is: the Mochi with its two buttons, name and job beside it.
+            HStack(alignment: .top, spacing: 18) {
+                VStack(spacing: 10) {
+                    MochiAvatar(key: agent.avatar, size: 88)
+                    HStack(spacing: 6) {
+                        Button { agent.avatar = MochiLook.random().key } label: { Image(systemName: "dice") }.buttonStyle(.pill)
+                            .help(t("Shuffle look", "Aussehen würfeln")).accessibilityLabel(t("Shuffle look", "Aussehen würfeln"))
+                        lookMenu
                     }
                 }
-                row("Job") {
-                    TextField(agent.isCoordinator ? agent.jobTitle : AgentWizard.jobPlaceholder, text: $agent.job).textFieldStyle(.plain).font(.system(size: 13.5))
-                        .padding(.horizontal, 12).frame(height: 32).field(8).disabled(agent.isCoordinator)
+                VStack(alignment: .leading, spacing: 12) {
+                    labelled("Name") { textField(t("e.g. Mira", "z. B. Mira"), $agent.name) }
+                    if nameTaken {
+                        Text(AgentWizard.nameTakenText).font(.system(size: 12)).foregroundStyle(Desk.warning).fixedSize(horizontal: false, vertical: true)
+                    }
+                    labelled("Job") { textField(agent.isCoordinator ? agent.jobTitle : AgentWizard.jobPlaceholder, $agent.job).disabled(agent.isCoordinator) }
                 }
+            }.padding(.horizontal, 24)
+            divider
+            VStack(alignment: .leading, spacing: 14) {
                 row(t("Tasks", "Aufgaben"), top: true) {
                     TextEditor(text: $agent.instructions).font(.system(size: 13.5)).scrollContentBackground(.hidden)
-                        .padding(.horizontal, 7).padding(.vertical, 6).frame(height: 84).field(8)
+                        .padding(.horizontal, 8).padding(.vertical, 8).frame(height: 88).field(10)
                         .overlay(alignment: .topLeading) {
                             if agent.instructions.isEmpty {
                                 Text(agent.isCoordinator ? t("Optional: what should the coordinator pay special attention to?", "Optional: Worauf soll der Koordinator besonders achten?")
                                      : t("What should this agent do, and what should it watch out for?", "Was soll dieser Agent tun, und worauf soll er achten?"))
-                                    .font(.system(size: 13.5)).foregroundStyle(.tertiary).padding(.horizontal, 12).padding(.vertical, 7).allowsHitTesting(false)
+                                    .font(.system(size: 13.5)).foregroundStyle(.tertiary).padding(.horizontal, 13).padding(.vertical, 9).allowsHitTesting(false)
                             }
                         }
                 }
                 row(t("Character", "Charakter")) {
-                    TextField(t("Optional, e.g. thorough and sceptical, dry humour", "Optional, z. B. gründlich und skeptisch, trockener Humor"), text: $agent.persona).textFieldStyle(.plain)
-                        .font(.system(size: 13.5)).padding(.horizontal, 12).frame(height: 32).field(8)
+                    textField(t("Optional, e.g. thorough and sceptical, dry humour", "Optional, z. B. gründlich und skeptisch, trockener Humor"), $agent.persona)
                 }
+            }.padding(.horizontal, 24)
+            divider
+            VStack(alignment: .leading, spacing: 14) {
                 row(t("Provider", "Anbieter")) {
                     PillPicker(selection: Binding(get: { agent.provider }, set: { agent.provider = $0; agent.model = $0.models().first ?? ""; agent.effort = ""; agent.account = nil }),
                                options: Provider.allCases.map { ($0, $0.vendor + " · " + $0.title) })
-                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 row(t("Model", "Modell")) {
                     HStack(spacing: 8) {
-                        Picker("", selection: $agent.model) {
-                            ForEach(agent.models, id: \.self) { Text($0).tag($0) }
-                        }.labelsHidden().fixedSize()
-                            .onChange(of: agent.model) { _, _ in if !agent.efforts.contains(agent.effort) { agent.effort = "" } }
-                        Picker("", selection: $agent.effort) {
-                            Text(AgentWizard.autoEffort).tag("")
-                            ForEach(agent.efforts, id: \.self) { Text($0).tag($0) }
-                        }.labelsHidden().fixedSize()
-                        Spacer()
+                        choice(agent.model.isEmpty ? "–" : agent.model, agent.models.map { ($0, $0) }, current: agent.model) { model in
+                            agent.model = model
+                            if !agent.efforts.contains(agent.effort) { agent.effort = "" }
+                        }
+                        choice(agent.effort.isEmpty ? AgentWizard.autoEffort : t("Reasoning depth: \(agent.effort)", "Denktiefe: \(agent.effort)"),
+                               [("", AgentWizard.autoEffort)] + agent.efforts.map { ($0, $0) }, current: agent.effort) { agent.effort = $0 }
                     }
                 }
                 if agent.provider == .codex, !settings.accounts.isEmpty {
                     row(t("ChatGPT plan", "ChatGPT-Abo")) {
-                        Picker("", selection: Binding(get: { agent.account ?? "" }, set: { agent.account = $0.isEmpty ? nil : $0; agent = agent.withModel() })) {
-                            Text(AgentWizard.mainPlan).tag("")
-                            ForEach(settings.accounts) { Text($0.name).tag($0.id) }
-                        }.labelsHidden().fixedSize()
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        choice(settings.accounts.first { $0.id == agent.account }?.name ?? AgentWizard.mainPlan,
+                               [("", AgentWizard.mainPlan)] + settings.accounts.map { ($0.id, $0.name) }, current: agent.account ?? "") { id in
+                            agent.account = id.isEmpty ? nil : id
+                            agent = agent.withModel()
+                        }
                     }
                 }
-                do {
-                    row(t("Rights", "Rechte"), top: true) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            PillPicker(selection: $agent.access, options: Agent.Access.allCases.map { ($0, $0.title) })
-                            Text(agent.access.note).font(.system(size: 12)).foregroundStyle(agent.access == .full ? Desk.warning : Desk.dim)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Toggle(AgentWizard.computerUseLabel(agent.provider),
-                                   isOn: Binding(get: { agent.computerUse == true }, set: { agent.computerUse = $0 ? true : nil }))
-                                .toggleStyle(.checkbox).font(.system(size: 13)).padding(.top, 2)
-                        }.frame(maxWidth: .infinity, alignment: .leading)
+            }.padding(.horizontal, 24)
+            divider
+            VStack(alignment: .leading, spacing: 14) {
+                row(t("Rights", "Rechte"), top: true) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        PillPicker(selection: $agent.access, options: Agent.Access.allCases.map { ($0, $0.title) })
+                        Text(agent.access.note).font(.system(size: 12)).foregroundStyle(agent.access == .full ? Desk.warning : Desk.dim)
+                            .lineSpacing(2).fixedSize(horizontal: false, vertical: true)
                     }
                 }
-            }.padding(.horizontal, 26)
-            Rectangle().fill(Desk.rule).frame(height: 1).padding(.top, 18)
+                row(t("Computer", "Computer")) {
+                    HStack(spacing: 10) {
+                        Text(AgentWizard.computerUseLabel(agent.provider)).font(.system(size: 13)).fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        Toggle("", isOn: Binding(get: { agent.computerUse == true }, set: { agent.computerUse = $0 ? true : nil }))
+                            .toggleStyle(.switch).controlSize(.small).labelsHidden()
+                            .accessibilityLabel(AgentWizard.computerUseLabel(agent.provider))
+                    }
+                }
+            }.padding(.horizontal, 24)
+            Rectangle().fill(Desk.rule).frame(height: 1).padding(.top, 20)
             HStack(spacing: 10) {
                 if !agent.isCoordinator {
                     Button { confirmRemove = true } label: { Image(systemName: "trash") }.buttonStyle(.pill).help(t("Remove agent", "Agent entfernen"))
+                        .accessibilityLabel(t("Remove agent", "Agent entfernen"))
                         .confirmationDialog(t("Remove \(agent.name)?", "\(agent.name) entfernen?"), isPresented: $confirmRemove) {
                             Button(t("Remove agent", "Agent entfernen"), role: .destructive) { remove(); dismiss() }
                             Button(t("Cancel", "Abbrechen"), role: .cancel) {}
@@ -126,9 +118,65 @@ struct AgentEditor: View {
                     agent.name = agent.name.trimmingCharacters(in: .whitespaces)
                     save(agent); dismiss()
                 }.buttonStyle(.primaryPill).keyboardShortcut(.defaultAction).disabled(!valid).opacity(valid ? 1 : 0.5)
-            }.padding(.horizontal, 22).padding(.vertical, 16)
+            }.padding(.horizontal, 24).padding(.vertical, 16)
         }
         .frame(width: 560)
+    }
+
+    private var divider: some View { Rectangle().fill(Desk.rule).frame(height: 1).padding(.horizontal, 24).padding(.vertical, 18) }
+
+    /// The parts of the Mochi's look, behind one small button.
+    private var lookMenu: some View {
+        Menu {
+            part(t("Body", "Körper"), Self.builds, look.build.rawValue, set { $0.build = .init(rawValue: $1)! })
+            part(t("Head", "Kopf"), Self.tops, look.top.rawValue, set { $0.top = .init(rawValue: $1)! })
+            part(t("Eyes", "Augen"), Self.eyes, look.eyes.rawValue, set { $0.eyes = .init(rawValue: $1)! })
+            part("Extra", Self.extras, look.extra.rawValue, set { $0.extra = .init(rawValue: $1)! })
+            Menu(t("Colour", "Farbe")) {
+                ForEach(MochiLook.palette, id: \.hex) { color in
+                    Button { var next = look; next.hex = color.hex; agent.avatar = next.key } label: {
+                        if look.hex == color.hex { Label(color.name, systemImage: "checkmark") } else { Text(color.name) }
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "paintbrush").font(.system(size: 13, weight: .medium)).foregroundStyle(Desk.text)
+                .padding(.horizontal, 13).frame(height: 30).background(Desk.hover, in: Capsule()).overlay { Capsule().strokeBorder(Desk.edge) }
+                .contentShape(Capsule())
+        }
+        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+        .help(t("Customise look", "Aussehen anpassen")).accessibilityLabel(t("Customise look", "Aussehen anpassen"))
+    }
+
+    private func textField(_ placeholder: String, _ text: Binding<String>) -> some View {
+        TextField(placeholder, text: text).textFieldStyle(.plain).font(.system(size: 13.5))
+            .padding(.horizontal, 12).frame(height: 36).field(10)
+    }
+
+    /// A field with its label above it (used beside the avatar).
+    private func labelled<Field: View>(_ title: String, @ViewBuilder field: () -> Field) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title).font(.system(size: 12)).foregroundStyle(Desk.dim)
+            field()
+        }
+    }
+
+    /// A choice from a short list, drawn in the app's own style instead of the system's pop-up button.
+    private func choice(_ title: String, _ options: [(value: String, label: String)], current: String, pick: @escaping (String) -> Void) -> some View {
+        Menu {
+            ForEach(options, id: \.value) { option in
+                Button { pick(option.value) } label: {
+                    if option.value == current { Label(option.label, systemImage: "checkmark") } else { Text(option.label) }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text(title).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(Desk.dim)
+            }
+            .foregroundStyle(Desk.text).padding(.horizontal, 12).frame(height: 32)
+            .background(Desk.card, in: Capsule()).overlay { Capsule().strokeBorder(Desk.edge) }.contentShape(Capsule())
+        }.menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
     }
 
     // Names of the look's parts, in the order of their raw values.
@@ -161,8 +209,8 @@ struct AgentEditor: View {
 
     private func row<Field: View>(_ title: String, top: Bool = false, @ViewBuilder field: () -> Field) -> some View {
         HStack(alignment: top ? .top : .center, spacing: 0) {
-            Text(title).font(.system(size: 13)).foregroundStyle(Desk.dim).frame(width: 92, alignment: .leading).padding(.top, top ? 7 : 0)
-            field().frame(maxWidth: .infinity)
+            Text(title).font(.system(size: 13)).foregroundStyle(Desk.dim).frame(width: 106, alignment: .leading).padding(.top, top ? 8 : 0)
+            field().frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
