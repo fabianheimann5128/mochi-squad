@@ -50,7 +50,10 @@ def execute(spec, binary):
     if spec["provider"] == "codex":
         if not launcher.codex_profile_enforced(binary, spec):
             return 1, launcher.OUTDATED_CODEX, None
-        args = [binary, "exec", *launcher.codex_args(spec, interactive=False), "--skip-git-repo-check", prompt]
+        servers = launcher.codex_servers(binary)
+        if servers is None:
+            return 1, launcher.UNKNOWN_SERVERS, None
+        args = [binary, "exec", *launcher.codex_args(spec, interactive=False, servers=servers), "--skip-git-repo-check", prompt]
         journal = None
     else:
         args = [binary, *launcher.claude_args(spec, interactive=False), prompt]

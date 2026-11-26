@@ -22,6 +22,7 @@ SECRET_PATHS = (".ssh", ".aws", ".gnupg", ".config/gh", ".config/gcloud", ".conf
                 "Library/Mail", "Library/Messages", "Library/Safari", "Library/Containers", "Library/Group Containers")
 # Im Projekt nie beschreibbar: Hier könnte sich ein Agent Rechte geben oder Code für spätere Sitzungen ablegen.
 CLIENT_FOLDERS = (".claude", ".codex", ".git/hooks")
+SERVER_NAME = __import__("re").compile(r"[A-Za-z0-9_-]{1,64}")
 CHAT_ID = __import__("re").compile(r"[A-Za-z0-9-]{8,64}")
 
 CHAT_STYLE = ("Deine Antworten erscheinen in Mochi Squad als Chat. Schreib kurz und verständlich in der Du-Form: "
@@ -247,13 +248,38 @@ def codex_profile_enforced(binary, spec, home=None, timeout=20):
     return ok
 
 
+def codex_servers(binary, timeout=20):
+    """Eingeschaltete MCP-Server des Nutzers als (Name, läuft als Befehl), oder None, wenn sie nicht lesbar sind."""
+    try:
+        result = subprocess.run([binary, "mcp", "list", "--json"], stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=timeout)
+        rows = json.loads(result.stdout)
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        return None
+    if result.returncode != 0 or not isinstance(rows, list):
+        return None
+    servers = [(str(row.get("name", "")), "url" not in (row.get("transport") or {}))
+               for row in rows if isinstance(row, dict) and row.get("enabled") is not False]
+    # Ein Name, der sich nicht als Schlüssel schreiben lässt, ließe sich nicht abschalten.
+    return servers if all(SERVER_NAME.fullmatch(name) for name, _ in servers) else None
+
+
 OUTDATED_CODEX = ("Diese Codex-Version kennt keine Rechteprofile, die Lesesperren würden nicht greifen. "
                   "Aktualisiere Codex und starte die Sitzung erneut.")
 
 
-def codex_args(spec, interactive=True):
+UNKNOWN_SERVERS = ("Die Werkzeugserver deiner Codex-Konfiguration ließen sich nicht lesen und damit nicht abschalten. "
+                   "Prüfe `codex mcp list` und starte die Sitzung erneut.")
+
+
+def codex_args(spec, interactive=True, servers=()):
+    """`servers` sind die MCP-Server des Nutzers. Ihre Werkzeuge liefen außerhalb der Sandbox, deshalb bleiben sie aus."""
     agent = spec["agent"]
     args = codex_profile_args(spec) + ["-c", "web_search=" + json.dumps("live" if spec.get("allowWeb") else "disabled")]
+    for name, is_command in servers:
+        # Server aus Plugins haben keinen Eintrag in der Konfiguration; erst mit einem Befehl ist der Eintrag gültig.
+        if is_command:
+            args += ["-c", f'mcp_servers.{name}.command="/usr/bin/false"']
+        args += ["-c", f"mcp_servers.{name}.enabled=false"]
     if interactive:
         args += ["--ask-for-approval", "on-request"]
     if agent["model"]:
@@ -319,11 +345,14 @@ def run(spec_path):
     if provider == "codex":
         if not codex_profile_enforced(binary, spec):
             raise SystemExit(OUTDATED_CODEX)
+        servers = codex_servers(binary)
+        if servers is None:
+            raise SystemExit(UNKNOWN_SERVERS)
         # Der Codex-Beobachter findet die Sitzung über diese Zeile in der ersten Nachricht.
         prompt = f"Sitzung {spec['sessionId']}\n" + prompt
         if spec.get("parentChat"):
-            os.execv(binary, [binary, "fork", *codex_args(spec), spec["parentChat"], prompt])
-        os.execv(binary, [binary, *codex_args(spec), prompt])
+            os.execv(binary, [binary, "fork", *codex_args(spec, servers=servers), spec["parentChat"], prompt])
+        os.execv(binary, [binary, *codex_args(spec, servers=servers), prompt])
     journal = common.claude_journal(spec["project"], spec["sessionId"])
     common.write_private(spec["contextFile"], json.dumps({"historyPath": str(journal)}))
     os.execv(binary, [binary, *claude_args(spec), prompt])

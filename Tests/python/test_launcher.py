@@ -276,6 +276,24 @@ class ArgumentTests(unittest.TestCase):
     def test_toml_keeps_unicode(self):
         self.assertEqual(launcher._toml({"/Users/zoë 😀": "none"}), '{"/Users/zoë 😀" = "none"}')
 
+    def test_codex_switches_off_personal_tool_servers(self):
+        script = Path(self.dir.name) / "fake-codex"
+        script.write_text('#!/bin/sh\necho \'[{"name":"postiz","enabled":true,"transport":{"url":"https://x"}},{"name":"aus","enabled":false},{"name":"node_repl","transport":{"command":"node"}}]\'\n')
+        script.chmod(0o755)
+        servers = launcher.codex_servers(str(script))
+        self.assertEqual(servers, [("postiz", False), ("node_repl", True)])
+        args = launcher.codex_args(make_spec(self.dir.name), servers=servers)
+        self.assertIn("mcp_servers.postiz.enabled=false", args)
+        self.assertIn("mcp_servers.node_repl.enabled=false", args)
+        self.assertIn('mcp_servers.node_repl.command="/usr/bin/false"', args)
+        self.assertNotIn('mcp_servers.postiz.command="/usr/bin/false"', args)
+        # Nicht lesbar oder nicht abschaltbar heißt: nicht starten.
+        script.write_text('#!/bin/sh\necho \'[{"name":"a.b=true"}]\'\n')
+        self.assertIsNone(launcher.codex_servers(str(script)))
+        script.write_text("#!/bin/sh\necho kaputt\n")
+        self.assertIsNone(launcher.codex_servers(str(script)))
+        self.assertIsNone(launcher.codex_servers(str(script) + "-fehlt"))
+
     def test_toml_escapes_keys(self):
         self.assertEqual(launcher._toml({'a "b"': {"c": True}}), '{"a \\"b\\"" = {"c" = true}}')
 
