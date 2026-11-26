@@ -286,7 +286,7 @@ private struct RoutinePanel: View {
                     .font(.system(size: 12.5)).foregroundStyle(Desk.dim).fixedSize(horizontal: false, vertical: true)
             }
             if !isNew {
-                Button { draft = Routine(agent: agent) } label: {
+                Button { var fresh = Routine(agent: agent); fresh.active = true; draft = fresh } label: {
                     Label("Neue Routine", systemImage: "plus").font(.system(size: 13, weight: .medium))
                         .frame(maxWidth: .infinity).frame(height: 40)
                         .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Desk.edge) }
@@ -367,7 +367,6 @@ private struct RoutinePanel: View {
             Button(stored == nil ? "Routine anlegen" : "Speichern") {
                 var copy = routine
                 copy.task = copy.task.trimmingCharacters(in: .whitespacesAndNewlines)
-                if stored == nil { copy.active = true }
                 store.save(copy); draft = copy
             }.buttonStyle(.primaryPill).disabled(!changed || !ready).opacity(changed && ready ? 1 : 0.45)
             if stored == nil { Button("Verwerfen") { draft = nil }.buttonStyle(.pill) }
