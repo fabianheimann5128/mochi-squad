@@ -34,6 +34,15 @@ def user_text(text):
     return text.strip()
 
 
+DIRECTIVE = re.compile(r"^[ \t]*::[a-z][a-z0-9-]*\{[^\n]*\}[ \t]*$\n?", re.M)
+
+
+def agent_text(text):
+    """Codex ends some turns with directives for its own app (`::browser-complete{title="..."}`). They are not
+    meant for the reader."""
+    return DIRECTIVE.sub("", text).strip() if isinstance(text, str) else ""
+
+
 def codex_item(item):
     """(role, text) of a user or agent message from Codex's item_completed, otherwise ("", "")."""
     if not isinstance(item, dict) or item.get("type") not in ("UserMessage", "AgentMessage"):
@@ -42,7 +51,7 @@ def codex_item(item):
     text = "\n\n".join(p.get("text", "") for p in parts if isinstance(p, dict) and isinstance(p.get("text"), str))
     if item["type"] == "UserMessage":
         return "user", user_text(text)
-    return "assistant", text
+    return "assistant", agent_text(text)
 
 
 def records(f):
@@ -177,8 +186,7 @@ def read(path, provider, offset, count):
                 if kind == "event_msg" and payload.get("type") in ("agent_message", "user_message"):
                     role = "assistant" if payload["type"] == "agent_message" else "user"
                     text = payload.get("message", "")
-                    if role == "user":
-                        text = user_text(text)
+                    text = user_text(text) if role == "user" else agent_text(text)
                 elif kind == "event_msg" and payload.get("type") == "item_completed":
                     # Newer Codex versions report messages as completed items.
                     role, text = codex_item(payload.get("item"))
@@ -200,6 +208,8 @@ def activity(path, provider):
         for pos, row in records(f):
             stamp = row.get("timestamp") or ""
             def add(index, label, file=None):
+                if not label:
+                    return
                 events.append(dict(id=f"{pos}.{index}", stamp=stamp, text=label[:450], file=file))
             if provider == "claude" and row.get("type") == "assistant":
                 blocks = row.get("message", {}).get("content") or []
@@ -216,7 +226,7 @@ def activity(path, provider):
             elif provider == "codex":
                 item = row.get("payload") or {}
                 if row.get("type") == "event_msg" and item.get("type") == "agent_message":
-                    add(0, item.get("message") or "")
+                    add(0, agent_text(item.get("message")))
                 elif row.get("type") == "event_msg" and item.get("type") == "item_completed":
                     modern = True
                     done = item.get("item") or {}

@@ -104,6 +104,15 @@ class HistoryTests(unittest.TestCase):
             self.assertFalse(everything["older"])
 
 
+class DirectiveTests(unittest.TestCase):
+    def test_codex_directives_are_hidden(self):
+        self.assertEqual(history.agent_text('::browser-complete{title="Checked views"}'), "")
+        self.assertEqual(history.agent_text('Done.\n\n::browser-complete{title="x"}\n'), "Done.")
+        self.assertEqual(history.agent_text("Use `a::b{c}` here"), "Use `a::b{c}` here")
+        self.assertEqual(history.codex_item({"type": "AgentMessage", "content": [{"text": '::git-stage{cwd="/x"}'}]}),
+                         ("assistant", ""))
+
+
 class ContextTests(unittest.TestCase):
     def test_claude_statusline_tolerates_missing_numbers(self):
         with tempfile.TemporaryDirectory() as folder:
