@@ -1,19 +1,19 @@
 import AppKit
 import SwiftUI
 
-/// Rückmeldungen gehen per Telegram an den Entwickler. Vorbereitet wird nur eine Nachricht mit App- und macOS-Version;
-/// abgeschickt wird sie erst vom Nutzer selbst.
+/// Rückmeldungen gehen als Issue ins Repository. Mitgeschickt werden nur App- und macOS-Version.
 enum Feedback {
-    /// Telegram-Name, an den Rückmeldungen gehen. Ändert er sich, genügt diese Zeile.
-    static let telegram = "mochisquad"
+    static let repository = "https://github.com/fabianheimann5128/mochi-squad"
 
     enum Kind { case bug, idea }
 
     static func url(_ kind: Kind, version: String = appVersion, system: String = ProcessInfo.processInfo.operatingSystemVersionString) -> URL {
-        let opening = kind == .bug ? "Fehler in Mochi Squad" : "Vorschlag für Mochi Squad"
-        let question = kind == .bug ? "Was ist passiert, und was hattest du erwartet?" : "Was wünschst du dir, und wobei würde es helfen?"
-        var parts = URLComponents(string: "https://t.me/" + telegram)!
-        parts.queryItems = [URLQueryItem(name: "text", value: "\(opening) \(version) (macOS \(system))\n\n\(question)\n")]
+        var parts = URLComponents(string: repository + "/issues/new")!
+        parts.queryItems = [
+            URLQueryItem(name: "template", value: kind == .bug ? "fehler.md" : "funktion.md"),
+            URLQueryItem(name: "title", value: kind == .bug ? "Fehler: " : "Vorschlag: "),
+            URLQueryItem(name: "body", value: "\n\n---\nMochi Squad \(version) · macOS \(system)")
+        ]
         return parts.url!
     }
 
