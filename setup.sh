@@ -29,8 +29,9 @@ fi
 
 # Mindestens ein Agent-Programm wird gebraucht; angemeldet wird später in der App mit dem eigenen Abo.
 agents=0
+chatgpt_codex="/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex"
 for cli in claude codex; do
-    if command -v "$cli" >/dev/null 2>&1 || [[ -x "$HOME/.local/bin/$cli" ]]; then
+    if command -v "$cli" >/dev/null 2>&1 || [[ -x "$HOME/.local/bin/$cli" ]] || [[ "$cli" == codex && -x "$chatgpt_codex" ]]; then
         ok "$cli gefunden"; agents=1
     fi
 done
