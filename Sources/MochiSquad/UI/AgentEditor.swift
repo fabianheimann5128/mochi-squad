@@ -77,7 +77,7 @@ struct AgentEditor: View {
                         Spacer()
                     }
                 }
-                if !agent.isCoordinator {
+                do {
                     row("Rechte", top: true) {
                         VStack(alignment: .leading, spacing: 4) {
                             Toggle("Darf Dateien im Projekt anlegen und ändern", isOn: $agent.canEdit).toggleStyle(.checkbox).font(.system(size: 13))

@@ -53,7 +53,7 @@ struct AgentWizard: View {
         VStack(spacing: 14) {
             question("Wie soll dein Mochi heißen?", "Mit diesem Namen sprichst du ihn im Team-Chat an.")
             TextField("Name", text: $agent.name).textFieldStyle(.plain).font(.system(size: 15)).multilineTextAlignment(.center)
-                .focused($focus, equals: .name).padding(.horizontal, 14).frame(height: 40).field(12)
+                .focused($focus, equals: .name).padding(.horizontal, 14).frame(width: 240, height: 40).field(12)
             Button { agent.avatar = MochiLook.random().key } label: { Label("Aussehen würfeln", systemImage: "dice") }.buttonStyle(.pill)
         }
     }
@@ -62,7 +62,7 @@ struct AgentWizard: View {
         VStack(spacing: 14) {
             question("Wie ist \(shownName)s Jobbezeichnung?", "Tipp eine eigene ein oder nimm einen Vorschlag.")
             TextField("z. B. Researcherin, Entwickler, Lektor", text: $agent.job).textFieldStyle(.plain).font(.system(size: 15))
-                .multilineTextAlignment(.center).focused($focus, equals: .job).padding(.horizontal, 14).frame(height: 40).field(12)
+                .multilineTextAlignment(.center).focused($focus, equals: .job).padding(.horizontal, 14).frame(width: 320, height: 40).field(12)
             HStack(spacing: 6) {
                 ForEach(AgentTemplate.all.filter { !$0.job.isEmpty }) { template in
                     Button {
@@ -86,7 +86,7 @@ struct AgentWizard: View {
         VStack(spacing: 14) {
             question("Wie soll \(shownName) sich verhalten?", "Optional. Ein paar Stichworte zu Ton und Arbeitsweise genügen.")
             TextField("z. B. gründlich und skeptisch, trockener Humor", text: $agent.persona).textFieldStyle(.plain).font(.system(size: 15))
-                .multilineTextAlignment(.center).focused($focus, equals: .manner).padding(.horizontal, 14).frame(height: 40).field(12)
+                .multilineTextAlignment(.center).focused($focus, equals: .manner).padding(.horizontal, 14).frame(width: 360, height: 40).field(12)
         }
     }
 

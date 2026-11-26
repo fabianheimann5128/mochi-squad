@@ -528,24 +528,21 @@ struct MochiCanvas: View, Equatable {
         }
     }
 
+    /// Schal um die Stelle, an der der Kopf in den Fuß übergeht, mit Knoten und losem Ende.
     private func drawScarf(_ ctx: inout GraphicsContext) {
-        var ctx = ctx
-        ctx.translateBy(x: 0, y: -4)
         var clipped = ctx
-        clipped.clip(to: Mochi.body.applying(CGAffineTransform(translationX: 0, y: 4)))
+        clipped.clip(to: Mochi.body)
         var band = Path()
-        band.move(to: CGPoint(x: -4, y: 60))
-        band.addQuadCurve(to: CGPoint(x: 104, y: 60), control: CGPoint(x: 50, y: 74))
+        band.move(to: CGPoint(x: 8, y: 53))
+        band.addQuadCurve(to: CGPoint(x: 92, y: 53), control: CGPoint(x: 50, y: 65))
         clipped.stroke(band, with: .linearGradient(Gradient(colors: [Mochi.color(accentHex, factor: 0.7), accent, Mochi.color(accentHex, factor: 1.12)]),
-                                                   startPoint: CGPoint(x: 0, y: 64), endPoint: CGPoint(x: 100, y: 64)),
-                       style: StrokeStyle(lineWidth: 10, lineCap: .round))
+                                                   startPoint: CGPoint(x: 0, y: 58), endPoint: CGPoint(x: 100, y: 58)),
+                       style: StrokeStyle(lineWidth: 7.5, lineCap: .round))
         var fold = Path()
-        fold.move(to: CGPoint(x: 6, y: 59)); fold.addQuadCurve(to: CGPoint(x: 94, y: 59), control: CGPoint(x: 50, y: 71))
+        fold.move(to: CGPoint(x: 14, y: 52)); fold.addQuadCurve(to: CGPoint(x: 86, y: 52), control: CGPoint(x: 50, y: 62.5))
         clipped.stroke(fold, with: .color(.white.opacity(0.16)), lineWidth: 1)
-        // Loses Ende mit Knoten
-        let tail = Path(roundedRect: CGRect(x: 60, y: 66, width: 9.5, height: 19), cornerRadius: 3.5, style: .continuous)
-        solid(clipped, tail, hex: accentHex)
-        solid(clipped, Path(ellipseIn: CGRect(x: 58.5, y: 62.5, width: 12, height: 8.5)), hex: accentHex)
+        solid(clipped, Path(roundedRect: CGRect(x: 63, y: 59, width: 8, height: 13), cornerRadius: 3, style: .continuous), hex: accentHex)
+        solid(clipped, Path(ellipseIn: CGRect(x: 61, y: 55.5, width: 11, height: 7.5)), hex: accentHex)
     }
 
     private func drawFreckles(_ ctx: inout GraphicsContext, ink: Color) {
@@ -596,21 +593,19 @@ struct MochiCanvas: View, Equatable {
     }
 }
 
-/// Gruppenbild aus bis zu drei Mochis: versetzte Kacheln mit dunklem Ring.
+/// Gruppenbild aus bis zu drei Mochis, nebeneinander ohne Überlappung.
 struct GroupAvatar: View {
     let keys: [String]
     let size: CGFloat
     var round = false
     var body: some View {
-        let tile = size * (keys.count > 2 ? 0.56 : keys.count == 2 ? 0.66 : 1)
+        let tile = size * (keys.count > 1 ? 0.48 : 1), shift = size * 0.26
         let spots: [CGPoint] = keys.count == 1 ? [.zero] : keys.count > 2
-            ? [CGPoint(x: 0, y: -size * 0.2), CGPoint(x: -size * 0.21, y: size * 0.19), CGPoint(x: size * 0.21, y: size * 0.19)]
-            : [CGPoint(x: -size * 0.16, y: -size * 0.16), CGPoint(x: size * 0.16, y: size * 0.16)]
+            ? [CGPoint(x: 0, y: -shift), CGPoint(x: -shift, y: shift), CGPoint(x: shift, y: shift)]
+            : [CGPoint(x: -shift, y: 0), CGPoint(x: shift, y: 0)]
         ZStack {
             ForEach(Array(keys.prefix(3).enumerated()), id: \.offset) { index, key in
                 MochiAvatar(key: key, size: tile, round: round)
-                    .background(RoundedRectangle(cornerRadius: round ? tile : tile * 0.25, style: .continuous)
-                        .fill(Color(.sRGB, red: 10 / 255, green: 10 / 255, blue: 10 / 255)).padding(-1.5))
                     .offset(x: spots[index].x, y: spots[index].y)
             }
         }.frame(width: size, height: size).accessibilityHidden(true)

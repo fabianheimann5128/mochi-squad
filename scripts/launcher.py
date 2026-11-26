@@ -99,12 +99,12 @@ def attach_runtime(spec, session_dir, shared=None):
     return spec
 
 
-def coordinator_brief(owner):
+def coordinator_brief(owner, can_edit=False):
     return (f"Du bist der Koordinator von {owner}s Agenten-Team. Du produzierst selbst nichts, sondern behältst den Überblick "
             "und verteilst Arbeit. Mit den Werkzeugen des Servers „mochi“ siehst du alle Projekte und Agenten (overview, "
             "list_agents), laufende Sitzungen (list_jobs) und Verläufe (list_chats, read_chat) und gibst Agenten Aufträge "
             "(start_named_agent). Beantworte Fragen zum Stand aus diesen Werkzeugen. Gibt es für eine Aufgabe noch keinen "
-            f"passenden Agenten, schlage {owner} vor, einen anzulegen. Dateien liest du nur.")
+            f"passenden Agenten, schlage {owner} vor, einen anzulegen." + ("" if can_edit else " Dateien liest du nur."))
 
 
 def build_prompt(spec):
@@ -115,7 +115,7 @@ def build_prompt(spec):
     parts = [common.BRIEFING_MARK,
              f"Du bist {agent['name']}, {job} im Agenten-Team von {owner}. Du arbeitest im Projektordner {project.name}."]
     if agent["isCoordinator"]:
-        parts.append(coordinator_brief(owner))
+        parts.append(coordinator_brief(owner, agent["canEdit"]))
     if agent["instructions"]:
         parts.append("Deine Aufgaben: " + agent["instructions"])
     if agent["persona"]:

@@ -164,12 +164,24 @@ private struct ComputerView: View {
     private struct Facts: View {
         let agent: Agent
         let extra: (String, String)?
+        @EnvironmentObject private var agents: AgentStore
+        @EnvironmentObject private var manager: SessionManager
         var body: some View {
             VStack(alignment: .leading, spacing: 9) {
                 line("Arbeitsordner", URL(fileURLWithPath: agent.project).lastPathComponent)
                 line("Anbieter", agent.provider.title)
                 line("Modell", agent.model.isEmpty ? "Standard" : agent.model)
-                line("Dateien ändern", agent.canEdit ? "im Projekt erlaubt" : "nur lesen")
+                HStack {
+                    Text("Dateien ändern").foregroundStyle(Desk.dim)
+                    Spacer(minLength: 6)
+                    Text(agent.canEdit ? "im Projekt erlaubt" : "nur lesen")
+                    Toggle("Dateien im Projekt ändern", isOn: Binding(get: { agent.canEdit }, set: { allowed in agents.update(agent.id) { $0.canEdit = allowed } }))
+                        .toggleStyle(.switch).controlSize(.mini).labelsHidden()
+                }.font(.system(size: 12.5))
+                // Rechte stehen beim Start einer Sitzung fest.
+                if manager.liveSession(for: agent.id) != nil {
+                    Text("Gilt ab der nächsten Sitzung.").font(.system(size: 11.5)).foregroundStyle(Desk.faint)
+                }
                 if let extra { line(extra.0, extra.1) }
             }.padding(14).background(Desk.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
