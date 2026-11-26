@@ -29,7 +29,7 @@ struct SkillsView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     if store.skills.isEmpty {
                         VStack(spacing: 8) {
-                            Image(systemName: "wand.and.stars").font(.system(size: 26, weight: .light)).foregroundStyle(Desk.dim)
+                            Image(systemName: "graduationcap").font(.system(size: 26, weight: .light)).foregroundStyle(Desk.dim)
                             Text(t("No skills yet", "Noch keine Skills")).font(.system(size: 15, weight: .semibold))
                             Text(found.isEmpty ? t("Drop a skill here to add it.", "Zieh einen Skill hierher, um ihn hinzuzufügen.")
                                                : t("Take one from the list below, or drop a skill here.", "Nimm einen aus der Liste unten oder zieh einen Skill hierher."))
@@ -60,7 +60,7 @@ struct SkillsView: View {
 
     private func row(_ skill: Skill) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "wand.and.stars").font(.system(size: 13)).foregroundStyle(Desk.accent)
+            Image(systemName: "graduationcap").font(.system(size: 13)).foregroundStyle(Desk.accent)
                 .frame(width: 34, height: 34).background(Desk.accent.opacity(0.14), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             VStack(alignment: .leading, spacing: 3) {
                 Text(skill.name).font(.system(size: 13.5, weight: .semibold))

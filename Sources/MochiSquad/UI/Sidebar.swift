@@ -40,7 +40,7 @@ struct IconRail: View {
                 Image(systemName: "puzzlepiece.extension")
             }
             RailButton(label: t("Skills: what your agents know how to do", "Skills: was deine Agenten können"), action: openSkills) {
-                Image(systemName: "wand.and.stars")
+                Image(systemName: "graduationcap")
             }
             if showsAgents {
                 Rectangle().fill(Desk.rule).frame(width: 28, height: 1).padding(.vertical, 2)
