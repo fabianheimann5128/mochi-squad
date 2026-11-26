@@ -315,12 +315,12 @@ import Testing
         #expect(Agent.Access.read.rank < Agent.Access.edit.rank && Agent.Access.edit.rank < Agent.Access.full.rank)
     }
 
-    @Test func feedbackLinksCarryOnlyVersions() {
-        let link = Feedback.url(.bug, version: "0.1.0", system: "Version 26.5"), url = link.absoluteString
-        #expect(url.hasPrefix(Feedback.repository + "/issues/new?template=fehler.md"))
-        let body = URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "body" }?.value
-        #expect(body == "\n\n---\nMochi Squad 0.1.0 · macOS Version 26.5")
-        #expect(Feedback.url(.idea).absoluteString.contains("template=funktion.md"))
+    @Test func feedbackOpensTelegramWithOnlyVersions() {
+        let link = Feedback.url(.bug, version: "0.1.0", system: "Version 26.5")
+        #expect(link.absoluteString.hasPrefix("https://t.me/" + Feedback.telegram + "?text="))
+        let text = URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "text" }?.value
+        #expect(text == "Fehler in Mochi Squad 0.1.0 (macOS Version 26.5)\n\nWas ist passiert, und was hattest du erwartet?\n")
+        #expect(Feedback.url(.idea).absoluteString.contains("Vorschlag"))
         let parts = WhatsNew.sections("# Was ist neu\n\n## 0.2.0\n- A\n- B\n\n## 0.1.0\n- C")
         #expect(parts.map(\.title) == ["0.2.0", "0.1.0"] && parts[0].items == ["A", "B"])
     }
