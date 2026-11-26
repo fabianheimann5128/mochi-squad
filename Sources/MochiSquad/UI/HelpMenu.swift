@@ -1,19 +1,15 @@
 import AppKit
 import SwiftUI
 
-/// Rückmeldungen gehen als Issue ins Repository. Mitgeschickt werden nur App- und macOS-Version.
+/// Rückmeldungen gehen als Issue ins Repository. Der Link wählt nur die Vorlage; ausgefüllt und abgeschickt wird im Browser.
 enum Feedback {
     static let repository = "https://github.com/fabianheimann5128/mochi-squad"
 
     enum Kind { case bug, idea }
 
-    static func url(_ kind: Kind, version: String = appVersion, system: String = ProcessInfo.processInfo.operatingSystemVersionString) -> URL {
+    static func url(_ kind: Kind) -> URL {
         var parts = URLComponents(string: repository + "/issues/new")!
-        parts.queryItems = [
-            URLQueryItem(name: "template", value: kind == .bug ? "fehler.md" : "funktion.md"),
-            URLQueryItem(name: "title", value: kind == .bug ? "Fehler: " : "Vorschlag: "),
-            URLQueryItem(name: "body", value: "\n\n---\nMochi Squad \(version) · macOS \(system)")
-        ]
+        parts.queryItems = [URLQueryItem(name: "template", value: kind == .bug ? "fehler.md" : "funktion.md")]
         return parts.url!
     }
 

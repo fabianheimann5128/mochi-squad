@@ -63,6 +63,10 @@ enum LaunchError: LocalizedError {
     let agentID: UUID
     /// Zugriffsstufe, mit der diese Sitzung gestartet wurde; sie gilt, bis die Sitzung endet.
     let access: Agent.Access
+    /// Die Sitzung wurde mit Computer-Nutzung gestartet.
+    let computerUse: Bool
+    /// Der Client endete mit einem Fehler.
+    private(set) var failed = false
     /// Einstellungen des Agenten beim Start (siehe Agent.sessionSignature).
     let signature: String
     /// Der Starter wartet in der Konsole auf eine Anmeldung beim Client.
@@ -101,6 +105,7 @@ enum LaunchError: LocalizedError {
         agentID = agent.id
         access = agent.access
         signature = agent.sessionSignature
+        computerUse = agent.computerUse == true
         self.project = project
         provider = agent.provider
         self.task = task
@@ -217,6 +222,7 @@ enum LaunchError: LocalizedError {
         working = false
         prompt = nil
         endedAt = Date()
+        failed = exitCode != 0
         status = exitCode == 0 ? "Beendet" : "Unterbrochen"
         // Der Client schreibt seine letzten Zeilen kurz nach dem Ende; danach aufräumen.
         Task { @MainActor [weak self] in

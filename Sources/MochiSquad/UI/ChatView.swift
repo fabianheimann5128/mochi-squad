@@ -57,7 +57,8 @@ struct AgentChat: View {
                 if let live = manager.liveSession(for: agent.id), live.signature != (agents.agent(agent.id) ?? agent).sessionSignature {
                     HStack(spacing: 10) {
                         Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 12)).foregroundStyle(Desk.dim)
-                        Text("Du hast \(agent.name) geändert. Die laufende Sitzung arbeitet noch mit den alten Einstellungen.")
+                        Text("Du hast \(agent.name) geändert. Die laufende Sitzung arbeitet noch mit den alten Einstellungen."
+                             + (agent.provider == .codex ? " Codex beginnt beim Neustart einen neuen Chat." : ""))
                             .font(.system(size: 12.5)).foregroundStyle(Desk.dim)
                         Spacer(minLength: 8)
                         Button("Sitzung neu starten") { manager.restart(agents.agent(agent.id) ?? agent) }.buttonStyle(.pill)
@@ -332,13 +333,15 @@ struct PromptCard: View {
 
     var body: some View {
         if let ask = session.prompt {
+            // Nur echte Freigaben (Ja/Nein) bekommen deutsche Antworten; Auswahlfragen des Clients bleiben im Original.
+            let permission = Self.isPermission(ask.options.map(\.label))
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 10) {
-                    Image(systemName: "hand.raised.fill").font(.system(size: 13)).foregroundStyle(Desk.warning)
+                    Image(systemName: permission ? "hand.raised.fill" : "questionmark.bubble.fill").font(.system(size: 13)).foregroundStyle(Desk.warning)
                         .frame(width: 30, height: 30).background(Desk.warning.opacity(0.15), in: Circle())
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(name + " braucht deine Erlaubnis").font(.system(size: 14.5, weight: .semibold))
-                        Text("Lies kurz, was geplant ist, und entscheide.").font(.system(size: 12)).foregroundStyle(Desk.dim)
+                        Text(name + (permission ? " braucht deine Erlaubnis" : " hat eine Rückfrage")).font(.system(size: 14.5, weight: .semibold))
+                        Text(permission ? "Lies kurz, was geplant ist, und entscheide." : "Wähle eine Antwort.").font(.system(size: 12)).foregroundStyle(Desk.dim)
                     }
                 }
                 if !ask.context.isEmpty {
@@ -351,7 +354,7 @@ struct PromptCard: View {
                 VStack(spacing: 6) {
                     ForEach(ask.options) { option in
                         let primary = option.key == "1" || option.key == "pos:\(ask.marked ?? -1)"
-                        let text = Self.wording(option.label)
+                        let text = permission ? Self.wording(option.label) : (title: option.label, detail: nil)
                         Button { session.answer(option) } label: {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(text.title).font(.system(size: 13.5, weight: .semibold))
@@ -375,6 +378,12 @@ struct PromptCard: View {
         }
     }
 
+    /// Eine Freigabe erkennt man an Ja- und Nein-Antworten.
+    static func isPermission(_ labels: [String]) -> Bool {
+        let lower = labels.map { $0.lowercased() }
+        return lower.first?.hasPrefix("yes") == true && lower.contains { $0 == "no" || $0.hasPrefix("no,") || $0.hasPrefix("no ") }
+    }
+
     /// Die Clients fragen auf Englisch. Häufige Antworten bekommen eine deutsche Überschrift; das Original steht klein darunter.
     static func wording(_ label: String) -> (title: String, detail: String?) {
         let lower = label.lowercased()
@@ -382,6 +391,8 @@ struct PromptCard: View {
         if lower == "no" || lower.hasPrefix("no,") || lower.hasPrefix("no ") || lower == "deny" { return ("Ablehnen", lower == "no" || lower == "deny" ? nil : label) }
         if lower.hasPrefix("yes, and don't ask again") || lower.hasPrefix("yes, and dont ask again") { return ("Erlauben und nicht mehr fragen", label) }
         if lower.hasPrefix("yes, allow all") || lower.hasPrefix("yes, and allow") { return ("Für diese Sitzung immer erlauben", label) }
+        if lower.hasPrefix("yes, and auto-accept") { return ("Erlauben, weitere Änderungen automatisch", label) }
+        if lower.hasPrefix("yes, and manually") { return ("Erlauben, Änderungen einzeln bestätigen", label) }
         if lower.hasPrefix("yes") { return ("Erlauben", label) }
         return (label, nil)
     }
@@ -397,7 +408,7 @@ private struct SessionNotice: View {
         if session.needsLogin {
             card("person.crop.circle.badge.exclamationmark", "\(name) wartet auf deine Anmeldung",
                  "Das Programm dieses Agenten ist noch nicht angemeldet. Öffne die Konsole und melde dich mit deinem Abo an.", nil)
-        } else if !session.isRunning, session.usage.historyPath == nil {
+        } else if !session.isRunning, session.failed, session.usage.historyPath == nil {
             card("exclamationmark.triangle.fill", "\(name) konnte nicht starten", "Die Sitzung ist beendet, bevor sie arbeiten konnte.", session.screenText(lines: 6))
         }
     }

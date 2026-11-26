@@ -330,7 +330,12 @@ class ArgumentTests(unittest.TestCase):
         codex = launcher.codex_args(spec, servers=[("postiz", False)])
         self.assertEqual(codex[:2], ["--sandbox", "danger-full-access"])
         self.assertEqual(codex[codex.index("--ask-for-approval") + 1], "never")
-        self.assertFalse(any(a.startswith(("permissions.mochi", "mcp_servers")) for a in codex))
+        self.assertFalse(any(a.startswith("permissions.mochi") for a in codex))
+        # Ohne Computer-Nutzung bleibt Codex' Computersteuerung auch bei Vollzugriff aus; andere Server laufen wie gewohnt.
+        self.assertIn("mcp_servers.cua_repl.enabled=false", codex)
+        self.assertNotIn("mcp_servers.postiz.enabled=false", codex)
+        both = make_spec(self.dir.name, fullAccess=True, computerUse=True)
+        self.assertFalse(any(a.startswith("mcp_servers") for a in launcher.codex_args(both)))
         self.assertIn("Vollzugriff", launcher.build_prompt(spec))
         # Ohne die Angabe bleibt alles beim Alten.
         normal = make_spec(self.dir.name, canEdit=True)

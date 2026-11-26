@@ -305,6 +305,8 @@ import Testing
         #expect(PromptCard.wording("No, and tell Claude what to do differently").title == "Ablehnen")
         #expect(PromptCard.wording("Yes, and don't ask again for touch commands").title == "Erlauben und nicht mehr fragen")
         #expect(PromptCard.wording("Etwas anderes").title == "Etwas anderes")
+        #expect(PromptCard.isPermission(["Yes", "Yes, and don't ask again", "No, and tell Claude what to do differently"]))
+        #expect(!PromptCard.isPermission(["Plan A", "Plan B"]))
     }
 
     @Test func changedSettingsAreNoticed() {
@@ -316,11 +318,8 @@ import Testing
     }
 
     @Test func feedbackLinksCarryOnlyVersions() {
-        let link = Feedback.url(.bug, version: "0.1.0", system: "Version 26.5"), url = link.absoluteString
-        #expect(url.hasPrefix(Feedback.repository + "/issues/new?template=fehler.md"))
-        let body = URLComponents(url: link, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "body" }?.value
-        #expect(body == "\n\n---\nMochi Squad 0.1.0 · macOS Version 26.5")
-        #expect(Feedback.url(.idea).absoluteString.contains("template=funktion.md"))
+        #expect(Feedback.url(.bug).absoluteString == Feedback.repository + "/issues/new?template=fehler.md")
+        #expect(Feedback.url(.idea).absoluteString.hasSuffix("template=funktion.md"))
         let parts = WhatsNew.sections("# Was ist neu\n\n## 0.2.0\n- A\n- B\n\n## 0.1.0\n- C")
         #expect(parts.map(\.title) == ["0.2.0", "0.1.0"] && parts[0].items == ["A", "B"])
     }

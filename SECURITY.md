@@ -42,7 +42,7 @@ Pro Agent lässt sich die Zugriffsstufe „Vollzugriff“ einschalten. Sie ist a
 
 Pro Agent lässt sich „Computer bedienen“ einschalten. Codex-Agenten behalten dann die Computersteuerung von Codex (Programme und Browser), Claude-Agenten steuern den Chrome-Browser über Claude in Chrome. Diese Werkzeuge laufen außerhalb der Sandbox: Was der Agent über Bildschirm oder Browser tut, unterliegt nicht den Dateigrenzen oben, und im Browser ist er mit deinen Anmeldungen unterwegs. Standard ist aus; Routinen bedienen den Computer nie.
 
-**Rechte zwischen Agenten.** Per Agenten-Post und im Team-Chat erreicht ein Agent nur Kollegen, die höchstens so viel dürfen wie er selbst. So kann ein Nur-Lesen-Agent keinem Agenten mit Vollzugriff Aufträge geben.
+**Rechte zwischen Agenten.** Einen Agenten mit Vollzugriff oder Computer-Nutzung kann von sich aus nur ein Kollege ansprechen, der dasselbe darf. So kann ein eingeschränkter Agent nicht über ihn mehr anstoßen, als er selbst dürfte. Antworten an jemanden, der einem in der letzten halben Stunde geschrieben hat, sind immer möglich. Zwischen „Nur lesen“ und „Im Projekt ändern“ gibt es keine Sperre; beide arbeiten in der Sandbox.
 
 ## Bekannte Grenzen
 

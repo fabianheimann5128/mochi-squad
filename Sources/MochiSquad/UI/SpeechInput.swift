@@ -87,6 +87,7 @@ import SwiftUI
         guard listening, let recognizer else { return }
         round += 1
         let current = round
+        task?.cancel()
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
         // Wo möglich, bleibt die Erkennung auf dem Mac.
@@ -98,7 +99,13 @@ import SwiftUI
             Task { @MainActor in
                 guard let self, self.round == current else { return }
                 // Hat der Nutzer zwischendurch getippt, zählt sein Text als Grundlage für alles Weitere.
-                if text.wrappedValue != self.written { self.committed = text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines) }
+                // Der laufende Abschnitt steckt dann schon im Feld; ein frischer Abschnitt liefert nur noch Neues.
+                if text.wrappedValue != self.written {
+                    self.committed = text.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                    self.written = text.wrappedValue
+                    self.recognize(into: text)
+                    return
+                }
                 let joined = Self.join(self.committed, spoken)
                 if !spoken.isEmpty, text.wrappedValue != joined { text.wrappedValue = joined }
                 self.written = text.wrappedValue

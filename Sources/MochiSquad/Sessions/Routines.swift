@@ -99,14 +99,16 @@ struct RoutineRun: Decodable, Identifiable {
     }
 
     /// Einmal sofort ausführen, auch wenn die Routine pausiert ist.
-    func runNow(_ routine: Routine) {
-        guard let script = AppPaths.script("routine") else { return }
+    /// Startet die Routine sofort. `false`, wenn der Helfer nicht gestartet werden konnte.
+    @discardableResult
+    func runNow(_ routine: Routine) -> Bool {
+        guard let script = AppPaths.script("routine") else { return false }
         let process = Process()
         process.executableURL = AppPaths.python
         process.arguments = ["-B", script.path, routine.id, "--now"]
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
-        try? process.run()
+        return (try? process.run()) != nil
     }
 
     /// Neue Läufe ab der zuletzt gelesenen Stelle übernehmen.

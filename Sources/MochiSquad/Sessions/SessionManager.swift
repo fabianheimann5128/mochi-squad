@@ -79,7 +79,8 @@ import Foundation
             tools = (config, bridge.token)
         }
         let session = try AgentSession(agent: agent, project: project, task: task)
-        let team = agents.agents(in: project).filter { !$0.isCoordinator && $0.id != agent.id }.map { "\($0.name) (\($0.jobTitle))" }
+        let team = agents.agents(in: project).filter { !$0.isCoordinator && $0.id != agent.id && mayReach(agent, $0) }
+            .map { "\($0.name) (\($0.jobTitle))" }
         let spec = SessionSpec(agent: agent, project: project, task: task, sessionID: session.id, owner: settings.value.owner,
                                team: team, parentChat: parentChat)
         session.onPost = { [weak self, weak session] to, text in
@@ -107,9 +108,11 @@ import Foundation
 
     /// Nach einer Änderung am Agenten: Hat er jetzt weniger Rechte als seine laufende Sitzung, endet sie sofort.
     func settle(_ agent: Agent) {
-        guard let live = liveSession(for: agent.id), agent.access.rank < live.access.rank else { return }
+        guard let live = liveSession(for: agent.id) else { return }
+        let lessAccess = agent.access.rank < live.access.rank, noComputer = live.computerUse && agent.computerUse != true
+        guard lessAccess || noComputer else { return }
         close(live)
-        notice = "Die laufende Sitzung von \(agent.name) wurde beendet, damit „\(agent.access.title)“ sofort gilt."
+        notice = "Die laufende Sitzung von \(agent.name) wurde beendet, damit die geringeren Rechte sofort gelten."
     }
 
     func close(_ session: AgentSession) {
@@ -163,12 +166,29 @@ import Foundation
         catch { return .failed(error.localizedDescription) }
     }
 
+    /// Wer wem zuletzt geschrieben hat (Empfänger → Absender → Zeitpunkt), damit Antworten immer möglich bleiben.
+    private var contacts = [UUID: [UUID: Date]]()
+
+    /// Darf `sender` von sich aus `target` ansprechen? Ein Agent mit Vollzugriff oder Computer-Nutzung nimmt Aufträge nur von
+    /// Kollegen mit denselben Rechten an; sonst könnte ein eingeschränkter Agent über ihn mehr anstoßen, als er selbst darf.
+    /// Antworten an jemanden, der einem in der letzten halben Stunde geschrieben hat, gehen immer.
+    func mayReach(_ sender: Agent, _ target: Agent) -> Bool {
+        if let asked = contacts[sender.id]?[target.id], Date().timeIntervalSince(asked) < 1800 { return true }
+        let full = target.access != .full || sender.access == .full
+        let computer = target.computerUse != true || sender.computerUse == true || sender.access == .full
+        return full && computer
+    }
+
     /// Nachricht eines Agenten an einen anderen benannten Agenten desselben Projekts.
     func deliver(from origin: AgentSession, to name: String, text: String) -> String {
         // Der Koordinator ist für Agenten nicht erreichbar: Über seine Werkzeuge könnten sie sonst mehr anstoßen, als sie selbst dürfen.
-        // Ebenso wenig Kollegen mit mehr Rechten als der Absender.
-        let limit = agents.agent(origin.agentID)?.access.rank ?? 0
-        let people = agents.agents(in: origin.project).filter { !$0.isCoordinator && $0.id != origin.agentID && $0.access.rank <= limit }
+        let sender = agents.agent(origin.agentID)
+        let colleagues = agents.agents(in: origin.project).filter { !$0.isCoordinator && $0.id != origin.agentID }
+        let people = colleagues.filter { other in sender.map { mayReach($0, other) } ?? false }
+        if let blocked = colleagues.first(where: { $0.name.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }),
+           !people.contains(blocked) {
+            return "\(blocked.name) hat Vollzugriff oder bedient den Computer und ist für dich nicht direkt erreichbar. Bitte \(settings.value.owner), die Nachricht weiterzugeben."
+        }
         let roster = people.map { "\($0.name) (\($0.jobTitle))" }.joined(separator: ", ")
         if name == "?" { return roster.isEmpty ? "Keine weiteren Agenten in diesem Projekt." : "Erreichbar: " + roster }
         guard let target = people.first(where: { $0.name.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }) else {
@@ -177,7 +197,7 @@ import Foundation
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { return "Die Nachricht ist leer." }
         guard allowRelays(1, project: origin.project.path) else { return "Das Limit von \(Self.relayLimit) Agenten-Nachrichten je halbe Stunde ist erreicht. Fasse den Stand im Chat zusammen." }
-        let sender = agents.agent(origin.agentID)
+        contacts[target.id, default: [:]][origin.agentID] = Date()
         let message = RelayedMessage.postPrefix + (sender?.name ?? "Agent") + " (" + (sender?.jobTitle ?? "") + "): " + String(body.prefix(12_000))
         switch hand(message, to: target) {
         case .delivered: return "Zugestellt an \(target.name). Die Antwort erscheint als neue Nachricht in deinem Chat."
@@ -233,10 +253,17 @@ import Foundation
     @discardableResult
     private func relay(_ text: String, from origin: Agent?, project: URL, skip: Set<UUID> = []) -> Set<UUID> {
         // Den Koordinator ruft nur der Nutzer; Agenten erreichen ihn auch im Team-Chat nicht (siehe deliver).
-        // Kollegen mit mehr Rechten als der Schreibende sind für ihn ebenfalls tabu.
-        let people = agents.agents(in: project).filter { other in
+        // Kollegen mit Vollzugriff oder Computer-Nutzung ruft ein Agent ohne dieselben Rechte ebenfalls nicht.
+        let everyone = agents.agents(in: project)
+        let people = everyone.filter { other in
             guard let origin else { return true }
-            return other.id != origin.id && !other.isCoordinator && other.access.rank <= origin.access.rank
+            return other.id != origin.id && !other.isCoordinator && mayReach(origin, other)
+        }
+        if let origin {
+            let dropped = everyone.filter { $0.id != origin.id && !$0.isCoordinator && !people.contains($0) && Mention.contains(text, $0.name) }
+            if !dropped.isEmpty {
+                team.notice("\(origin.name) kann \(dropped.map(\.name).joined(separator: ", ")) nicht selbst dazuholen (Vollzugriff oder Computer-Nutzung). Sprich sie bei Bedarf mit @Name an.", project: project.path)
+            }
         }
         var targets = people.filter { Mention.contains(text, $0.name) && !skip.contains($0.id) }
         if origin == nil {
@@ -260,7 +287,10 @@ import Foundation
         let message = RelayedMessage.teamPrefix + sender + ": " + String(text.prefix(8000))
             + team.context(project: project.path, owner: settings.value.owner) + RelayedMessage.teamHint
             + "Antworte kurz für alle im Team-Chat. Mit @Name holst du einen Kollegen dazu, wenn seine Rolle gefragt ist; sonst erwähne niemanden."
-        for target in targets { track(hand(message, to: target), agent: target) }
+        for target in targets {
+            if let origin { contacts[target.id, default: [:]][origin.id] = Date() }
+            track(hand(message, to: target), agent: target)
+        }
         return Set(targets.map(\.id))
     }
 

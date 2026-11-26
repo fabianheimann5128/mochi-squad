@@ -12,10 +12,8 @@ struct AgentEditor: View {
     private var look: MochiLook { MochiLook(key: agent.avatar) }
     @EnvironmentObject private var agents: AgentStore
     /// Der Name ist ausgefüllt und im Projekt noch frei; sonst wäre im Team-Chat unklar, wer gemeint ist.
-    private var valid: Bool {
-        let name = agent.name.trimmingCharacters(in: .whitespaces).lowercased()
-        return !name.isEmpty && !agents.agents(in: URL(fileURLWithPath: agent.project)).contains { $0.id != agent.id && $0.name.lowercased() == name }
-    }
+    private var valid: Bool { !agent.name.trimmingCharacters(in: .whitespaces).isEmpty && !nameTaken }
+    private var nameTaken: Bool { agents.nameTaken(agent.name, by: agent) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -45,6 +43,12 @@ struct AgentEditor: View {
                 row("Name") {
                     TextField("z. B. Mira", text: $agent.name).textFieldStyle(.plain).font(.system(size: 13.5))
                         .padding(.horizontal, 12).frame(height: 32).field(8)
+                }
+                if nameTaken {
+                    row("") {
+                        Text("Diesen Namen gibt es in diesem Projekt schon. Im Team-Chat wäre unklar, wer gemeint ist.")
+                            .font(.system(size: 12)).foregroundStyle(Desk.warning).frame(maxWidth: .infinity, alignment: .leading)
+                    }
                 }
                 row("Job") {
                     TextField("z. B. Researcherin, Entwickler, Lektor", text: $agent.job).textFieldStyle(.plain).font(.system(size: 13.5))

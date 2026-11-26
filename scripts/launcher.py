@@ -310,7 +310,9 @@ def codex_args(spec, interactive=True, servers=()):
     agent = spec["agent"]
     if agent["fullAccess"]:
         # Vom Nutzer ausdrücklich eingeschaltet: Codex ohne Sandbox und ohne Rückfragen, mit seinen eigenen Werkzeugen.
-        args, servers = ["--sandbox", "danger-full-access", "-c", 'web_search="live"'], ()
+        # Nur die Computersteuerung richtet sich weiter nach ihrem eigenen Schalter.
+        args = ["--sandbox", "danger-full-access", "-c", 'web_search="live"']
+        servers = () if agent["computerUse"] else [(name, True) for name in COMPUTER_SERVERS]
     else:
         args = codex_profile_args(spec) + ["-c", "web_search=" + json.dumps("live" if spec.get("allowWeb") else "disabled")]
     for name, is_command in servers:

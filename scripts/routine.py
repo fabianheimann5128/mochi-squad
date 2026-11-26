@@ -95,6 +95,8 @@ def main(argv):
         record.update(code=124, output="Die Routine wurde nach drei Stunden abgebrochen.")
     except OSError as error:
         record.update(code=1, output=f"Start fehlgeschlagen: {error}")
+    except Exception as error:  # noqa: BLE001 – jeder Lauf soll im Protokoll enden, auch ein unerwartet gescheiterter
+        record.update(code=1, output=f"Unerwarteter Fehler: {error}")
     record["end"] = now()
     append_record(record)
 

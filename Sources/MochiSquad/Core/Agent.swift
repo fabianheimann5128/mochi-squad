@@ -162,6 +162,13 @@ struct AgentTemplate: Identifiable {
         persist()
     }
 
+    /// Trägt im selben Projekt schon ein anderer Agent diesen Namen? Verglichen wird wie bei der Zustellung: ohne Groß-/Kleinschreibung und Akzente.
+    func nameTaken(_ name: String, by agent: Agent) -> Bool {
+        let wanted = name.trimmingCharacters(in: .whitespaces)
+        return agents.contains { $0.project == agent.project && $0.id != agent.id
+            && $0.name.compare(wanted, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }
+    }
+
     func renameCoordinators(to name: String) {
         for index in agents.indices where agents[index].isCoordinator { agents[index].name = name }
         persist()

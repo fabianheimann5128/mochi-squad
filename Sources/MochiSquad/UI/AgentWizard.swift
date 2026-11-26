@@ -152,11 +152,11 @@ struct AgentWizard: View {
 
     // MARK: Hilfen
 
-    /// Namen der anderen Agenten im Projekt, kleingeschrieben.
+    /// Namen der anderen Agenten im Projekt, kleingeschrieben (für den Namensvorschlag).
     private var taken: Set<String> {
         Set(agents.agents(in: URL(fileURLWithPath: agent.project)).filter { $0.id != agent.id }.map { $0.name.lowercased() })
     }
-    private var nameTaken: Bool { taken.contains(agent.name.trimmingCharacters(in: .whitespaces).lowercased()) }
+    private var nameTaken: Bool { agents.nameTaken(agent.name, by: agent) }
 
     private var shownName: String {
         let trimmed = agent.name.trimmingCharacters(in: .whitespaces)

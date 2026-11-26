@@ -44,6 +44,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Ein beendeter Hilfsprozess darf die App nicht über ein Schreiben in seine Pipe mitreißen.
         signal(SIGPIPE, SIG_IGN)
+        // Zwei Instanzen würden sich die Sitzungsordner gegenseitig löschen: Die laufende nach vorn holen und diese beenden.
+        if let id = Bundle.main.bundleIdentifier,
+           let other = NSRunningApplication.runningApplications(withBundleIdentifier: id).first(where: { $0 != .current }) {
+            other.activate()
+            exit(0)
+        }
         AppPaths.prepareRuntime()
         let state = AppState.shared
         state.manager.start()

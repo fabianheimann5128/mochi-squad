@@ -48,6 +48,10 @@ fi
 echo; echo "App wird gebaut (beim ersten Mal einige Minuten) …"
 ./install.sh
 echo
-echo "Fertig. Mochi Squad liegt in ~/Applications und öffnet sich jetzt; beim ersten Start führt dich die App durch die Einrichtung."
-# In automatischen Läufen (CI) nichts öffnen.
-[[ -n "${CI:-}" ]] || open "$HOME/Applications/Mochi Squad.app"
+if pgrep -x MochiSquad >/dev/null; then
+    echo "Fertig. Mochi Squad läuft noch in der alten Fassung: Beende die App und öffne sie neu, damit die neue gilt."
+else
+    echo "Fertig. Mochi Squad liegt in ~/Applications und öffnet sich jetzt; beim ersten Start führt dich die App durch die Einrichtung."
+    # In automatischen Läufen (CI) oder ohne Bildschirm nichts öffnen.
+    [[ -n "${CI:-}" ]] || open "$HOME/Applications/Mochi Squad.app" || true
+fi
