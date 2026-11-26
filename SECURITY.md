@@ -4,7 +4,7 @@ Mochi Squad starts AI agents on your Mac. This document describes what the app s
 
 ## Reporting a vulnerability
 
-Please do **not** open a public issue. Use "Report a vulnerability" under the *Security* tab of this repository. You will get an answer within a few days. While the repository is private, that tab is only available to collaborators; in that case write to the maintainer directly.
+Please do **not** open a public issue. Use "Report a vulnerability" under the *Security* tab of this repository. You will get an answer within a few days.
 
 ## Security model
 
