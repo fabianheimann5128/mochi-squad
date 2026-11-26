@@ -12,7 +12,18 @@ struct AgentWizard: View {
     private enum Step: Int, CaseIterable { case name, job, tasks, manner, engine, rights }
     private static let names = ["Mira", "Otto", "Juna", "Finn", "Lia", "Nico", "Ida", "Theo", "Emil", "Nora"]
 
-    private var canContinue: Bool { step != .name || !agent.name.trimmingCharacters(in: .whitespaces).isEmpty }
+    /// Weiter geht es erst, wenn die Frage der Seite beantwortet ist.
+    private var canContinue: Bool {
+        func filled(_ text: String) -> Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        switch step {
+        case .name: return filled(agent.name)
+        case .job: return filled(agent.job)
+        case .tasks: return filled(agent.instructions)
+        case .manner: return filled(agent.persona)
+        case .engine: return !agent.model.isEmpty
+        case .rights: return true
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -85,7 +96,7 @@ struct AgentWizard: View {
 
     private var manner: some View {
         VStack(spacing: 14) {
-            question("Wie soll \(shownName) sich verhalten?", "Optional. Ein paar Stichworte zu Ton und Arbeitsweise genügen.")
+            question("Wie soll \(shownName) sich verhalten?", "Ein paar Stichworte zu Ton und Arbeitsweise genügen.")
             TextField("z. B. gründlich und skeptisch, trockener Humor", text: $agent.persona).textFieldStyle(.plain).font(.system(size: 15))
                 .multilineTextAlignment(.center).focused($focus, equals: .manner).padding(.horizontal, 14).frame(width: 360, height: 40).field(12)
         }
@@ -98,7 +109,7 @@ struct AgentWizard: View {
                        options: Provider.allCases.map { ($0, $0.vendor + " · " + $0.title) })
             HStack(spacing: 8) {
                 Picker("", selection: $agent.model) {
-                    Text("Standardmodell").tag("")
+                    Text("Modell wählen").tag("")
                     ForEach(agent.provider.models, id: \.self) { Text($0).tag($0) }
                 }.labelsHidden().fixedSize()
                     .onChange(of: agent.model) { _, model in if !agent.provider.efforts(for: model).contains(agent.effort) { agent.effort = "" } }
@@ -116,7 +127,7 @@ struct AgentWizard: View {
                     }.labelsHidden().fixedSize()
                 }
             }
-            Text("Wenn du unsicher bist, lass beides auf Standard.").font(.system(size: 12.5)).foregroundStyle(Desk.dim)
+            Text("Wähle ein Modell. Die Denktiefe kann auf automatisch bleiben.").font(.system(size: 12.5)).foregroundStyle(Desk.dim)
         }
     }
 
@@ -137,7 +148,7 @@ struct AgentWizard: View {
     }
 
     private func go(_ delta: Int) {
-        guard let next = Step(rawValue: step.rawValue + delta) else { return }
+        guard delta < 0 || canContinue, let next = Step(rawValue: step.rawValue + delta) else { return }
         step = next
         focus = next
     }
