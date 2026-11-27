@@ -61,8 +61,8 @@ struct PlanLimit: Decodable, Identifiable, Equatable {
     static let thresholds: [Double] = [80, 95]
     /// Per plan and window: the period it belongs to and the highest threshold reported in it. Kept across launches.
     private var warned: [String: [Double]] {
-        get { (UserDefaults.standard.dictionary(forKey: "usageWarnings.v2") as? [String: [Double]]) ?? [:] }
-        set { UserDefaults.standard.set(newValue, forKey: "usageWarnings.v2") }
+        get { (UserDefaults.standard.dictionary(forKey: "usageWarnings.v3") as? [String: [Double]]) ?? [:] }
+        set { UserDefaults.standard.set(newValue, forKey: "usageWarnings.v3") }
     }
     private var timer: Timer?
 
@@ -87,24 +87,43 @@ struct PlanLimit: Decodable, Identifiable, Equatable {
     }
 
     /// The thresholds `limit` crossed that were not reported yet; remembers them as reported.
-    /// A window whose reset time has passed, or whose report is older than the window itself, warns no more. Without a
-    /// reset time, the period follows from the report's date, and a clear drop in usage counts as a new period.
+    ///
+    /// Each plan and window has a period in which every threshold warns once. With a reset time the period is the
+    /// window up to that reset: a lower number within it (a correction, an older report) starts nothing new. Without
+    /// one, the period begins with the first report seen and ends when the window's length has passed since then,
+    /// by the reports' own dates, or when usage clearly drops. A report older than one already used is ignored, and a
+    /// report without a date never counts as new by time alone. A passed reset, or a report older than the window
+    /// itself, warns no more.
     func crossed(_ limit: PlanLimit, now: Date = Date()) -> [(window: String, percent: Double, threshold: Double, resets: Double?)] {
         var result = [(window: String, percent: Double, threshold: Double, resets: Double?)]()
         var store = warned
+        let date = limit.date?.timeIntervalSince1970
         for (name, window, span) in [("five", limit.five, 5 * 3600.0), ("week", limit.week, 7 * 86400.0)] {
             guard let window else { continue }
             if let resets = window.resets, resets <= now.timeIntervalSince1970 { continue }
-            if let date = limit.date, now.timeIntervalSince(date) > span { continue }
-            let period = window.resets ?? ((limit.date ?? now).timeIntervalSince1970 / span).rounded(.down)
+            if let date, now.timeIntervalSince1970 - date > span { continue }
             let key = limit.id + "." + name
-            var reported = store[key].flatMap { $0.count == 2 && $0[0] == period ? $0[1] : nil } ?? 0
-            if window.percent < 50 { reported = 0 }
+            // [period, highest threshold reported, date of the newest report used (0: none), 1 if the period is a reset time]
+            let old = store[key].flatMap { $0.count == 4 ? $0 : nil }
+            if let date, let seen = old?[2], seen > 0, date < seen { continue }
+            var period: Double, reported: Double
+            if let resets = window.resets {
+                period = resets
+                reported = old.flatMap { $0[3] == 1 && $0[0] == resets ? $0[1] : nil } ?? 0
+            } else if let old, old[3] == 0 {
+                period = old[0]; reported = old[1]
+                let expired = date.map { $0 - period > span } ?? false
+                if expired || window.percent < 50 { period = date ?? period; reported = 0 }
+            } else {
+                period = date ?? now.timeIntervalSince1970; reported = 0
+            }
+            let seen = max(date ?? 0, old?[2] ?? 0)
+            let kind: Double = window.resets == nil ? 0 : 1
             guard let threshold = Self.thresholds.last(where: { window.percent >= $0 }), threshold > reported else {
-                store[key] = [period, reported]
+                store[key] = [period, reported, seen, kind]
                 continue
             }
-            store[key] = [period, threshold]
+            store[key] = [period, threshold, seen, kind]
             result.append((name, window.percent, threshold, window.resets))
         }
         warned = store

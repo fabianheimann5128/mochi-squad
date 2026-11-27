@@ -861,8 +861,8 @@ import Testing
     }
 
     @MainActor @Test func usageWarnsOncePerThresholdAndWindow() {
-        UserDefaults.standard.removeObject(forKey: "usageWarnings.v2")
-        defer { UserDefaults.standard.removeObject(forKey: "usageWarnings.v2") }
+        UserDefaults.standard.removeObject(forKey: "usageWarnings.v3")
+        defer { UserDefaults.standard.removeObject(forKey: "usageWarnings.v3") }
         let store = LimitStore()
         let now = Date(timeIntervalSince1970: 1_800_000_000)
         let stamp = ISO8601DateFormatter().string(from: now.addingTimeInterval(-60))
@@ -882,6 +882,25 @@ import Testing
         #expect(store.crossed(limit(83, resets: nil), now: now).map(\.threshold) == [80])
         #expect(store.crossed(limit(2, resets: nil), now: now).isEmpty)
         #expect(store.crossed(limit(83, resets: nil), now: now).map(\.threshold) == [80])
+        // B7: within the same known window a lower number (a correction, an older report) warns nothing again.
+        #expect(store.crossed(limit(83, resets: 1_800_900_000), now: now).map(\.threshold) == [80])
+        #expect(store.crossed(limit(2, resets: 1_800_900_000), now: now).isEmpty)
+        #expect(store.crossed(limit(84, resets: 1_800_900_000), now: now).isEmpty)
+        // B8: without a reset the period starts with the first report, not at a fixed clock boundary …
+        let boundary = 1_800_000_000.0 - 1_800_000_000.0.truncatingRemainder(dividingBy: 18_000) + 18_000
+        func dated(_ percent: Double, at: Double) -> PlanLimit {
+            PlanLimit(id: "codex", five: .init(percent: percent, resets: nil), week: nil,
+                      stamp: ISO8601DateFormatter().string(from: Date(timeIntervalSince1970: at)))
+        }
+        let later = Date(timeIntervalSince1970: boundary + 10)
+        #expect(store.crossed(dated(83, at: boundary - 1), now: later).map(\.threshold) == [80])
+        #expect(store.crossed(dated(84, at: boundary + 1), now: later).isEmpty)
+        // … an older report than one already used is ignored …
+        #expect(store.crossed(dated(97, at: boundary - 100), now: later).isEmpty)
+        // … and an undated report never counts as new by time alone.
+        let undated = PlanLimit(id: "plain", five: .init(percent: 83, resets: nil), week: nil, stamp: nil)
+        #expect(store.crossed(undated, now: now).map(\.threshold) == [80])
+        #expect(store.crossed(undated, now: now.addingTimeInterval(6 * 3600)).isEmpty)
         // 4.5: absurd numbers are clamped or dropped instead of crashing.
         let wild = PlanLimit.Window(percent: 1e100, resets: 1e100)
         #expect(wild.percent == 100 && wild.resets == nil)

@@ -26,12 +26,22 @@ def number(value):
     return value if isinstance(value, (int, float)) else 0
 
 
+def table(value):
+    """A JSON object, or an empty one for anything else: a malformed report must not end the status line."""
+    return value if isinstance(value, dict) else {}
+
+
+def percent(value):
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= 100 else None
+
+
 def claude(path, data):
-    window = data.get("context_window") or {}
-    usage = window.get("current_usage") or {}
+    data = table(data)
+    window = table(data.get("context_window"))
+    usage = table(window.get("current_usage"))
     cache = number(usage.get("cache_read_input_tokens")) + number(usage.get("cache_creation_input_tokens"))
     used = number(usage.get("input_tokens")) + cache if usage else None
-    rate = data.get("rate_limits") or {}
+    rate = table(data.get("rate_limits"))
     try:
         # The plan limits concern the whole subscription, not this session: the usage display reads them from here.
         import limits
@@ -41,16 +51,16 @@ def claude(path, data):
     # What the session started with (instructions, tools, skills, first exchange) stays as the base of the breakdown.
     previous = {}
     try:
-        previous = json.loads(path.read_text(encoding="utf-8"))
+        previous = table(json.loads(path.read_text(encoding="utf-8")))
     except (OSError, ValueError):
         pass
     base = previous.get("base") if isinstance(previous.get("base"), int) else used
-    publish(path, dict(base=base, answerInside=False, historyPath=data.get("transcript_path"), model=(data.get("model") or {}).get("display_name"),
+    publish(path, dict(base=base, answerInside=False, historyPath=data.get("transcript_path"), model=table(data.get("model")).get("display_name"),
                        used=used, limit=window.get("context_window_size"), percent=window.get("used_percentage"),
                        cached=usage.get("cache_read_input_tokens"), cacheWrite=usage.get("cache_creation_input_tokens"),
                        fresh=usage.get("input_tokens"), output=usage.get("output_tokens"),
-                       five=(rate.get("five_hour") or {}).get("used_percentage"),
-                       week=(rate.get("seven_day") or {}).get("used_percentage")))
+                       five=percent(table(rate.get("five_hour")).get("used_percentage")),
+                       week=percent(table(rate.get("seven_day")).get("used_percentage"))))
     print("Mochi Squad")
 
 

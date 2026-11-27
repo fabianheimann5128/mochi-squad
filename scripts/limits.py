@@ -10,8 +10,10 @@ limits-claude.json. Codex writes them into its own history files, so they are re
 here asks a server: the values are as fresh as the last answer of that subscription.
 """
 import datetime
+import fcntl
 import json
 import os
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -24,6 +26,8 @@ CLAUDE_FILE = "limits-claude.json"
 LATEST_RESET = 4102444800  # 2100-01-01: anything later is no real reset time
 SCAN_DAYS = 14
 SCAN_FILES = 8
+# Without a stored value the search goes on further back, file by file, until a report turns up.
+SCAN_MORE = 200
 
 
 def window(percent, resets=None):
@@ -70,8 +74,9 @@ def write(target, entry):
 
 
 def recent_rollouts(home, days=SCAN_DAYS):
-    """History files of the last days, most recently written first. A conversation continued today still lies in
-    the folder of the day it began, so the date of the folder alone does not tell which file is current."""
+    """History files, most recently written first: those of the last day folders and those Codex's own index lists
+    as recently updated. A conversation continued today still lies in the folder of the day it began, possibly
+    weeks ago, so neither the folder date nor the folders alone tell which file is current."""
     base = Path(home) / "sessions"
     folders = []
     try:
@@ -79,15 +84,40 @@ def recent_rollouts(home, days=SCAN_DAYS):
             for month in sorted((p for p in year.iterdir() if p.is_dir()), reverse=True)[:2]:
                 folders += sorted((p for p in month.iterdir() if p.is_dir()), reverse=True)
     except OSError:
-        return []
-    files = []
+        folders = []
+    candidates = set(indexed_rollouts(home))
     for day in sorted(folders, reverse=True)[:days]:
-        for file in day.glob("rollout-*.jsonl"):
-            try:
-                files.append((file.stat().st_mtime, file))
-            except OSError:
-                continue
+        candidates.update(day.glob("rollout-*.jsonl"))
+    files = []
+    for file in candidates:
+        try:
+            files.append((file.stat().st_mtime, file))
+        except OSError:
+            continue
     return [file for _, file in sorted(files, key=lambda pair: pair[0], reverse=True)]
+
+
+def indexed_rollouts(home, limit=40):
+    """History files of the conversations Codex updated last, from its own database."""
+    found = []
+    for db in sorted(Path(home).glob("state_*.sqlite"), key=lambda p: p.stat().st_mtime, reverse=True)[:1]:
+        try:
+            with sqlite3.connect(db.as_uri() + "?mode=ro", uri=True, timeout=0.5) as connection:
+                rows = connection.execute("SELECT rollout_path FROM threads ORDER BY updated_at DESC LIMIT ?", (limit,)).fetchall()
+        except (sqlite3.Error, OSError):
+            continue
+        found += [Path(row[0]) for row in rows if isinstance(row[0], str) and row[0].endswith(".jsonl")]
+    return found
+
+
+def stamp_time(stamp):
+    """Seconds since 1970 of a report's time stamp, or None."""
+    if not isinstance(stamp, str):
+        return None
+    try:
+        return datetime.datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
 
 
 def codex_limits(file):
@@ -115,7 +145,11 @@ def codex_limits(file):
             interval = rates.get(key)
             if not isinstance(interval, dict):
                 continue
-            field = {300: "five", 10080: "week"}.get(interval.get("window_minutes"))
+            minutes = interval.get("window_minutes")
+            # Only a plain number says which window this is; anything else is skipped, not trusted.
+            if isinstance(minutes, bool) or not isinstance(minutes, (int, float)):
+                continue
+            field = {300: "five", 10080: "week"}.get(minutes)
             if field:
                 result[field] = window(interval.get("used_percent"), interval.get("resets_at"))
         if result["five"] or result["week"]:
@@ -123,25 +157,41 @@ def codex_limits(file):
     return None
 
 
+def stored(cache, ident):
+    record = common.read_json(cache, None)
+    if not isinstance(record, dict) or record.get("id") != ident:
+        return None
+    five, week = checked(record.get("five")), checked(record.get("week"))
+    if not five and not week:
+        return None
+    return {"id": ident, "five": five, "week": week, "stamp": record.get("stamp") if isinstance(record.get("stamp"), str) else None}
+
+
 def codex(home, ident, data=None):
-    """The newest report of a Codex folder. The last one found is kept, so new conversations that have not reported
-    yet do not make the plan disappear from the display."""
+    """The newest report of a Codex folder, by the time of the report itself. The last one found is kept, so new
+    conversations that have not reported yet do not make the plan disappear, and an older report found later
+    never replaces a newer one, also when two helpers run at the same time."""
     cache = Path(data or common.DATA) / ("limits-" + ident.replace(":", "-") + ".json")
-    for file in recent_rollouts(home)[:SCAN_FILES]:
+    files = recent_rollouts(home)
+    best = None
+    for index, file in enumerate(files):
+        if index >= SCAN_FILES and (best or cache.is_file()) or index >= SCAN_MORE:
+            break
         found = codex_limits(file)
-        if found:
-            entry = dict(found, id=ident)
-            try:
+        if found and (best is None or (stamp_time(found["stamp"]) or 0) > (stamp_time(best["stamp"]) or 0)):
+            best = found
+    try:
+        with open(cache.with_name(cache.name + ".lock"), "a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            known = stored(cache, ident)
+            known_time = stamp_time(known["stamp"]) if known else None
+            if best and (known_time is None or (stamp_time(best["stamp"]) or 0) > known_time):
+                entry = dict(best, id=ident)
                 write(cache, entry)
-            except OSError:
-                pass
-            return entry
-    stored = common.read_json(cache, None)
-    if isinstance(stored, dict) and stored.get("id") == ident:
-        five, week = checked(stored.get("five")), checked(stored.get("week"))
-        if five or week:
-            return {"id": ident, "five": five, "week": week, "stamp": stored.get("stamp") if isinstance(stored.get("stamp"), str) else None}
-    return None
+                return entry
+            return known or (dict(best, id=ident) if best else None)
+    except OSError:
+        return dict(best, id=ident) if best else stored(cache, ident)
 
 
 def collect(data=None):

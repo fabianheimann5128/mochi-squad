@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import os
 import sys
 import tempfile
@@ -159,6 +160,51 @@ class LimitTests(unittest.TestCase):
             for file in Path(home).glob("sessions/2026/11/2[4-7]/*.jsonl"):
                 file.unlink()
             self.assertEqual(limits.codex(home, "codex", data=home)["week"]["percent"], 97.0)
+
+    def test_codex_reports_by_their_own_time_and_from_any_folder(self):
+        with tempfile.TemporaryDirectory() as home:
+            def report(path, percent, stamp, mtime, minutes=10080):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps({"timestamp": stamp, "payload": {"rate_limits": {
+                    "primary": {"used_percent": percent, "window_minutes": minutes, "resets_at": 1796050916}}}}) + "\n")
+                os.utime(path, (mtime, mtime))
+            # B2: a conversation from weeks ago continued today is found through Codex's own index.
+            old = Path(home) / "sessions/2026/10/01/rollout-old.jsonl"
+            report(old, 96, "2026-11-27T10:00:00Z", 5000)
+            for day in range(1, 16):
+                report(Path(home) / ("sessions/2026/11/%02d/rollout-%d.jsonl" % (day, day)), 17, "2026-11-%02dT10:00:00Z" % day, 1000 + day)
+            with sqlite3.connect(str(Path(home) / "state_5.sqlite")) as db:
+                db.execute("CREATE TABLE threads (id TEXT, rollout_path TEXT, updated_at INTEGER)")
+                db.execute("INSERT INTO threads VALUES ('a', ?, 5000)", (str(old),))
+            self.assertEqual(limits.codex(home, "codex", data=home)["week"]["percent"], 96.0)
+            # B4: a later written file with an older report does not replace the newer value.
+            report(Path(home) / "sessions/2026/11/20/rollout-late.jsonl", 15, "2026-11-26T09:00:00Z", 9000)
+            self.assertEqual(limits.codex(home, "codex", data=home)["week"]["percent"], 96.0)
+            # B5: an odd window length is skipped, the stored value stays.
+            report(Path(home) / "sessions/2026/11/21/rollout-odd.jsonl", 50, "2026-11-28T09:00:00Z", 9500, minutes=[])
+            self.assertEqual(limits.codex(home, "codex", data=home)["week"]["percent"], 96.0)
+        with tempfile.TemporaryDirectory() as home:
+            # B3: without a stored value, eight newer files without a report do not hide an older report.
+            folder = Path(home) / "sessions/2026/11/27"
+            report(folder / "rollout-good.jsonl", 80, "2026-11-27T08:00:00Z", 1000)
+            for n in range(10):
+                (folder / ("rollout-meta-%d.jsonl" % n)).write_text('{"type": "session_meta"}\n')
+                os.utime(folder / ("rollout-meta-%d.jsonl" % n), (2000 + n, 2000 + n))
+            self.assertEqual(limits.codex(home, "codex", data=home)["week"]["percent"], 80.0)
+
+    def test_status_line_survives_malformed_reports(self):
+        # B6: a list where a window should be costs neither the context nor the other window.
+        with tempfile.TemporaryDirectory() as folder:
+            target = Path(folder) / "context.json"
+            target.write_text("[]")
+            report = {"model": "odd", "context_window": {"current_usage": {"input_tokens": 50}, "context_window_size": 1000},
+                      "rate_limits": {"five_hour": [], "seven_day": {"used_percentage": 40}}}
+            # The plan limits would be stored in the app's data folder: not in a test.
+            with mock.patch.object(limits, "remember_claude") as remember:
+                context.claude(target, report)
+            remember.assert_called_once()
+            stored = json.loads(target.read_text())
+            self.assertEqual((stored["used"], stored["five"], stored["week"]), (50, None, 40))
 
     def test_broken_reports_are_skipped_and_values_checked(self):
         with tempfile.TemporaryDirectory() as data:
