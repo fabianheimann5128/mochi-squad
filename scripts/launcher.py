@@ -113,13 +113,17 @@ def validate_spec(spec):
     parent = spec.get("parentChat")
     spec["parentChat"] = parent if isinstance(parent, str) and CHAT_ID.fullmatch(parent) else None
     # Runtime paths are set by attach_runtime only; they are never taken from the file.
-    for key in ("post", "outbox", "contextFile", "mcpConfig", "toolUrl", "skills"):
+    for key in ("post", "outbox", "contextFile", "mcpConfig", "toolUrl", "skills", "skillNames", "skillsLeftOut"):
         spec.pop(key, None)
     try:
         spec["agentId"] = str(uuid.UUID(str(spec.get("agentId", "")))).upper()
     except ValueError:
         spec["agentId"] = ""
     return spec
+
+
+SKILLS_DESCRIBED = 150
+SKILLS_LISTED = 1000
 
 
 def attach_skills(spec, data=None, shared=None):
@@ -140,8 +144,10 @@ def attach_skills(spec, data=None, shared=None):
         file = root / entry["id"] / "SKILL.md"
         if file.is_file():
             skills.append({"name": _line(entry.get("name"), 80), "description": _line(entry.get("description"), 160), "file": str(file)})
-    # Linked skills can be many; each line is short, so every assigned skill fits into the briefing.
-    return dict(spec, skills=skills[:150], skillsFolder=str(root))
+    # Linked skills can be many. The first ones come with their description, the next ones by name only, and the
+    # briefing says plainly how many are left out beyond that, so no skill goes missing without a word.
+    return dict(spec, skills=skills[:SKILLS_DESCRIBED], skillNames=skills[SKILLS_DESCRIBED:SKILLS_LISTED],
+                skillsLeftOut=max(0, len(skills) - SKILLS_LISTED), skillsFolder=str(root))
 
 
 def privileged(agent):
@@ -272,7 +278,10 @@ def build_prompt(spec):
     if spec.get("skills"):
         parts.append(f"You have skills: instructions for particular kinds of work that {owner} gave you. Before you start a "
                      "task that fits one of them, read its file completely and follow it; files it mentions lie next to it.\n"
-                     + "\n".join(f"- {s['name']}: {s['description']} (`{s['file']}`)" for s in spec["skills"]))
+                     + "\n".join(f"- {s['name']}: {s['description']} (`{s['file']}`)" for s in spec["skills"])
+                     + ("\nMore skills, by name (read the file before you use one): "
+                        + "; ".join(f"{s['name']} (`{s['file']}`)" for s in spec["skillNames"]) if spec.get("skillNames") else "")
+                     + (f"\n{spec['skillsLeftOut']} further skills are not listed here." if spec.get("skillsLeftOut") else ""))
     if spec["unattended"]:
         parts.append(f"This is a scheduled routine; {owner} is not at the computer. Do not ask questions, work on your own "
                      "and save results as a file in the project.")

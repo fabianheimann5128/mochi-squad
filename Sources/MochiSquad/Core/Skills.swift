@@ -12,6 +12,8 @@ struct Skill: Codable, Identifiable, Equatable {
     var source: String?
     /// Fingerprint of that folder when it was last copied: a different one means the skill changed there.
     var stamp: String?
+    /// Changes with every copy into the library, so the agents' copy is renewed even when two sources look alike.
+    var version: String?
 
     /// "Claude Code", "Codex", or nil for a skill added by hand.
     var origin: String? {
@@ -36,8 +38,8 @@ struct Skill: Codable, Identifiable, Equatable {
     private let mirror: URL
     private let hiddenFile: URL
 
-    static let maxBytes = 50 * 1024 * 1024
-    static let maxFiles = 2000
+    nonisolated static let maxBytes = 50 * 1024 * 1024
+    nonisolated static let maxFiles = 2000
 
     enum Failure: LocalizedError {
         case noSkill, tooLarge, unreadable
@@ -45,7 +47,8 @@ struct Skill: Codable, Identifiable, Equatable {
             switch self {
             case .noSkill: return t("No skill found there. A skill is a folder (or .zip) with a SKILL.md file that starts with a name and a description.",
                                     "Dort wurde kein Skill gefunden. Ein Skill ist ein Ordner (oder .zip) mit einer Datei SKILL.md, die mit Name und Beschreibung beginnt.")
-            case .tooLarge: return t("This skill is larger than 50 MB or has too many files.", "Dieser Skill ist größer als 50 MB oder hat zu viele Dateien.")
+            case .tooLarge: return t("This skill is larger than 50 MB, has more than 2,000 files or folders nested too deeply.",
+                                     "Dieser Skill ist größer als 50 MB, hat mehr als 2.000 Dateien oder zu tief verschachtelte Ordner.")
             case .unreadable: return t("The skill could not be copied.", "Der Skill konnte nicht kopiert werden.")
             }
         }
@@ -122,19 +125,29 @@ struct Skill: Codable, Identifiable, Equatable {
         return skill
     }
 
-    /// Largest SKILL.md that is read; bigger ones are no skill.
+    /// How much of a SKILL.md is read to find its name and description. The rest of the file may be longer; it is
+    /// copied with the skill like any other file, within the skill's size limit.
     static let maxManifest = 256 * 1024
 
-    /// Name and description of the skill in `folder`, read with a size limit. A SKILL.md that is a link counts only
-    /// if it points to a file inside the skill's own folder.
+    /// Name and description of the skill in `folder`, read from the head of its SKILL.md only. A SKILL.md that is a
+    /// link counts only if it points to a regular file inside the skill's own folder.
     static func manifest(_ folder: URL) -> (name: String, description: String)? {
         let root = folder.resolvingSymlinksInPath()
         let file = root.appendingPathComponent("SKILL.md").resolvingSymlinksInPath()
-        guard file.path.hasPrefix(root.path + "/"), let data = AppPaths.readSmallFile(file, limit: maxManifest),
-              let text = String(data: data, encoding: .utf8) else { return nil }
-        return parse(text)
+        guard file.path.hasPrefix(root.path + "/"), let data = head(of: file, limit: maxManifest) else { return nil }
+        return parse(String(decoding: data, as: UTF8.self))
     }
 
+    /// The first `limit` bytes of a regular file, cut after the last complete line when the file is longer.
+    static func head(of file: URL, limit: Int) -> Data? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: file.path),
+              attributes[.type] as? FileAttributeType == .typeRegular,
+              let handle = try? FileHandle(forReadingFrom: file) else { return nil }
+        defer { try? handle.close() }
+        guard var data = try? handle.read(upToCount: limit) else { return nil }
+        if data.count == limit, let newline = data.lastIndex(of: 0x0A) { data = data.prefix(upTo: newline) }
+        return data
+    }
     /// Copies a skill folder into the library and puts it in the list in place of `previous`. A replaced skill keeps
     /// its id, so the path in the briefing of a running agent stays valid; the new content is swapped in at once.
     private func keep(_ folder: URL, head: (name: String, description: String), replacing previous: Skill?,
@@ -160,37 +173,68 @@ struct Skill: Codable, Identifiable, Equatable {
             throw (error as? Failure) ?? Failure.unreadable
         }
         let skill = Skill(id: id, name: head.name, description: head.description, agents: previous?.agents, source: source,
-                          stamp: stamp ?? Self.fingerprint(library.appendingPathComponent(id)))
+                          stamp: stamp ?? Self.fingerprint(library.appendingPathComponent(id)), version: UUID().uuidString)
         if let position = skills.firstIndex(where: { $0.id == previous?.id }) { skills[position] = skill } else { skills.append(skill) }
         return skill
     }
 
+    /// What a copy may still take: bytes and entries, the same limits as for the whole skill.
+    struct Budget {
+        var bytes = SkillStore.maxBytes
+        var entries = SkillStore.maxFiles
+    }
+
+    /// Deepest folder level that is copied; a deeper skill is refused as a whole instead of copied in part.
+    static let maxDepth = 32
+
     /// Copies a folder as plain files and folders. Links are followed only when they lead to something inside the
-    /// skill's own folder (`root`); everything else they point at is left out.
-    static func copyResolved(_ source: URL, to target: URL, root: URL, depth: Int = 0) throws {
+    /// skill's own folder (`root`); everything else they point at is left out, and so is a link back into a folder
+    /// that is being copied (a loop). Whatever links bring in counts against the same `budget`.
+    static func copyResolved(_ source: URL, to target: URL, root: URL) throws {
+        var budget = Budget()
+        try copyResolved(source, to: target, root: root, budget: &budget, path: [], depth: 0)
+    }
+
+    private static func copyResolved(_ source: URL, to target: URL, root: URL, budget: inout Budget,
+                                     path: Set<String>, depth: Int) throws {
         let fm = FileManager.default
-        guard depth < 24 else { return }
+        guard depth <= maxDepth else { throw Failure.tooLarge }
+        let here = source.resolvingSymlinksInPath().path
+        var path = path
+        path.insert(here)
         try fm.createDirectory(at: target, withIntermediateDirectories: true)
         for item in try fm.contentsOfDirectory(at: source, includingPropertiesForKeys: [.isSymbolicLinkKey]) {
             var real = item
             if (try? item.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true {
                 real = item.resolvingSymlinksInPath()
-                guard real.path.hasPrefix(root.path + "/") else { continue }
+                guard real.path.hasPrefix(root.path + "/") || real.path == root.path else { continue }
             }
-            let values = try? real.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
+            let values = try? real.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey, .fileSizeKey])
             let destination = target.appendingPathComponent(item.lastPathComponent)
             if values?.isDirectory == true {
-                try copyResolved(real, to: destination, root: root, depth: depth + 1)
+                if path.contains(real.resolvingSymlinksInPath().path) { continue }
+                budget.entries -= 1
+                guard budget.entries >= 0 else { throw Failure.tooLarge }
+                try copyResolved(real, to: destination, root: root, budget: &budget, path: path, depth: depth + 1)
             } else if values?.isRegularFile == true {
+                budget.entries -= 1
+                budget.bytes -= values?.fileSize ?? 0
+                guard budget.entries >= 0, budget.bytes >= 0 else { throw Failure.tooLarge }
                 try fm.copyItem(at: real, to: destination)
             }
         }
     }
 
-    /// Puts `fresh` in the place of `target` with renames only, so a reader finds either the old or the new folder.
+    /// Puts `fresh` in the place of `target`. Both folders are exchanged in one step where the file system allows it,
+    /// so a reader always finds a complete folder; otherwise two renames follow each other at once.
     static func swap(_ fresh: URL, into target: URL) throws {
         let fm = FileManager.default
         if fm.fileExists(atPath: target.path) {
+            if renamex_np(fresh.path, target.path, UInt32(RENAME_SWAP)) == 0 {
+                // `fresh` now holds the old folder.
+                try? fm.removeItem(at: fresh)
+                return
+            }
             let old = target.deletingLastPathComponent().appendingPathComponent(".old-" + UUID().uuidString)
             try fm.moveItem(at: target, to: old)
             do { try fm.moveItem(at: fresh, to: target) } catch { try? fm.moveItem(at: old, to: target); throw error }
@@ -206,31 +250,53 @@ struct Skill: Codable, Identifiable, Equatable {
     /// Links every skill the user already has in Claude Code or Codex, so agents of both kinds can use it, and
     /// keeps the links current: a skill changed there is copied again, one deleted there goes away here too.
     /// Skills the user took out stay out. Cheap when nothing changed: only file sizes and dates are compared.
+    ///
+    /// A name has one skill. The first source wins (Claude Code before Codex); if it cannot be copied, the next
+    /// source of that name is used, and what was linked before stays with its assignment until one succeeds. A
+    /// source folder that still exists but cannot be read right now (half saved, being reinstalled) keeps its skill.
     func sync(home: URL = FileManager.default.homeDirectoryForCurrentUser) {
         let fm = FileManager.default
-        var changed = false, seen = Set<String>(), names = Set<String>()
+        var changed = false, seen = Set<String>(), settled = Set<String>()
+        var order = [String](), candidates = [String: [(folder: URL, head: (name: String, description: String))]]()
         for path in Self.clientFolders {
             let root = home.appendingPathComponent(path, isDirectory: true)
             for folder in ((try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []).sorted(by: { $0.path < $1.path }) {
-                let source = folder.path
-                guard fm.fileExists(atPath: folder.appendingPathComponent("SKILL.md").path) else { continue }
+                var isFolder: ObjCBool = false
+                guard fm.fileExists(atPath: folder.path, isDirectory: &isFolder), isFolder.boolValue else { continue }
                 guard let head = Self.manifest(folder) else {
-                    // There but unreadable right now (for example half saved): keep what was linked, with its assignment.
-                    if skills.contains(where: { $0.source == source }) { seen.insert(source) }
+                    if let linked = skills.first(where: { $0.source == folder.path }) {
+                        seen.insert(folder.path)
+                        settled.insert(linked.name.lowercased())
+                    }
                     continue
                 }
-                // The first source of a name wins: Claude Code before Codex.
-                guard names.insert(head.name.lowercased()).inserted else { continue }
-                seen.insert(source)
-                guard !hidden.contains(source) else { continue }
-                guard let stamp = Self.fingerprint(folder, limit: Self.maxFiles) else { continue }
+                let name = head.name.lowercased()
+                if candidates[name] == nil { order.append(name) }
+                candidates[name, default: []].append((folder, head))
+            }
+        }
+        for name in order where !settled.contains(name) {
+            for (folder, head) in candidates[name] ?? [] {
+                let source = folder.path
+                if hidden.contains(source) { seen.insert(source); break }
+                let linked = skills.first { $0.source == source }
+                let copied = linked.map { fm.fileExists(atPath: library.appendingPathComponent($0.id + "/SKILL.md").path) } ?? false
+                guard let stamp = Self.fingerprint(folder, limit: Self.maxFiles) else {
+                    // Too many files to look at: what was linked from here stays, otherwise the next source is tried.
+                    if copied { seen.insert(source); break }
+                    continue
+                }
+                if let linked, linked.stamp == stamp, copied { seen.insert(source); break }
                 // Linked before; otherwise a skill of the same name (from another source, or taken over by hand
                 // earlier) is replaced and keeps its assignment.
-                let previous = skills.first { $0.source == source }
-                    ?? skills.first { $0.name.caseInsensitiveCompare(head.name) == .orderedSame }
-                if let previous, previous.source == source, previous.stamp == stamp,
-                   fm.fileExists(atPath: library.appendingPathComponent(previous.id + "/SKILL.md").path) { continue }
-                if (try? keep(folder, head: head, replacing: previous, source: source, stamp: stamp)) != nil { changed = true }
+                let previous = linked ?? skills.first { $0.name.caseInsensitiveCompare(head.name) == .orderedSame }
+                if (try? keep(folder, head: head, replacing: previous, source: source, stamp: stamp)) != nil {
+                    seen.insert(source)
+                    changed = true
+                    break
+                }
+                // Not copied: the working copy linked from here stays until the source can be copied again.
+                if copied { seen.insert(source); break }
             }
         }
         // Linked skills whose folder is gone, or that the user took out.
@@ -242,9 +308,9 @@ struct Skill: Codable, Identifiable, Equatable {
         if changed { save() } else { publish() }
     }
 
-    /// Hidden skills whose folder still exists and could come back.
+    /// Hidden skills whose folder still holds a valid skill and could come back.
     func restorable(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> Int {
-        hidden.filter { FileManager.default.fileExists(atPath: URL(fileURLWithPath: $0).appendingPathComponent("SKILL.md").path) }.count
+        hidden.filter { Self.manifest(URL(fileURLWithPath: $0)) != nil }.count
     }
 
     /// Takes a linked skill out; it does not come back by itself. A skill added by hand is simply removed.
@@ -267,18 +333,30 @@ struct Skill: Codable, Identifiable, Equatable {
     static func fingerprint(_ folder: URL) -> String { fingerprint(folder, limit: Int.max) ?? "" }
 
     /// nil when the folder holds more than `limit` items: the walk stops early instead of reading a huge tree.
+    /// Links inside the folder count with where they point and what they point at.
     static func fingerprint(_ folder: URL, limit: Int) -> String? {
-        let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey]
+        let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey, .isSymbolicLinkKey]
         var lines = [String]()
         var count = 0
-        let walker = FileManager.default.enumerator(at: folder.resolvingSymlinksInPath(), includingPropertiesForKeys: keys)
         let base = folder.resolvingSymlinksInPath().path
+        let walker = FileManager.default.enumerator(at: URL(fileURLWithPath: base), includingPropertiesForKeys: keys)
+        func describe(_ values: URLResourceValues?) -> String {
+            "\(values?.fileSize ?? 0)|\(values?.contentModificationDate?.timeIntervalSince1970 ?? 0)"
+        }
         while let item = walker?.nextObject() as? URL {
             count += 1
             if count > limit { return nil }
-            guard let values = try? item.resourceValues(forKeys: Set(keys)), values.isRegularFile == true else { continue }
+            guard let values = try? item.resourceValues(forKeys: Set(keys)) else { continue }
             let relative = String(item.path.dropFirst(base.count))
-            lines.append("\(relative)|\(values.fileSize ?? 0)|\(values.contentModificationDate?.timeIntervalSince1970 ?? 0)")
+            if values.isSymbolicLink == true {
+                let target = (try? FileManager.default.destinationOfSymbolicLink(atPath: item.path)) ?? ""
+                let real = item.resolvingSymlinksInPath()
+                let inside = real.path.hasPrefix(base + "/")
+                let pointed = inside ? try? real.resourceValues(forKeys: Set(keys)) : nil
+                lines.append("\(relative)|link|\(target)|\(describe(pointed))")
+            } else if values.isRegularFile == true {
+                lines.append("\(relative)|\(describe(values))")
+            }
         }
         let digest = SHA256.hash(data: Data(lines.sorted().joined(separator: "\n").utf8))
         return digest.map { String(format: "%02x", $0) }.joined()
@@ -314,7 +392,7 @@ struct Skill: Codable, Identifiable, Equatable {
         for skill in skills {
             let copy = mirror.appendingPathComponent(skill.id, isDirectory: true)
             let marker = copy.appendingPathComponent(".mochi-version")
-            let version = skill.stamp ?? skill.id
+            let version = skill.version ?? skill.stamp ?? skill.id
             if fm.fileExists(atPath: copy.appendingPathComponent("SKILL.md").path),
                (try? String(contentsOf: marker, encoding: .utf8)) == version { continue }
             let staging = mirror.appendingPathComponent(".incoming-" + UUID().uuidString, isDirectory: true)

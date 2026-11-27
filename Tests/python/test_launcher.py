@@ -534,6 +534,27 @@ class ArgumentTests(unittest.TestCase):
         self.assertEqual(clean["agentId"], "")
         self.assertNotIn("You have skills", launcher.build_prompt(launcher.attach_skills(clean, data=root / "none", shared=shared)))
 
+    def test_many_skills_are_named_or_counted_never_dropped_silently(self):
+        root = Path(self.dir.name).resolve()
+        data, shared = root / "data", root / "shared"
+        data.mkdir()
+        index = []
+        for n in range(1003):
+            sid = f"s{n}-abcd"
+            (shared / "skills" / sid).mkdir(parents=True)
+            (shared / "skills" / sid / "SKILL.md").write_text(f"---\nname: s{n}\n---\n")
+            index.append({"id": sid, "name": f"s{n}", "description": "d"})
+        (data / "skills.json").write_text(json.dumps(index))
+        project = root / "work"
+        project.mkdir()
+        spec = launcher.attach_skills(make_spec(str(project)), data=data, shared=shared)
+        self.assertEqual((len(spec["skills"]), len(spec["skillNames"]), spec["skillsLeftOut"]), (150, 850, 3))
+        prompt = launcher.build_prompt(spec)
+        self.assertIn("s150 (`", prompt)
+        self.assertIn("s999 (`", prompt)
+        self.assertNotIn("s1000 (`", prompt)
+        self.assertIn("3 further skills are not listed here.", prompt)
+
     def test_codex_effort_passes_any_plain_level(self):
         self.assertIn('model_reasoning_effort="max"', launcher.codex_args(make_spec(self.dir.name, effort="max")))
         self.assertFalse(any("reasoning_effort" in a for a in launcher.codex_args(make_spec(self.dir.name, effort="x; rm"))))

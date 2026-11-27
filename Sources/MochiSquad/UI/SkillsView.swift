@@ -219,7 +219,10 @@ struct SkillsView: View {
     private var footer: some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Text(t("Skills are instructions and sometimes scripts that your agents follow. Use only skills from sources you trust.",
-                   "Skills sind Anweisungen und manchmal Skripte, denen deine Agenten folgen. Nutze nur Skills aus Quellen, denen du vertraust."))
+                   "Skills sind Anweisungen und manchmal Skripte, denen deine Agenten folgen. Nutze nur Skills aus Quellen, denen du vertraust.")
+                 + (store.skills.count > 1000
+                    ? t(" An agent's briefing names its first 1,000 skills; assign fewer per agent so none is left out.",
+                        " Das Briefing eines Agenten nennt seine ersten 1.000 Skills; weise einem Agenten weniger zu, damit keiner fehlt.") : ""))
                 .font(.system(size: 11.5)).foregroundStyle(Desk.faint).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
             let restorable = store.restorable()
