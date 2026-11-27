@@ -354,7 +354,11 @@ import Testing
         #expect(!SpeechInput.startedOver(previous: "Wir treffen uns morgen um zehn Uhr", latest: "Wir treffen"))
         // A new stretch of speech, also when it is as long or longer (3.2).
         #expect(SpeechInput.startedOver(previous: "First I want to say that the team chat works well now", latest: "and then"))
-        #expect(SpeechInput.startedOver(previous: "Erste Frage", latest: "zweite Frage"))
+        // A11: without times a corrected first word is a revision; with equal positions (zero too) as well.
+        #expect(!SpeechInput.startedOver(previous: "Erste Frage", latest: "zweite Frage"))
+        #expect(SpeechInput.startedOver(previous: "Erste Frage", latest: "zweite Frage", previousStart: 0.1, latestStart: 3.0))
+        #expect(!SpeechInput.startedOver(previous: "Wie geht", latest: "Wir gehen", previousStart: 0, latestStart: 0))
+        #expect(!SpeechInput.startedOver(previous: "Wie geht", latest: "Wir gehen"))
         // With times from the recogniser: a later start is new speech, the same start a revision.
         #expect(SpeechInput.startedOver(previous: "Erste Frage", latest: "Erste Frage und mehr", previousStart: 0.2, latestStart: 4.1))
         #expect(!SpeechInput.startedOver(previous: "Wie geht", latest: "Wir gehen", previousStart: 0.2, latestStart: 0.2))
@@ -1119,6 +1123,19 @@ import Testing
         #expect(agent.withModel().model == "claude-haiku-5-5" && agent.withModel().effort == "")
         agent.model = "claude-opus-5-5"
         #expect(agent.withModel().effort == "high")
+    }
+
+    /// A10: back on the regular sign-in after a plan was removed, model and depth are checked against that plan.
+    @MainActor @Test func removingAPlanChecksTheAgentsModelAgain() throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let store = AgentStore(file: home.appendingPathComponent("agents.json"))
+        var agent = Agent(name: "Cody", job: "", project: "/tmp/p")
+        agent.provider = .codex; agent.account = "extra-plan"; agent.effort = "only-on-the-extra-plan"
+        store.save(agent)
+        store.releaseAccount("extra-plan")
+        let after = try #require(store.agent(agent.id))
+        #expect(after.account == nil && after.effort == "" && after == after.withModel())
     }
 
     @MainActor @Test func memoryEditsAndMovesSafely() throws {

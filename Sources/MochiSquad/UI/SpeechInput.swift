@@ -182,9 +182,12 @@ import SwiftUI
         }
         let before = words(previous), now = words(latest)
         guard !before.isEmpty, !now.isEmpty else { return false }
-        if let a = previousStart, let b = latestStart, a > 0 || b > 0 { return b - a > 0.5 }
-        guard before.count >= 2 else { return false }
-        return now.first != before.first && Array(now.prefix(2)) != Array(before.prefix(2))
+        // Both positions known, zero included: the same place is a revision, a clearly later one new speech.
+        if let a = previousStart, let b = latestStart { return b - a > 0.5 }
+        // Without times a corrected word at the start is no sign of new speech: only a longer stretch followed by
+        // a beginning that has nothing in common with it counts.
+        guard before.count >= 3 else { return false }
+        return now.first != before.first && Set(now.prefix(2)).isDisjoint(with: Set(before.prefix(2)))
     }
 
     nonisolated static func join(_ before: String, _ spoken: String) -> String {

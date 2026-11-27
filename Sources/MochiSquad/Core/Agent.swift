@@ -262,7 +262,11 @@ struct AgentTemplate: Identifiable {
 
     /// Agents of a removed subscription work with the regular sign-in again.
     func releaseAccount(_ id: String) {
-        for index in agents.indices where agents[index].account == id { agents[index].account = nil }
+        // Back on the regular sign-in: model and reasoning depth are checked against what that plan offers.
+        for index in agents.indices where agents[index].account == id {
+            agents[index].account = nil
+            agents[index] = agents[index].withModel()
+        }
         persist()
     }
 
