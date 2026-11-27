@@ -11,7 +11,7 @@ struct MemoryView: View {
     /// nil = about you, otherwise a project folder.
     @State private var selected: String?
     @State private var draft = ""
-    @State private var editing: Int?
+    @State private var editing: String?
     @State private var editText = ""
     @State private var notice: String?
 
@@ -56,14 +56,14 @@ struct MemoryView: View {
 
     private var topics: some View {
         VStack(alignment: .leading, spacing: 4) {
-            topic(id: nil, title: t("About you", "Über dich"), count: memory.profile?.entries.count ?? 0) {
+            topic(id: nil, title: t("About you", "Über dich"), count: memory.entries(for: nil).count) {
                 Image(systemName: "person.fill").font(.system(size: 12)).foregroundStyle(Desk.text)
             }
             Text(t("Projects", "Projekte")).font(.system(size: 11.5, weight: .medium)).foregroundStyle(Desk.faint).padding(.top, 10).padding(.leading, 10)
             ScrollView {
                 VStack(spacing: 4) {
                     ForEach(projectPaths, id: \.self) { path in
-                        topic(id: path, title: URL(fileURLWithPath: path).lastPathComponent, count: memory.note(for: path)?.entries.count ?? 0) {
+                        topic(id: path, title: URL(fileURLWithPath: path).lastPathComponent, count: memory.entries(for: path).count) {
                             Image(systemName: "folder.fill").font(.system(size: 11.5)).foregroundStyle(Desk.text)
                         }
                     }
@@ -95,6 +95,8 @@ struct MemoryView: View {
     // MARK: Entries
 
     private var note: MemoryNote? { selected.map { memory.note(for: $0) } ?? memory.profile }
+    /// Every entry about the chosen topic, from all its notes: the same as agents get.
+    private var shown: [MemoryEntry] { memory.entries(for: selected) }
 
     private var entries: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -111,7 +113,7 @@ struct MemoryView: View {
             }
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 6) {
-                    let list = Array((note?.entries ?? []).reversed())
+                    let list = Array(shown.reversed())
                     if list.isEmpty { empty }
                     ForEach(list) { entry in
                         row(entry).transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .opacity))
@@ -135,7 +137,8 @@ struct MemoryView: View {
     }
 
     private func row(_ entry: MemoryEntry) -> some View {
-        let agent = agents.agents.first { $0.name == entry.author }
+        let agent = entry.source?.agent.flatMap { id in agents.agents.first { $0.id.uuidString == id } }
+            ?? agents.agents.first { $0.name == entry.author }
         let fresh = entry.date == Date().formatted(.iso8601.year().month().day())
         return HStack(alignment: .center, spacing: 12) {
             if let agent { MochiAvatar(key: agent.avatar, size: 30, round: true) }
@@ -155,6 +158,15 @@ struct MemoryView: View {
                         // Written by hand outside the app: kept in the note, but never given to agents.
                         Label(t("not given to agents", "geht nicht an Agenten"), systemImage: "lock.fill")
                             .font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Desk.warning)
+                    }
+                    if entry.unconfirmed {
+                        // Agents with more rights, and agents of other projects for facts about you, get it once you confirm.
+                        Button { confirm(entry) } label: {
+                            Label(t("Confirm", "Bestätigen"), systemImage: "checkmark")
+                                .font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Desk.accent)
+                        }.buttonStyle(.plain)
+                            .help(t("Confirmed facts reach every agent, also those with more rights and, for facts about you, agents of other projects.",
+                                    "Bestätigte Einträge erreichen jeden Agenten, auch solche mit mehr Rechten und bei Einträgen über dich die Agenten anderer Projekte."))
                     }
                     if fresh {
                         Text(t("new", "neu")).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Desk.accent)
@@ -208,7 +220,8 @@ struct MemoryView: View {
         guard !text.isEmpty else { return }
         do {
             _ = try withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
-                try memory.remember(text, project: selected, author: settings.value.ownerName.isEmpty ? t("You", "Du") : settings.value.ownerName)
+                try memory.remember(text, project: selected, author: settings.value.ownerName.isEmpty ? t("You", "Du") : settings.value.ownerName,
+                                    source: MemorySource(user: true))
             }
             draft = ""; notice = nil
         } catch { notice = error.localizedDescription }
@@ -217,8 +230,11 @@ struct MemoryView: View {
     private func save(_ entry: MemoryEntry) { change(entry, to: editText); editing = nil }
 
     private func change(_ entry: MemoryEntry, to text: String?) {
-        guard let note else { return }
-        do { try withAnimation(.easeOut(duration: 0.25)) { try memory.edit(entry, in: note, to: text) }; notice = nil } catch { notice = error.localizedDescription }
+        do { try withAnimation(.easeOut(duration: 0.25)) { try memory.edit(entry, to: text) }; notice = nil } catch { notice = error.localizedDescription }
+    }
+
+    private func confirm(_ entry: MemoryEntry) {
+        do { try withAnimation(.easeOut(duration: 0.25)) { try memory.confirm(entry) }; notice = nil } catch { notice = error.localizedDescription }
     }
 
     /// A folder inside an Obsidian vault puts the memory right into it; picking the vault itself uses a subfolder.
@@ -233,11 +249,16 @@ struct MemoryView: View {
             url = url.appendingPathComponent("Mochi Squad", isDirectory: true)
             try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         }
-        // Only Mochi notes move; a note that exists in both places is merged. The choice is saved after the move.
-        let failed = memory.move(to: url)
+        // Only Mochi notes move; nothing is lost. The new folder is used only once everything is there.
+        let result = memory.move(to: url)
+        guard result.switched else {
+            notice = t("The memory could not be moved there, so it stays in its folder. Choose a folder you can write to.",
+                       "Das Gedächtnis ließ sich dorthin nicht verschieben und bleibt in seinem Ordner. Wähle einen Ordner, in den du schreiben kannst.")
+            return
+        }
         settings.value.memoryFolder = url.path
-        notice = failed.isEmpty ? nil : t("These notes stayed in the old folder: \(failed.joined(separator: ", ")).",
-                                          "Diese Notizen sind im alten Ordner geblieben: \(failed.joined(separator: ", ")).")
+        notice = result.stayed.isEmpty ? nil : t("These notes changed while moving and stayed in the old folder: \(result.stayed.joined(separator: ", ")).",
+                                                 "Diese Notizen wurden beim Umzug geändert und sind im alten Ordner geblieben: \(result.stayed.joined(separator: ", ")).")
     }
 
     private func openInObsidian(_ app: URL) {

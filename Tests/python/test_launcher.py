@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -155,7 +156,9 @@ class SettingsTests(unittest.TestCase):
 
     def test_read_only_agent_cannot_write_the_project(self):
         settings = self.settings()
-        self.assertEqual(settings["sandbox"]["filesystem"]["denyWrite"], [self.project])
+        self.assertEqual(settings["sandbox"]["filesystem"]["denyWrite"][0], self.project)
+        # M7: the locked paths (memory folder among them) can never be written, also inside a writable project.
+        self.assertEqual(settings["sandbox"]["filesystem"]["denyWrite"][1:], settings["sandbox"]["filesystem"]["denyRead"])
         self.assertNotIn("allowWrite", settings["sandbox"]["filesystem"])
         self.assertFalse(any(rule.startswith(("Edit", "Bash")) for rule in settings["permissions"]["allow"]))
 
@@ -565,3 +568,14 @@ class ArgumentTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MemoryLockTests(unittest.TestCase):
+    def test_memory_folder_inside_a_writable_project_stays_locked(self):
+        with tempfile.TemporaryDirectory() as home:
+            spec = make_spec(home, canEdit=True)
+            settings = launcher.build_claude_settings(spec, home=home)
+            folder = os.path.realpath(home) + "/Mochi Memory"
+            self.assertIn(folder, settings["sandbox"]["filesystem"]["denyWrite"])
+            self.assertIn(f"Edit(/{folder}/**)", settings["permissions"]["deny"])
+            self.assertIn(f"Edit(/{os.path.realpath(home)}/**)", settings["permissions"]["allow"])

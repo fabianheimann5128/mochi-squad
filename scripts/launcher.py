@@ -150,33 +150,26 @@ def attach_skills(spec, data=None, shared=None):
                 skillsLeftOut=max(0, len(skills) - SKILLS_LISTED), skillsFolder=str(root))
 
 
-def privileged(agent):
-    """Full access, computer use or the coordinator's cross-project tools: such an agent can do more than others."""
-    return bool(agent.get("fullAccess") or agent.get("computerUse") or agent.get("isCoordinator"))
+def reach(agent):
+    """What a session can do beyond the sandbox, as letters: f full access, c computer use, x coordinator."""
+    agent = agent or {}
+    return ("f" if agent.get("fullAccess") else "") + ("c" if agent.get("computerUse") else "") + ("x" if agent.get("isCoordinator") else "")
 
 
 def attach_memory(spec, settings=None, home=None, data=None):
     """Adds what Mochi Memory knows about the user and this project. The launcher reads the notes itself, so agents
     in the sandbox need no access to the memory folder.
 
-    An agent that can do more than others (full access, computer use, coordinator) gets only what the user wrote and
-    what agents with the same reach saved: a restricted agent must not steer a privileged one through memory.
+    Which entries an agent gets follows memory.may_get: what the user wrote or confirmed, and what agents saved
+    that could do at least as much as this one (the rights recorded with the entry when it was saved).
     """
-    trusted = None
-    if privileged(spec.get("agent") or {}):
-        owner = str(spec.get("owner") or "")
-        stored = common.read_json(Path(data or common.DATA) / "agents.json", []) or []
-        strong = {str(a.get("name", "")).strip().lower() for a in stored if isinstance(a, dict) and privileged(a)}
-        def trusted(author):
-            name = author.strip().lower()
-            return name in strong or bool(owner) and name == owner.strip().lower()
+    def render(text, author):
+        return _line(text, memory.MAX_ENTRY) + (f" (saved by {_line(author, 60)})" if author else "")
     try:
-        root, profile, project = memory.for_project(spec["project"], settings, home, trusted)
+        root, profile, project = memory.for_project(spec["project"], settings, home, reach(spec.get("agent")), render)
     except Exception:  # noqa: BLE001 – a broken note must never keep an agent from starting
         return spec
-    def lines(items):
-        return [_line(text, memory.MAX_ENTRY) + (f" (saved by {_line(author, 60)})" if author else "") for text, author in items]
-    return dict(spec, memoryFolder=str(root), memoryProfile=lines(profile), memoryProject=lines(project))
+    return dict(spec, memoryFolder=str(root), memoryProfile=profile, memoryProject=project)
 
 
 def memory_lock(settings=None, home=None):
@@ -300,7 +293,9 @@ def relocated_homes(home):
 def locked_paths(home):
     """Everything a restricted agent must not read, as absolute paths."""
     lock = memory_lock(None, home) if str(home) == str(common.HOME) else memory_lock({}, home)
-    return [str(Path(home) / p) for p in SECRET_PATHS] + relocated_homes(home) + ([lock] if lock else [])
+    # The memory folder may be reached through a link (a vault in iCloud Drive, for example): both paths are locked.
+    locks = sorted({lock, os.path.realpath(lock)}) if lock else []
+    return [str(Path(home) / p) for p in SECRET_PATHS] + relocated_homes(home) + locks
 
 
 def _status_line(spec):
@@ -330,10 +325,12 @@ def build_claude_settings(spec, home=None):
     if spec.get("skills"):
         allow.append(f"Read(/{spec['skillsFolder']}/**)")
     # Edit rules apply to every tool that changes files; Read rules also to search tools.
+    # The locked paths can be neither read nor changed, also where they lie inside the writable project (a memory
+    # folder chosen inside it, for example).
     deny = ([f"Edit(/{project}/{p}/**)" for p in CLIENT_FOLDERS] + [f"Edit(/{project}/{p})" for p in CLIENT_FILES]
-            + [rule for path in locked for rule in (f"Read(/{path})", f"Read(/{path}/**)")])
+            + [rule for path in locked for rule in (f"Read(/{path})", f"Read(/{path}/**)", f"Edit(/{path})", f"Edit(/{path}/**)")])
     filesystem = {"denyRead": locked,
-                  "denyWrite": [str(Path(project) / p) for p in CLIENT_FOLDERS + CLIENT_FILES] if agent["canEdit"] else [project]}
+                  "denyWrite": ([str(Path(project) / p) for p in CLIENT_FOLDERS + CLIENT_FILES] if agent["canEdit"] else [project]) + locked}
     if agent["canEdit"]:
         allow.append(f"Edit(/{project}/**)")
     if spec.get("post") and spec.get("outbox"):

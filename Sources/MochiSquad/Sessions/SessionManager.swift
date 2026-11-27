@@ -307,9 +307,13 @@ import Foundation
     func deliver(from origin: AgentSession, to name: String, text: String) -> String {
         if name == "@memory" || name == "@memory-me" {
             guard let memory else { return "Mochi Memory is not available right now." }
-            let author = agents.agent(origin.agentID)?.name ?? "Agent"
+            let saver = agents.agent(origin.agentID)
+            // The entry records who saved it by stable id and what that session could do, not just a name.
+            let reach = (origin.access == .full ? "f" : "") + (origin.computerUse ? "c" : "") + (saver?.isCoordinator == true ? "x" : "")
+            let source = MemorySource(agent: origin.agentID.uuidString, reach: reach, from: MemorySource.key(of: origin.project.path))
             do {
-                let note = try memory.remember(text, project: name == "@memory" ? origin.project.path : nil, author: author)
+                let note = try memory.remember(text, project: name == "@memory" ? origin.project.path : nil,
+                                               author: saver?.name ?? "Agent", source: source)
                 return "Saved in Mochi Memory (\(note.title))."
             } catch {
                 return "Not saved: " + (error.localizedDescription)
