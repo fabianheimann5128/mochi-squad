@@ -5,6 +5,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 import uuid
 from pathlib import Path
 
@@ -286,14 +287,41 @@ class CompactTests(unittest.TestCase):
         self.assertEqual(codex[codex.index("--sandbox") + 1], "read-only")
         self.assertIn("mcp_servers.srv.enabled=false", codex)
         self.assertEqual(codex[-1], "P")
+        # 9.2 / V4: Codex without shell, browser, plugins and hooks; Claude without hooks.
+        for feature in ("shell_tool", "unified_exec", "plugins", "hooks", "computer_use"):
+            self.assertIn(feature, codex[codex.index("--disable"):])
+        self.assertIn("notify=[]", codex)
+        self.assertIn('{"disableAllHooks": true}', claude)
+
+    def test_codex_without_a_server_list_does_not_run(self):
+        with tempfile.TemporaryDirectory() as folder:
+            journal = Path(folder) / "rollout-x.jsonl"
+            rows = [{"type": "event_msg", "payload": {"type": "user_message", "message": "goal " + "x " * 200}}]
+            journal.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+            with mock.patch.object(common, "find_client", return_value="/bin/echo"), \
+                    mock.patch.object(launcher, "codex_servers", return_value=None), \
+                    mock.patch.object(compact.subprocess, "run") as run:
+                result = compact.summarise("codex", "codex", str(journal))
+            self.assertIn("error", result)
+            run.assert_not_called()
 
     def test_short_or_missing_conversations_are_refused(self):
-        self.assertIn("error", compact.summarise("claude", "/does/not/exist"))
-        self.assertIn("error", compact.summarise("other", "/x"))
+        self.assertIn("error", compact.summarise("claude", "claude", "/does/not/exist"))
+        self.assertIn("error", compact.summarise("claude", "other", "/x"))
         with tempfile.TemporaryDirectory() as folder:
             journal = Path(folder) / "chat.jsonl"
             journal.write_text(json.dumps({"type": "user", "message": {"content": "hi"}}) + "\n")
-            self.assertIn("error", compact.summarise("claude", str(journal)))
+            self.assertIn("error", compact.summarise("claude", "claude", str(journal)))
+
+    def test_short_messages_all_fit_the_budget(self):
+        # 9.7: many short messages are not cut by a message count before the character budget.
+        with tempfile.TemporaryDirectory() as folder:
+            journal = Path(folder) / "chat.jsonl"
+            rows = [{"type": "user" if i % 2 == 0 else "assistant", "message": {"content": "m%d" % i}} for i in range(401)]
+            journal.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+            text = compact.conversation(journal, "claude")
+            self.assertTrue(text.startswith("User: m0"))
+            self.assertIn("m400", text)
 
     def test_conversation_keeps_the_newest_part(self):
         with tempfile.TemporaryDirectory() as folder:

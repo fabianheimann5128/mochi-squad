@@ -318,6 +318,11 @@ struct AgentTemplate: Identifiable {
         }
     }
 
+    /// The agent's conversations leave its chat and show under "More chats"; routine runs stay attached.
+    func archiveConversations(of id: UUID) {
+        update(id) { agent in agent.journals = agent.journals.filter { (agent.routineJournals ?? []).contains($0) } }
+    }
+
     /// Adds the history of a routine run to the agent's chat, once. The preview moves only forward in time.
     func attach(routineJournal journal: String, to id: UUID, lastLine: String?, finished: Date) {
         update(id) {

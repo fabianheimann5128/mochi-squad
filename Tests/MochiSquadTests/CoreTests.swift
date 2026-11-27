@@ -980,4 +980,15 @@ import Testing
         // 8.14: common ways of writing secrets are caught.
         #expect(MemoryStore.looksSecret("My password is fictional") && MemoryStore.looksSecret("-----BEGIN OPENSSH PRIVATE KEY-----"))
     }
+
+    @MainActor @Test func tidyingUpMovesOldChatsToMoreChats() throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let store = AgentStore(file: home.appendingPathComponent("agents.json"))
+        var agent = Agent(name: "Mira", job: "", project: home.path)
+        agent.journals = ["/a.jsonl", "/run.jsonl", "/b.jsonl"]; agent.routineJournals = ["/run.jsonl"]
+        store.save(agent)
+        store.archiveConversations(of: agent.id)
+        #expect(store.agent(agent.id)?.journals == ["/run.jsonl"])
+    }
 }

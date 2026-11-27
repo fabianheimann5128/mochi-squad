@@ -188,32 +188,59 @@ import Foundation
     }
 
     /// "Tidy up": the agent's long conversation is summarised and the agent goes on in a fresh session that starts
-    /// with the summary. The old conversation stays under "More chats". Returns an error text, or nil on success.
+    /// with the summary. The old conversation moves to "More chats". Returns an error text, or nil on success.
+    ///
+    /// Everything the summary depends on is noted at the start (session, history and its size, provider and plan)
+    /// and checked again before the switch: if anything moved on meanwhile, nothing is replaced.
     func compact(_ agent: Agent) async -> String? {
         guard !compacting.contains(agent.id) else { return nil }
-        if let live = latestSession(for: agent.id), live.isRunning, live.working {
+        let before = latestSession(for: agent.id)
+        if let before, before.isRunning, before.working {
             return t("\(agent.name) is working right now. Tidy up once the answer is there.", "\(agent.name) arbeitet gerade. Räum auf, sobald die Antwort da ist.")
         }
         guard let journal = latestConversation(of: agent) else {
             return t("There is no conversation to tidy up yet.", "Es gibt noch keinen Verlauf zum Aufräumen.")
         }
+        let size = Self.fileSize(journal)
+        let liveID = before?.isRunning == true ? before?.id : nil
+        let provider = agent.provider, account = agent.account, model = agent.model
+        // The history is read in the format of the program that wrote it.
+        let format: Provider = URL(fileURLWithPath: journal).lastPathComponent.hasPrefix("rollout-") ? .codex : .claude
         compacting.insert(agent.id)
         defer { compacting.remove(agent.id) }
         struct Result: Decodable { let summary: String?; let error: String? }
-        let args = [agent.provider.rawValue, journal, agent.provider == .codex ? (agent.account ?? "") : "", agent.provider == .codex ? agent.model : ""]
+        let args = [format.rawValue, provider.rawValue, journal, provider == .codex ? (account ?? "") : "", provider == .codex ? model : ""]
         guard let result = try? await PythonTool.run("compact", args, as: Result.self) else {
             return t("The summary could not be made.", "Die Zusammenfassung ließ sich nicht erstellen.")
         }
         guard let summary = result.summary, !summary.isEmpty else { return result.error ?? t("The summary is empty.", "Die Zusammenfassung ist leer.") }
-        // The agent may have been changed or removed while the summary was being written.
+        // Checked again after the wait.
         guard let current = agents.agent(agent.id) else { return nil }
-        if let live = latestSession(for: agent.id), live.isRunning { close(live) }
+        guard current.provider == provider, current.account == account else {
+            return t("\(agent.name)'s program or plan changed meanwhile; nothing was handed over. Tidy up again.",
+                     "Programm oder Abo von \(agent.name) wurden zwischendurch geändert; nichts wurde übergeben. Räum noch einmal auf.")
+        }
+        let now = latestSession(for: agent.id)
+        let moved = latestConversation(of: current) != journal || Self.fileSize(journal) != size
+            || (now?.isRunning == true && now?.id != liveID) || now?.working == true
+        guard !moved else {
+            return t("The chat went on while the summary was being written; nothing was replaced. Tidy up again when it is quiet.",
+                     "Der Chat ging weiter, während die Zusammenfassung entstand; nichts wurde ersetzt. Räum noch einmal auf, wenn Ruhe ist.")
+        }
+        // What can be checked before the old session ends is checked first.
+        guard FileManager.default.fileExists(atPath: current.project) else { return SessionError.projectMissing.localizedDescription }
+        if let now, now.isRunning { close(now) }
+        agents.archiveConversations(of: current.id)
         do {
             _ = try launch(current, task: Self.compactTask(summary))
             return nil
         } catch {
-            return error.localizedDescription
+            return error.localizedDescription + " " + t("The old chat is under “More chats”.", "Der alte Chat liegt unter „Weitere Chats“.")
         }
+    }
+
+    nonisolated static func fileSize(_ path: String) -> Int {
+        ((try? FileManager.default.attributesOfItem(atPath: path)[.size]) as? NSNumber)?.intValue ?? -1
     }
 
     nonisolated static let compactMark = "[Summary of our earlier conversation]"

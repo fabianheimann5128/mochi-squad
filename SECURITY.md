@@ -71,7 +71,7 @@ A skill is a folder with instructions (`SKILL.md`) and sometimes scripts. Whatev
 
 ## Tidying up a conversation
 
-"Summarise and start fresh" sends the text of the agent's latest conversation (at most the last 60,000 characters) to the same provider in a one-off run without any tools, tool servers or saved session, in an empty temporary folder, and starts a new session whose first message is that summary. The summary is as reliable as the model that wrote it; the full conversation stays where it was and can be opened under "More chats".
+"Summarise and start fresh" sends the text of the agent's latest conversation (the newest messages up to 60,000 characters) to a one-off run of the agent's own client, in an empty temporary folder, without saving a session: Claude Code with no tools, no tool servers and no hooks; Codex in a read-only sandbox with its shell, browser, plugins, hooks and your tool servers switched off (if the list of your tool servers cannot be read, nothing runs). The app notes the session, the conversation and the agent's program and plan when you click, and replaces nothing if any of them moved on while the summary was written. The new session starts with the summary; the old conversation stays readable under "More chats". The summary is as reliable as the model that wrote it.
 
 ## Mochi Memory
 
