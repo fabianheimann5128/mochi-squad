@@ -2,12 +2,14 @@
 """Runs a scheduled routine. launchd starts this script even when the app is closed.
 
   routine.py <routine-id> [--now]    --now: test run, even if the routine is paused
+  routine.py <routine-id> --baseline   notes a watched folder's state before macOS starts watching it
 
 Reads the routine from routines.json, starts the client without confirmations in the project folder (with the same
 rules as a regular session) and always appends the result to routine-runs.jsonl, also on errors.
 """
 import datetime
 import fcntl
+import hashlib
 import json
 import os
 import subprocess
@@ -51,8 +53,10 @@ def remember_output(routine_id, output, data=None):
     os.replace(temp, target)
 
 
-def previous_output(routine_id, path=None, data=None):
-    """What the last finished run of this routine reported, so the next one can tell what is new."""
+def previous_output(routine_id, path=None, data=None, chunk=512 * 1024, limit=64 * 1024 * 1024):
+    """What the last finished run of this routine reported, so the next one can tell what is new. Older versions
+    kept it only in the shared log: the first time, the log is read backwards until this routine's last result turns
+    up, and that result is kept in the routine's own file from then on."""
     try:
         kept = last_file(routine_id, data).read_text(encoding="utf-8").strip()
         if kept:
@@ -62,18 +66,38 @@ def previous_output(routine_id, path=None, data=None):
     path = Path(path or common.DATA / "routine-runs.jsonl")
     try:
         with open(path, "rb") as log:
-            log.seek(max(0, os.fstat(log.fileno()).st_size - 512 * 1024))
-            lines = log.read().decode("utf-8", "replace").splitlines()
+            end = os.fstat(log.fileno()).st_size
+            rest = b""
+            while end > 0 and os.fstat(log.fileno()).st_size - end < limit:
+                start = max(0, end - chunk)
+                log.seek(start)
+                block = log.read(end - start) + rest
+                lines = block.split(b"\n")
+                # The first piece may be the end of a line that starts further back.
+                rest = lines.pop(0) if start > 0 else b""
+                for line in reversed(lines):
+                    found = _result(line, routine_id)
+                    if found:
+                        try:
+                            remember_output(routine_id, found, data)
+                        except OSError:
+                            pass
+                        return found
+                end = start
+            found = _result(rest, routine_id)
+            return found or ""
     except OSError:
         return ""
-    for line in reversed(lines):
-        try:
-            record = json.loads(line)
-        except ValueError:
-            continue
-        if (isinstance(record, dict) and record.get("routine") == routine_id and record.get("code") == 0
-                and record.get("output") and not record.get("silent")):
-            return str(record["output"]).strip()[-1500:]
+
+
+def _result(line, routine_id):
+    try:
+        record = json.loads(line.decode("utf-8", "replace"))
+    except ValueError:
+        return ""
+    if (isinstance(record, dict) and record.get("routine") == routine_id and record.get("code") == 0
+            and record.get("output") and not record.get("silent")):
+        return str(record["output"]).strip()[-1500:]
     return ""
 
 
@@ -106,40 +130,71 @@ def silent(output):
     return bool(lines) and lines[-1].strip().strip("`*_\"'. ") == NOTHING_NEW
 
 
-def folder_state(folder, limit=5000):
-    """Names, sizes and dates of what is in a watched folder, as one string; None if it cannot be read."""
-    entries = []
+def folder_state(folder, limit=100_000):
+    """A fingerprint of what is in a watched folder: every visible file and subfolder with its size and exact
+    modification time, so also an empty new folder or a rewrite of equal length within a second counts. None if the
+    folder cannot be read. Beyond `limit` entries the walk stops and the state says it is incomplete."""
+    digest, count = hashlib.sha256(), 0
     try:
         for current, dirs, files in os.walk(folder):
             dirs[:] = sorted(d for d in dirs if not d.startswith("."))
-            for name in sorted(files):
-                if name.startswith("."):
-                    continue
+            names = [(name, True) for name in dirs] + [(name, False) for name in sorted(files) if not name.startswith(".")]
+            for name, is_dir in names:
+                full = os.path.join(current, name)
                 try:
-                    info = os.lstat(os.path.join(current, name))
+                    info = os.lstat(full)
                 except OSError:
                     continue
-                entries.append(f"{os.path.relpath(os.path.join(current, name), folder)}|{info.st_size}|{int(info.st_mtime)}")
-                if len(entries) > limit:
-                    return "\n".join(entries)
+                kind = "d" if is_dir else "f"
+                digest.update(f"{kind}|{os.path.relpath(full, folder)}|{0 if is_dir else info.st_size}|{info.st_mtime_ns}\n"
+                              .encode("utf-8", "surrogateescape"))
+                count += 1
+                if count >= limit:
+                    return "incomplete:" + digest.hexdigest()
     except OSError:
         return None
-    return "\n".join(entries)
+    return digest.hexdigest()
+
+
+def folder_marker(routine_id, data=None):
+    return last_file(routine_id, data, ".folder")
+
+
+def noted_state(routine_id, folder, data=None):
+    """The state noted for this routine's folder, or None if none was noted for exactly this folder."""
+    try:
+        noted = json.loads(folder_marker(routine_id, data).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if isinstance(noted, dict) and noted.get("folder") == str(folder) and isinstance(noted.get("state"), str):
+        return noted["state"]
+    return None
+
+
+def note_state(routine_id, folder, state, data=None):
+    marker = folder_marker(routine_id, data)
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    temp = marker.with_name("." + marker.name + "." + str(os.getpid()))
+    temp.write_text(json.dumps({"folder": str(folder), "state": state}), encoding="utf-8")
+    os.replace(temp, marker)
+
+
+def baseline(routine_id, folder, data=None):
+    """Notes the folder's state when a watch is set up or moved to another folder, before macOS starts watching."""
+    if noted_state(routine_id, folder, data) is None:
+        state = folder_state(folder)
+        if state is not None:
+            note_state(routine_id, folder, state, data)
 
 
 def folder_changed(routine_id, folder, data=None):
-    """True if the watched folder changed since the last look. The first look only notes the state: macOS may start a
-    newly set up watch once by itself, and that is no change."""
+    """True if the watched folder changed since the last look, and notes the new state. Without a noted state for
+    exactly this folder the first look only notes it: macOS may start a newly set up watch once by itself."""
     state = folder_state(folder)
     if state is None:
         return False
-    marker = last_file(routine_id, data, ".folder")
-    try:
-        before = marker.read_text(encoding="utf-8")
-    except OSError:
-        before = None
-    marker.parent.mkdir(parents=True, exist_ok=True)
-    marker.write_text(state, encoding="utf-8")
+    before = noted_state(routine_id, folder, data)
+    note_state(routine_id, folder, state, data)
     return before is not None and before != state
 
 
@@ -219,16 +274,36 @@ def main(argv):
     if "--from-link" in argv[1:]:
         source = "link"
     routine = find_routine(routine_id)
+    watched = routine and routine.get("trigger") == "folder" and common.ACCOUNT_ID.fullmatch(routine_id) \
+        and Path(str(routine.get("folder") or "")).is_dir()
+    if "--baseline" in argv[1:]:
+        if watched:
+            baseline(routine_id, routine["folder"])
+        return
     if not routine or (routine.get("active") is not True and not manual):
         return
-    # A folder watch that fires without a real change (for example right after it was set up) does nothing.
-    if routine.get("trigger") == "folder" and not manual and common.ACCOUNT_ID.fullmatch(routine_id) \
-            and Path(str(routine.get("folder") or "")).is_dir() and not folder_changed(routine_id, routine["folder"]):
-        return
-    settings = common.read_json(common.DATA / "settings.json", {}) or {}
-    record = {"routine": routine_id, "project": routine.get("project"), "agent": (routine.get("agent") or {}).get("id"),
-              "name": (routine.get("agent") or {}).get("name"), "start": now(), "journal": None}
     lock = single_run(routine_id) if common.ACCOUNT_ID.fullmatch(routine_id) else None
+    try:
+        if watched and not manual:
+            # The folder is looked at under the lock: a change while another run works is not used up here; that run
+            # looks again when it is done. A watch that fires without a real change does nothing.
+            if lock is None or not folder_changed(routine_id, routine["folder"]):
+                return
+        run(routine_id, routine, lock, manual, given, source)
+        # What changed in the folder while this run worked gets one more run.
+        if watched and not manual and lock is not None and folder_changed(routine_id, routine["folder"]):
+            run(routine_id, find_routine(routine_id) or routine, lock, False, "", source)
+    finally:
+        if lock is not None:
+            lock.close()
+
+
+def run(routine_id, routine, lock, manual, given, source):
+    """One run, always recorded in the log with its own id."""
+    settings = common.read_json(common.DATA / "settings.json", {}) or {}
+    record = {"run": str(uuid.uuid4()), "routine": routine_id, "project": routine.get("project"),
+              "agent": (routine.get("agent") or {}).get("id"), "name": (routine.get("agent") or {}).get("name"),
+              "start": now(), "journal": None, "manual": manual}
     try:
         if lock is None:
             record.update(code=75, output=t("Skipped: an earlier run of this routine is still working.",
@@ -258,9 +333,6 @@ def main(argv):
         record.update(code=1, output=t("Start failed: ", "Start fehlgeschlagen: ") + str(error))
     except Exception as error:  # noqa: BLE001 – every run shall end in the log, even one that failed unexpectedly
         record.update(code=1, output=t("Unexpected error: ", "Unerwarteter Fehler: ") + str(error))
-    finally:
-        if lock is not None:
-            lock.close()
     record["end"] = now()
     append_record(record)
 

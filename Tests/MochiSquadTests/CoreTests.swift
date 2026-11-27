@@ -914,6 +914,43 @@ import Testing
         #expect(SessionManager.awakeLevel(open: 0, working: false, always: true) == .wholeMac)
     }
 
+    /// B9–B11: runs that finished while the app was closed reach the user once, the right ones.
+    @MainActor @Test func missedRoutineRunsAreDeliveredOnce() throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        for key in ["routineRunsSeen", "routineRunsDelivered"] { UserDefaults.standard.removeObject(forKey: key) }
+        defer { for key in ["routineRunsSeen", "routineRunsDelivered"] { UserDefaults.standard.removeObject(forKey: key) } }
+        let runs = home.appendingPathComponent("runs.jsonl")
+        let stamp = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-600))
+        func line(_ run: String, code: Int = 0, silent: Bool = false, manual: Bool = false) -> String {
+            "{\"run\":\"\(run)\",\"routine\":\"r\(run)\",\"start\":\"\(stamp)\",\"end\":\"\(stamp)\",\"code\":\(code),\"output\":\"out \(run)\""
+                + (silent ? ",\"silent\":true" : "") + (manual ? ",\"manual\":true" : "") + "}\n"
+        }
+        // B9: the very first run, with nothing seen before, is delivered and not marked seen at launch.
+        try line("a").write(to: runs, atomically: true, encoding: .utf8)
+        var got = [String]()
+        var store = RoutineStore(file: home.appendingPathComponent("r.json"), runFile: runs)
+        store.onFinished = { got.append($0.run ?? "") }
+        store.deliverMissed()
+        #expect(got == ["a"])
+        // B10 / B11: another run of the same second is delivered; quiet and skipped runs do not push it out.
+        let more = line("b") + (1...6).map { line("q\($0)", silent: true) }.joined() + line("skip", code: 75) + line("asked", code: 75, manual: true)
+        try (line("a") + more).write(to: runs, atomically: true, encoding: .utf8)
+        got = []
+        store = RoutineStore(file: home.appendingPathComponent("r.json"), runFile: runs)
+        store.onFinished = { got.append($0.run ?? "") }
+        store.deliverMissed()
+        #expect(got == ["b", "asked"])
+        // Nothing twice.
+        got = []
+        store = RoutineStore(file: home.appendingPathComponent("r.json"), runFile: runs)
+        store.onFinished = { got.append($0.run ?? "") }
+        store.deliverMissed()
+        #expect(got.isEmpty)
+        // B13: a keyword holds no whitespace of any kind, as messages are split at any.
+        #expect(Routine.normalized(keyword: "one\ttwo") == nil && Routine.normalized(keyword: "#Report ") == "#report")
+    }
+
     @Test func routineTriggersReadWell() {
         var routine = Routine(agent: Agent(name: "Mira", job: "", project: "/tmp/p"))
         routine.hour = 8; routine.minute = 5

@@ -593,6 +593,55 @@ class QuietRoutineTests(unittest.TestCase):
             self.assertTrue(routine.folder_changed("w1", watched, data))
             self.assertFalse(routine.folder_changed("w1", watched, data))
 
+    def test_folder_state_sees_every_real_change(self):
+        # B17: an empty new folder, a rewrite of equal length, and entries far down the list all count.
+        with tempfile.TemporaryDirectory() as watched:
+            before = routine.folder_state(watched)
+            (Path(watched) / "empty").mkdir()
+            self.assertNotEqual(routine.folder_state(watched), before)
+            file = Path(watched) / "a.txt"
+            file.write_text("one")
+            os.utime(file, ns=(1_000_000_000_100, 1_000_000_000_100))
+            first = routine.folder_state(watched)
+            file.write_text("two")
+            os.utime(file, ns=(1_000_000_000_200, 1_000_000_000_200))
+            self.assertNotEqual(routine.folder_state(watched), first)
+            for n in range(30):
+                (Path(watched) / ("f%02d" % n)).write_text("x")
+            self.assertTrue(routine.folder_state(watched, limit=10).startswith("incomplete:"))
+
+    def test_folder_watch_is_bound_to_its_folder_and_noted_ahead(self):
+        # B15: the state is noted when the watch is set up, and a new folder starts with a fresh baseline.
+        with tempfile.TemporaryDirectory() as data, tempfile.TemporaryDirectory() as one, tempfile.TemporaryDirectory() as two:
+            routine.baseline("w1", one, data)
+            (Path(one) / "early.txt").write_text("x")
+            self.assertTrue(routine.folder_changed("w1", one, data))
+            (Path(two) / "other.txt").write_text("x")
+            self.assertFalse(routine.folder_changed("w1", two, data))
+
+    def test_a_change_during_a_run_is_not_used_up(self):
+        # B16: a folder change while another run holds the lock waits for that run; one during a run gets a follow-up.
+        with tempfile.TemporaryDirectory() as data, tempfile.TemporaryDirectory() as watched:
+            rid = str(uuid.uuid4())[:8]
+            Path(data, "routines.json").write_text(json.dumps([{"id": rid, "active": True, "trigger": "folder", "folder": watched,
+                                                                "provider": "claude", "project": watched, "task": "t", "agent": {}}]))
+            runs = []
+            def fake_run(routine_id, item, lock, manual, given, source):
+                runs.append(routine_id)
+                if len(runs) == 1:
+                    (Path(watched) / "written-during-run.txt").write_text("x")
+            with mock.patch.object(common, "DATA", Path(data)), mock.patch.object(routine, "run", fake_run):
+                routine.baseline(rid, watched, data)
+                (Path(watched) / "new.txt").write_text("x")
+                busy = routine.single_run(rid)
+                routine.main([rid])
+                self.assertEqual(runs, [])
+                busy.close()
+                routine.main([rid])
+                self.assertEqual(len(runs), 2)
+                routine.main([rid])
+                self.assertEqual(len(runs), 2)
+
     def test_previous_output_skips_failures_silence_and_other_routines(self):
         with tempfile.TemporaryDirectory() as folder:
             log = Path(folder) / "runs.jsonl"
@@ -601,7 +650,19 @@ class QuietRoutineTests(unittest.TestCase):
             log.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
             self.assertEqual(routine.previous_output("a1", log, folder), "first")
             self.assertEqual(routine.previous_output("zz", log, folder), "")
-            self.assertEqual(routine.previous_output("a1", Path(folder) / "missing", folder), "")
+            # B12: found once in the shared log, the result is kept in the routine's own file from then on.
+            self.assertEqual(routine.last_file("a1", folder).read_text(), "first")
+            self.assertEqual(routine.previous_output("a1", Path(folder) / "missing", folder), "first")
+            with tempfile.TemporaryDirectory() as empty:
+                self.assertEqual(routine.previous_output("a1", Path(folder) / "missing", empty), "")
+
+    def test_previous_output_is_found_far_back_in_the_log(self):
+        with tempfile.TemporaryDirectory() as folder:
+            log = Path(folder) / "runs.jsonl"
+            rows = [{"routine": "a1", "code": 0, "output": "old result"}]
+            rows += [{"routine": "b2", "code": 0, "output": "x" * 6000} for _ in range(90)]
+            log.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+            self.assertEqual(routine.previous_output("a1", log, folder, chunk=4096), "old result")
 
 
 class RoutineTests(unittest.TestCase):

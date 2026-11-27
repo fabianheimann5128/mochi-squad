@@ -89,12 +89,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         state.limits.start()
         // Routine results come to the user: as a Mac notification and on the phone. Quiet routines only when there is news.
         state.routines.onFinished = { [weak messengers = state.messengers, weak settings = state.settings] run in
-            guard run.silent != true, run.code != 75 else { return }
+            guard run.deliverable else { return }
             // The phone hears about the messenger's own project, as with its team chat; the Mac about every project.
             let toPhone = run.project != nil && run.project == settings?.messengerProject?.path
             let who = run.name ?? t("Routine", "Routine")
+            // A start from the app that the helper skipped (another run was still working) is reported as such.
             let body = run.code == 0 ? Notifier.summary(of: run.output ?? "")
-                                     : t("The routine failed: ", "Die Routine ist fehlgeschlagen: ") + Notifier.summary(of: run.output ?? "", limit: 160)
+                     : run.code == 75 ? Notifier.summary(of: run.output ?? "", limit: 160)
+                     : t("The routine failed: ", "Die Routine ist fehlgeschlagen: ") + Notifier.summary(of: run.output ?? "", limit: 160)
             Notifier.post(title: who, body: body.isEmpty ? t("Done.", "Fertig.") : body)
             if toPhone, let project = run.project { messengers?.announce(who + ": " + (body.isEmpty ? t("Done.", "Fertig.") : body), project: project) }
         }

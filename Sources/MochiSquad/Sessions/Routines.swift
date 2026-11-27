@@ -56,7 +56,9 @@ struct Routine: Codable, Identifiable, Equatable {
 
     /// "#Report " → "#report"; nil when nothing usable is left. One word, so it cannot swallow normal sentences.
     static func normalized(keyword: String?) -> String? {
-        guard let raw = keyword?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !raw.isEmpty, !raw.contains(" ") else { return nil }
+        // The same rule as when a message comes in (`match`): any whitespace ends the keyword, so it may hold none.
+        guard let raw = keyword?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !raw.isEmpty,
+              !raw.contains(where: { $0.isWhitespace || $0.isNewline }) else { return nil }
         let word = raw.hasPrefix("#") ? raw : "#" + raw
         return word.count > 1 && word.count <= 32 ? word : nil
     }
@@ -114,7 +116,13 @@ struct RoutineRun: Decodable, Identifiable {
     let journal: String?
     /// A quiet routine found nothing new.
     let silent: Bool?
-    var id: String { routine + start }
+    /// The run's own id (older logs have none).
+    let run: String?
+    /// Started from the app (a test run, a keyword or a start link) rather than by macOS.
+    let manual: Bool?
+    var id: String { run ?? routine + "|" + start + "|" + (end ?? "") }
+    /// Worth telling the user about: not a quiet "nothing new" and not a run skipped by macOS's own schedule.
+    var deliverable: Bool { silent != true && (code != 75 || manual == true) }
 }
 
 @MainActor final class RoutineStore: ObservableObject {
@@ -195,7 +203,8 @@ struct RoutineRun: Decodable, Identifiable {
 
     /// Starts the routine right away, unless a run of it is still going (the helper would only skip it).
     func start(_ routine: Routine, input: String? = nil, fromLink: Bool = false) -> Start {
-        if Self.isRunning(routine.id) { return .alreadyRunning }
+        // A start the app made itself counts as running at once, before the helper has taken its lock.
+        if testing.contains(routine.id) || Self.isRunning(routine.id) { return .alreadyRunning }
         guard let script = AppPaths.script("routine") else { return .failed }
         let process = Process()
         process.executableURL = AppPaths.python
@@ -258,7 +267,8 @@ struct RoutineRun: Decodable, Identifiable {
         return zip(x, y).reduce(0) { $0 | ($1.0 ^ $1.1) } == 0
     }
 
-    /// Take over new runs from the position read last.
+    /// Take over new runs from the position read last. Runs read while the app is open are delivered at once and
+    /// remembered as delivered; the ones read at launch wait for `deliverMissed`.
     func readRuns() {
         guard let handle = try? FileHandle(forReadingFrom: runFile) else { return }
         defer { try? handle.close() }
@@ -271,21 +281,37 @@ struct RoutineRun: Decodable, Identifiable {
         runOffset += complete.count
         let fresh = complete.split(separator: 10).compactMap { try? JSONDecoder().decode(RoutineRun.self, from: Data($0)) }
         runs = Array((runs + fresh).suffix(500))
-        if runsLoaded { fresh.forEach { onFinished?($0) } }
-        if let last = runs.last?.end ?? runs.last?.start, last > (UserDefaults.standard.string(forKey: Self.seenKey) ?? "") {
-            if runsLoaded || UserDefaults.standard.string(forKey: Self.seenKey) == nil { UserDefaults.standard.set(last, forKey: Self.seenKey) }
-        }
+        guard runsLoaded else { return }
+        fresh.forEach { onFinished?($0) }
+        markDelivered(fresh)
     }
 
     private static let seenKey = "routineRunsSeen"
+    private static let deliveredKey = "routineRunsDelivered"
 
-    /// Runs that finished while the app was closed, at most the last five of the past day: they are delivered once,
-    /// right after launch, like runs that finish while the app is open.
+    /// What was delivered: the end time of the newest run handled, and the ids of the last runs handled, so that two
+    /// runs ending in the same second are told apart.
+    private func markDelivered(_ handled: [RoutineRun]) {
+        guard !handled.isEmpty else { return }
+        let defaults = UserDefaults.standard
+        let ids = (defaults.stringArray(forKey: Self.deliveredKey) ?? []) + handled.map(\.id)
+        defaults.set(Array(ids.suffix(300)), forKey: Self.deliveredKey)
+        let newest = handled.map { $0.end ?? $0.start }.max() ?? ""
+        if newest > (defaults.string(forKey: Self.seenKey) ?? "") { defaults.set(newest, forKey: Self.seenKey) }
+    }
+
+    /// Runs that finished while the app was closed and were not delivered yet: the last five worth telling from the
+    /// past day, once, right after launch, like runs that finish while the app is open.
     func deliverMissed(now: Date = Date()) {
-        let seen = UserDefaults.standard.string(forKey: Self.seenKey) ?? ""
-        let missed = runs.filter { ($0.end ?? $0.start) > seen && (Timestamp.date($0.end ?? $0.start).map { now.timeIntervalSince($0) < 86_400 } ?? false) }
-        missed.suffix(5).forEach { onFinished?($0) }
-        if let last = runs.last?.end ?? runs.last?.start { UserDefaults.standard.set(last, forKey: Self.seenKey) }
+        let defaults = UserDefaults.standard
+        let seen = defaults.string(forKey: Self.seenKey) ?? ""
+        let delivered = Set(defaults.stringArray(forKey: Self.deliveredKey) ?? [])
+        let open = runs.filter { run in
+            (run.end ?? run.start) >= seen && !delivered.contains(run.id)
+                && (Timestamp.date(run.end ?? run.start).map { now.timeIntervalSince($0) < 86_400 } ?? false)
+        }
+        open.filter(\.deliverable).suffix(5).forEach { onFinished?($0) }
+        markDelivered(open)
     }
 
     /// Sets up the launchd jobs of all routines and checks that macOS really knows them
@@ -344,7 +370,10 @@ struct RoutineRun: Decodable, Identifiable {
             }
         }
         let domain = "gui/\(getuid())", path = target.path, service = label + id
+        let watch = routine.kind == .folder && !unchanged ? script : nil
         Task.detached(priority: .utility) { [weak self] in
+            // A new or moved folder watch: its state is noted before macOS starts watching, so the first real change counts.
+            if let watch { Self.baseline(id, script: watch) }
             // An unchanged file is no proof that the job is loaded: ask launchd, and load it if it is missing.
             var loaded = unchanged && Self.launchctl(["print", domain + "/" + service])
             if !loaded {
@@ -365,6 +394,20 @@ struct RoutineRun: Decodable, Identifiable {
         let domain = "gui/\(getuid())", service = label + id
         try? FileManager.default.removeItem(at: target)
         Task.detached(priority: .utility) { Self.launchctl(["bootout", domain + "/" + service]) }
+    }
+
+    /// Notes a watched folder's state through the helper (scripts/routine.py --baseline), waiting at most ten seconds.
+    nonisolated private static func baseline(_ id: String, script: URL) {
+        let process = Process()
+        process.executableURL = AppPaths.python
+        process.arguments = ["-B", script.path, id, "--baseline"]
+        process.environment = AppPaths.helperEnvironment()
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        guard (try? process.run()) != nil else { return }
+        let deadline = Date().addingTimeInterval(10)
+        while process.isRunning, Date() < deadline { Thread.sleep(forTimeInterval: 0.05) }
+        if process.isRunning { process.terminate() }
     }
 
     /// Runs launchctl; true if it reported success.
