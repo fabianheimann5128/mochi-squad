@@ -222,8 +222,9 @@ struct SkillsView: View {
                    "Skills sind Anweisungen und manchmal Skripte, denen deine Agenten folgen. Nutze nur Skills aus Quellen, denen du vertraust."))
                 .font(.system(size: 11.5)).foregroundStyle(Desk.faint).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
-            if !store.hidden.isEmpty {
-                Button(t("Bring back \(store.hidden.count) hidden", "\(store.hidden.count) ausgeblendete zurückholen")) { store.showHidden() }
+            let restorable = store.restorable()
+            if restorable > 0 {
+                Button(t("Bring back \(restorable) hidden", "\(restorable) ausgeblendete zurückholen")) { store.showHidden() }
                     .buttonStyle(.plain).font(.system(size: 11.5, weight: .medium)).foregroundStyle(Desk.accent).fixedSize()
             }
         }

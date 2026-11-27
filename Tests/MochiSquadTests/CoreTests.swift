@@ -674,8 +674,9 @@ import Testing
         #expect(skills.skills(for: mira).count == 1 && skills.skills(for: otto).isEmpty)
         // Importing the same skill again replaces it and keeps the assignment; it survives a restart.
         let again = try skills.add(from: source.appendingPathComponent("SKILL.md"))
-        #expect(skills.skills.count == 1 && again.agents == [mira.id] && again.id != skill.id)
-        #expect(!fm.fileExists(atPath: mirror.appendingPathComponent(skill.id).path))
+        // The path stays the same, so agents that were briefed with it can still read it.
+        #expect(skills.skills.count == 1 && again.agents == [mira.id] && again.id == skill.id)
+        #expect(fm.fileExists(atPath: mirror.appendingPathComponent(skill.id + "/SKILL.md").path))
         #expect(store().skills == [again])
         // Not a skill, and removal.
         try fm.createDirectory(at: home.appendingPathComponent("empty"), withIntermediateDirectories: true)
@@ -713,7 +714,9 @@ import Testing
         try write(".codex/skills", "deploy", "a longer description now")
         skills.sync(home: userHome)
         let updated = try #require(skills.skills.first { $0.name == "deploy" })
-        #expect(updated.id != deploy.id && updated.description == "a longer description now" && updated.agents == [mira.id])
+        // Same id and path, so a running agent's briefing stays valid; new content, assignment kept.
+        #expect(updated.id == deploy.id && updated.description == "a longer description now" && updated.agents == [mira.id])
+        #expect(try String(contentsOf: mirror.appendingPathComponent(updated.id + "/SKILL.md"), encoding: .utf8).contains("a longer description"))
         #expect(fm.fileExists(atPath: mirror.appendingPathComponent(updated.id + "/SKILL.md").path))
         // Hidden ones stay out until brought back; deleted ones go.
         skills.hide(updated)
@@ -840,5 +843,52 @@ import Testing
     @Test func tidyUpTaskCarriesTheSummary() {
         let task = SessionManager.compactTask("Goal: ship 0.2.1")
         #expect(task.hasPrefix(SessionManager.compactMark) && task.contains("Goal: ship 0.2.1") && task.contains("wait for my next message"))
+    }
+
+    @MainActor @Test func skillLinksKeepAssignmentsAndFollowOnlyInnerLinks() throws {
+        let root = try folder(), fm = FileManager.default
+        defer { try? fm.removeItem(at: root) }
+        let home = root.appendingPathComponent("home")
+        let store = SkillStore(index: root.appendingPathComponent("skills.json"), library: root.appendingPathComponent("library"),
+                               mirror: root.appendingPathComponent("mirror"), hidden: root.appendingPathComponent("hidden.json"))
+        func write(_ base: String, _ name: String, head: String? = nil) throws {
+            let folder = home.appendingPathComponent(base + "/" + name)
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Data((head ?? "---\nname: \(name)\ndescription: d\n---\n").utf8).write(to: folder.appendingPathComponent("SKILL.md"))
+        }
+        let mira = UUID()
+        // 1.1: a same-name skill from a preferred source keeps the narrowed assignment.
+        try write(".codex/skills", "demo")
+        store.sync(home: home)
+        store.assign(try #require(store.skills.first), to: [mira])
+        try write(".claude/skills", "demo")
+        store.sync(home: home)
+        #expect(store.skills.count == 1 && store.skills[0].origin == "Claude Code" && store.skills[0].agents == [mira])
+        // 1.2: a half-saved manifest keeps the skill and its assignment.
+        try write(".claude/skills", "demo", head: "---\nname: \n")
+        store.sync(home: home)
+        #expect(store.skills.first?.agents == [mira])
+        try write(".claude/skills", "demo")
+        store.sync(home: home)
+        #expect(store.skills.count == 1 && store.skills.first?.agents == [mira])
+        // 1.3: a linked skill folder and a manifest that links inside its own folder are copied as real files.
+        let real = home.appendingPathComponent(".claude/skills/linked")
+        try fm.createDirectory(at: real, withIntermediateDirectories: true)
+        try Data("---\nname: linked\ndescription: d\n---\n".utf8).write(to: real.appendingPathComponent("instructions.md"))
+        try fm.createSymbolicLink(atPath: real.appendingPathComponent("SKILL.md").path, withDestinationPath: "instructions.md")
+        try fm.createSymbolicLink(atPath: real.appendingPathComponent("outside").path, withDestinationPath: "/etc/hosts")
+        try fm.createDirectory(at: home.appendingPathComponent(".agents/skills"), withIntermediateDirectories: true)
+        try fm.createSymbolicLink(atPath: home.appendingPathComponent(".agents/skills/viaagents").path, withDestinationPath: "../../.claude/skills/linked")
+        store.sync(home: home)
+        let linked = try #require(store.skills.first { $0.name == "linked" })
+        let copy = root.appendingPathComponent("mirror/" + linked.id)
+        let attributes = try fm.attributesOfItem(atPath: copy.appendingPathComponent("SKILL.md").path)
+        #expect(attributes[.type] as? FileAttributeType == .typeRegular)
+        #expect(!fm.fileExists(atPath: copy.appendingPathComponent("outside").path))
+        // 1.7: a hidden skill whose folder is gone cannot be brought back.
+        store.hide(linked)
+        #expect(store.restorable(home: home) == 1)
+        try fm.removeItem(at: real)
+        #expect(store.restorable(home: home) == 0)
     }
 }

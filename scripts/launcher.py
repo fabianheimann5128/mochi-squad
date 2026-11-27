@@ -139,8 +139,9 @@ def attach_skills(spec, data=None, shared=None):
             continue
         file = root / entry["id"] / "SKILL.md"
         if file.is_file():
-            skills.append({"name": _line(entry.get("name"), 80), "description": _line(entry.get("description"), 300), "file": str(file)})
-    return dict(spec, skills=skills[:40], skillsFolder=str(root))
+            skills.append({"name": _line(entry.get("name"), 80), "description": _line(entry.get("description"), 160), "file": str(file)})
+    # Linked skills can be many; each line is short, so every assigned skill fits into the briefing.
+    return dict(spec, skills=skills[:150], skillsFolder=str(root))
 
 
 def attach_memory(spec, settings=None, home=None):
