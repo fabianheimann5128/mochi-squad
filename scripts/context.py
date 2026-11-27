@@ -32,6 +32,12 @@ def claude(path, data):
     cache = number(usage.get("cache_read_input_tokens")) + number(usage.get("cache_creation_input_tokens"))
     used = number(usage.get("input_tokens")) + cache if usage else None
     rate = data.get("rate_limits") or {}
+    try:
+        # The plan limits concern the whole subscription, not this session: the usage display reads them from here.
+        import limits
+        limits.remember_claude(rate)
+    except Exception:  # noqa: BLE001 – the status line must never fail because of the display
+        pass
     publish(path, dict(historyPath=data.get("transcript_path"), model=(data.get("model") or {}).get("display_name"),
                        used=used, limit=window.get("context_window_size"), percent=window.get("used_percentage"),
                        cached=usage.get("cache_read_input_tokens"), cacheWrite=usage.get("cache_creation_input_tokens"),

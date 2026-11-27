@@ -431,6 +431,13 @@ enum Keychain {
     func start() { telegram.start(); whatsapp.start() }
     func stop() { telegram.stop(); whatsapp.stop() }
 
+    /// A message of the app itself (for example a usage warning) to every connected messenger, whether the user
+    /// wrote from there recently or not.
+    func announce(_ text: String) {
+        telegram.send("ℹ️ " + text)
+        whatsapp.send("Mochi Squad: " + text)
+    }
+
     private func send(_ text: String, to channel: String) {
         if channel == "Telegram" { telegram.send(text) } else { whatsapp.send(text) }
     }

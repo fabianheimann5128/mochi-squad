@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Narrow bar on the far left with round buttons. Top: new agent, processes, connectors, skills.
-/// Bottom: what's new, suggest a feature, report a bug, and the user's initial for the settings.
+/// Bottom: plan usage, what's new, suggest a feature, report a bug, and the user's initial for the settings.
 /// While the chat list is hidden, the middle shows the agents so every chat stays one click away.
 struct IconRail: View {
     static let width: CGFloat = 76
@@ -64,6 +64,7 @@ struct IconRail: View {
             } else {
                 Spacer(minLength: 0)
             }
+            UsageGauge()
             RailButton(label: t("What's new?", "Was ist neu?"), action: { showNews = true }) { RocketGlyph().frame(width: 17, height: 17) }
             RailButton(label: t("Suggest a feature", "Funktion vorschlagen"), action: { NSWorkspace.shared.open(Feedback.url(.idea)) }) {
                 Image(systemName: "lightbulb")

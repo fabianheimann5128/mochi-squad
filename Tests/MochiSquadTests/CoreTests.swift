@@ -726,4 +726,26 @@ import Testing
         // The same name in Codex takes over once the Claude Code one is gone.
         #expect(skills.skills.first { $0.name == "videos" }?.origin == "Codex")
     }
+
+    @MainActor @Test func usageWarnsOncePerThresholdAndWindow() {
+        let store = LimitStore()
+        func limit(_ week: Double, resets: Double = 100) -> PlanLimit {
+            PlanLimit(id: "claude", five: nil, week: .init(percent: week, resets: resets), stamp: "2026-11-27T12:00:00Z")
+        }
+        #expect(store.crossed(limit(50)).isEmpty)
+        #expect(store.crossed(limit(81)).map(\.threshold) == [80])
+        #expect(store.crossed(limit(85)).isEmpty)
+        #expect(store.crossed(limit(96)).map(\.threshold) == [95])
+        #expect(store.crossed(limit(99)).isEmpty)
+        // A new week warns again.
+        #expect(store.crossed(limit(82, resets: 200)).map(\.threshold) == [80])
+        #expect(limit(1).date != nil && store.name("codex") == "ChatGPT")
+    }
+
+    @Test func macStaysAwakeWhileAgentsWork() {
+        #expect(SessionManager.awakeLevel(open: 0, working: false, always: false) == .none)
+        #expect(SessionManager.awakeLevel(open: 2, working: false, always: false) == .appOnly)
+        #expect(SessionManager.awakeLevel(open: 2, working: true, always: false) == .wholeMac)
+        #expect(SessionManager.awakeLevel(open: 0, working: false, always: true) == .wholeMac)
+    }
 }

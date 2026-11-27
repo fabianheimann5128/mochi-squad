@@ -144,15 +144,28 @@ import Foundation
         sessions.filter { $0.account == account }.forEach { close($0) }
     }
 
-    /// Keeps macOS from throttling the hidden app while sessions are running.
+    /// Keeps macOS from throttling the hidden app while sessions are open, and keeps the Mac from falling asleep
+    /// while an agent is working or the user chose to keep it awake. The display may still turn off.
     private var activity: NSObjectProtocol?
-    private func keepAwake() {
-        if runningCount > 0, activity == nil {
-            activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep], reason: "Agents are working")
-        } else if runningCount == 0, let held = activity {
-            ProcessInfo.processInfo.endActivity(held)
-            activity = nil
+    private var activityLevel = AwakeLevel.none
+    enum AwakeLevel { case none, appOnly, wholeMac }
+
+    nonisolated static func awakeLevel(open: Int, working: Bool, always: Bool) -> AwakeLevel {
+        if working || always { return .wholeMac }
+        return open > 0 ? .appOnly : .none
+    }
+
+    func keepAwake() {
+        let level = Self.awakeLevel(open: runningCount, working: sessions.contains { $0.isRunning && $0.working },
+                                    always: settings.value.alwaysAwake == true)
+        guard level != activityLevel else { return }
+        if let held = activity { ProcessInfo.processInfo.endActivity(held); activity = nil }
+        switch level {
+        case .none: break
+        case .appOnly: activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep], reason: "Agent sessions are open")
+        case .wholeMac: activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated], reason: "Agents are working")
         }
+        activityLevel = level
     }
 
     /// Releases ended sessions after a short while, unless the interface is showing them.

@@ -15,6 +15,7 @@ import context  # noqa: E402
 import history  # noqa: E402
 import post  # noqa: E402
 import launcher  # noqa: E402
+import limits  # noqa: E402
 import routine  # noqa: E402
 
 
@@ -102,6 +103,34 @@ class HistoryTests(unittest.TestCase):
             everything = history.read(str(path), "claude", 0, 20000)
             self.assertTrue(everything["messages"][0]["text"].startswith("message 0 "))
             self.assertFalse(everything["older"])
+
+
+class LimitTests(unittest.TestCase):
+    def test_claude_limits_are_kept_for_the_whole_subscription(self):
+        with tempfile.TemporaryDirectory() as data:
+            self.assertIsNone(limits.claude(data))
+            limits.remember_claude({"five_hour": {"used_percentage": 41.5, "resets_at": 1796000000}, "seven_day": {"used_percentage": 12}}, data,
+                                   now="2026-11-27T12:00:00Z")
+            entry = limits.claude(data)
+            self.assertEqual(entry["five"], {"percent": 41.5, "resets": 1796000000})
+            self.assertEqual(entry["week"], {"percent": 12.0, "resets": None})
+            # A report without limits keeps the last one.
+            limits.remember_claude({}, data)
+            self.assertEqual(limits.claude(data)["stamp"], "2026-11-27T12:00:00Z")
+
+    def test_codex_limits_come_from_the_newest_history(self):
+        with tempfile.TemporaryDirectory() as home:
+            day = Path(home) / "sessions/2026/11/27"
+            day.mkdir(parents=True)
+            report = {"timestamp": "2026-11-27T13:48:02Z", "type": "event_msg", "payload": {"type": "token_count", "rate_limits": {
+                "primary": {"used_percent": 12.0, "window_minutes": 10080, "resets_at": 1796050916},
+                "secondary": {"used_percent": 130, "window_minutes": 300, "resets_at": None}}}}
+            (day / "rollout-a.jsonl").write_text('{"type": "session_meta"}\n' + json.dumps(report) + "\n" + '{"type": "event_msg", "payload": {}}\n')
+            entry = limits.codex(home, "codex")
+            self.assertEqual(entry["week"], {"percent": 12.0, "resets": 1796050916})
+            self.assertEqual(entry["five"]["percent"], 100.0)
+            self.assertEqual(entry["stamp"], "2026-11-27T13:48:02Z")
+            self.assertIsNone(limits.codex(Path(home) / "missing", "codex"))
 
 
 class DirectiveTests(unittest.TestCase):

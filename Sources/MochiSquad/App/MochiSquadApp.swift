@@ -11,6 +11,7 @@ import SwiftUI
     let transcript = TranscriptStore()
     let chats = ChatIndex()
     let skills = SkillStore()
+    let limits = LimitStore()
     let navigation = Navigation()
     let manager: SessionManager
     let messengers: MessengerHub
@@ -36,6 +37,7 @@ struct MochiSquadApp: App {
                 .environmentObject(state.transcript)
                 .environmentObject(state.chats)
                 .environmentObject(state.skills)
+                .environmentObject(state.limits)
                 .environmentObject(state.navigation)
                 .environmentObject(state.manager)
                 .environmentObject(state.messengers)
@@ -73,6 +75,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         state.routines.installAll()
         // Skills from Claude Code and Codex are linked from the first launch on, without a click.
         state.skills.sync()
+        // Plan usage: warnings appear in the app and reach the phone, so a limit never comes as a surprise.
+        state.limits.accountName = { [weak settings = state.settings] id in settings?.accounts.first { $0.id == id }?.name }
+        state.limits.onWarning = { [weak manager = state.manager, weak messengers = state.messengers] text in
+            manager?.notice = text
+            messengers?.announce(text)
+        }
+        state.limits.start()
         state.messengers.start()
     }
 

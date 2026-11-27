@@ -20,6 +20,7 @@ import launcher
 from common import t
 
 TIMEOUT = 3 * 3600
+CAFFEINATE = "/usr/bin/caffeinate"
 
 
 def now():
@@ -64,6 +65,9 @@ def execute(spec, binary):
                 launcher.codex_prompt(spec, prompt)]
     else:
         args = [binary, *launcher.claude_args(spec, interactive=False), prompt]
+    # caffeinate keeps the Mac from falling asleep in the middle of the run; it ends with the client.
+    if Path(CAFFEINATE).is_file():
+        args = [CAFFEINATE, "-i", *args]
     result = subprocess.run(args, cwd=spec["project"], env=env, capture_output=True, text=True, timeout=TIMEOUT)
     if spec["provider"] == "codex":
         # Codex names its history file itself; the session line in the prompt leads to it.

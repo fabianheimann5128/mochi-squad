@@ -357,6 +357,8 @@ struct SettingsView: View {
             Rectangle().fill(Desk.rule).frame(height: 1)
             MessengerSection()
             Rectangle().fill(Desk.rule).frame(height: 1)
+            awakeSection
+            Rectangle().fill(Desk.rule).frame(height: 1)
             HStack {
                 Button(t("Keep in Dock", "Im Dock behalten")) { Dock.keepApp() }.buttonStyle(.pill).disabled(Dock.containsApp)
                 Button(t("Show data in Finder", "Daten im Finder zeigen")) { NSWorkspace.shared.open(AppPaths.support) }.buttonStyle(.pill)
@@ -390,6 +392,22 @@ struct SettingsView: View {
     }
 
     /// Extra ChatGPT subscriptions: each with its own sign-in, selectable per agent.
+    /// While an agent works the Mac stays awake anyway; this keeps it awake all the time the app is open.
+    private var awakeSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(t("This Mac", "Dieser Mac")).font(.system(size: 13, weight: .semibold)).foregroundStyle(Desk.dim)
+            Toggle(isOn: Binding(get: { settings.value.alwaysAwake == true }, set: { on in
+                settings.value.alwaysAwake = on ? true : nil
+                AppState.shared.manager.keepAwake()
+            })) {
+                Text(t("Keep this Mac awake while Mochi Squad is open", "Diesen Mac wach halten, solange Mochi Squad offen ist")).font(.system(size: 13))
+            }.toggleStyle(.switch).controlSize(.small)
+            Text(t("While an agent works, the Mac stays awake anyway; the screen may turn off. Switch this on for a Mac that runs your agents around the clock, so routines and messages from your phone always find it awake. A MacBook still sleeps when its lid is closed on battery; plug it in with an external display or use a Mac mini.",
+                   "Solange ein Agent arbeitet, bleibt der Mac ohnehin wach; der Bildschirm darf ausgehen. Schalte das für einen Mac ein, der deine Agenten rund um die Uhr laufen lässt, damit Routinen und Nachrichten vom Handy ihn immer wach antreffen. Ein zugeklapptes MacBook im Akkubetrieb schläft trotzdem; dafür Netzteil und externen Bildschirm nutzen oder einen Mac mini."))
+                .font(.system(size: 12)).foregroundStyle(Desk.dim).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
     private var accountsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(t("More ChatGPT plans", "Weitere ChatGPT-Abos")).font(.system(size: 13, weight: .semibold)).foregroundStyle(Desk.dim)
