@@ -148,3 +148,28 @@ extension View {
         buttonStyle(.pill).tint(Desk.accent).preferredColorScheme(.dark).foregroundStyle(Desk.text).background(Desk.dialog)
     }
 }
+
+/// A compact menu in the shape of a pill: the current choice with a small chevron; the options open on click.
+struct PillMenu: View {
+    let title: String
+    let options: [(value: String, label: String)]
+    let current: String
+    let pick: (String) -> Void
+
+    var body: some View {
+        Menu {
+            ForEach(options, id: \.value) { option in
+                Button { pick(option.value) } label: {
+                    if option.value == current { Label(option.label, systemImage: "checkmark") } else { Text(option.label) }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text(title).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(Desk.dim)
+            }
+            .foregroundStyle(Desk.text).padding(.horizontal, 12).frame(height: 32)
+            .background(Desk.card, in: Capsule()).overlay { Capsule().strokeBorder(Desk.edge) }.contentShape(Capsule())
+        }.menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+    }
+}

@@ -346,6 +346,14 @@ import Testing
         #expect(SpeechInput.join("", "Hello") == "Hello")
         #expect(SpeechInput.join("Hello", "how are you") == "Hello how are you")
         #expect(SpeechInput.join("Hello", "") == "Hello")
+        // Growing and revised partial results are no new start.
+        #expect(!SpeechInput.startedOver(previous: "Hello how", latest: "Hello how are you"))
+        #expect(!SpeechInput.startedOver(previous: "I want to write two letters", latest: "I want to write to Lena"))
+        #expect(!SpeechInput.startedOver(previous: "hello there", latest: "Hello, there!"))
+        #expect(!SpeechInput.startedOver(previous: "", latest: "Hello"))
+        // The recognition began again and reports only the new words.
+        #expect(SpeechInput.startedOver(previous: "First I want to say that the team chat works well now", latest: "and then"))
+        #expect(SpeechInput.startedOver(previous: "Please check the routines", latest: "Also the"))
     }
 
     @Test func imagePreviewsKeepTheirProportions() {
@@ -356,7 +364,7 @@ import Testing
 
     @Test func everyAgentHasAnExplicitModel() {
         var agent = Agent(name: "Emil", job: "", project: "/tmp/p")
-        #expect(agent.withModel().model == "opus")
+        #expect(agent.withModel().model == "claude-opus-5-5")
         agent.model = "sonnet"
         #expect(agent.withModel().model == "sonnet")
         agent.provider = .codex
@@ -584,7 +592,11 @@ import Testing
     @MainActor @Test func coordinatorFollowsTheInstalledProgramAndTheLanguage() {
         let codex = Agent.coordinator(name: "Mochi", project: "/tmp/p", provider: .codex)
         #expect(codex.provider == .codex && codex.isCoordinator && codex.jobTitle == "Coordinator")
-        #expect(Agent.coordinator(name: "Mochi", project: "/tmp/p").model == "opus")
+        #expect(Agent.coordinator(name: "Mochi", project: "/tmp/p").model == "claude-opus-5-5")
+        // Exact models with their names; the short names stay valid for agents created with them.
+        #expect(Provider.claude.models().contains("claude-fable-5-2") && Provider.claude.models().contains("opus"))
+        #expect(Provider.claude.label(for: "claude-fable-5-2") == "Fable 5.2" && Provider.claude.label(for: "unknown-x") == "unknown-x")
+        #expect(Provider.claude.efforts(for: "claude-haiku-5-5").isEmpty && !Provider.claude.efforts(for: "claude-fable-5-2").isEmpty)
         #expect(Agent(name: "A", job: "", project: "/tmp/p").jobTitle == "Agent")
         #expect(t("yes", "ja") == "yes" && Language.de.title == "Deutsch")
         #expect(AppSettings().language == nil && AppPaths.helperEnvironment([:])["MOCHI_LANG"] == "en")

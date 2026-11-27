@@ -294,11 +294,16 @@ func typingText(_ names: [String]) -> String {
         leading().frame(width: 38, height: 38)
         VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
+                // A job that only repeats the name is left out; a long one is cut, the time never wraps.
+                let role = job.flatMap { $0.caseInsensitiveCompare(name) == .orderedSame ? nil : $0 }
                 (Text(name).font(.system(size: 13, weight: .medium)).foregroundColor(Desk.text)
-                 + Text(job.map { "  " + $0 } ?? "").font(.system(size: 12)).foregroundColor(Desk.faint))
-                    .lineLimit(1).layoutPriority(1)
+                 + Text(role.map { "  " + $0 } ?? "").font(.system(size: 12)).foregroundColor(Desk.faint))
+                    .lineLimit(1).truncationMode(.tail).layoutPriority(1)
                 Spacer(minLength: 4)
-                if let time { Text(shortStamp(time)).font(.system(size: 12).monospacedDigit()).foregroundStyle(Desk.faint) }
+                if let time {
+                    Text(shortStamp(time)).font(.system(size: 12).monospacedDigit()).foregroundStyle(Desk.faint)
+                        .lineLimit(1).fixedSize().layoutPriority(2)
+                }
             }
             Text(preview).font(.system(size: 13)).foregroundStyle(Desk.dim).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
         }

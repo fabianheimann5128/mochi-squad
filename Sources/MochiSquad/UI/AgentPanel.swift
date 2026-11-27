@@ -177,7 +177,7 @@ private struct ComputerView: View {
                     Picker(t("Model", "Modell"), selection: Binding(get: { agent.model }, set: { model in
                         agents.update(agent.id) { $0.model = model; if !$0.efforts.contains($0.effort) { $0.effort = "" } }
                     })) {
-                        ForEach(agent.models, id: \.self) { Text($0).tag($0) }
+                        ForEach(agent.models, id: \.self) { Text(agent.provider.label(for: $0, account: agent.account)).tag($0) }
                     }.labelsHidden().fixedSize().controlSize(.small)
                 }.font(.system(size: 12.5))
                 if let account = settings.accounts.first(where: { $0.id == agent.account }) { line(t("ChatGPT plan", "ChatGPT-Abo"), account.name) }
@@ -280,7 +280,10 @@ private struct UsageNumbers: View {
                     }
                 }.frame(height: 4)
             }
-            if let model = usage.model { line(t("Model", "Modell"), model) }
+            if let model = usage.model {
+                // The model the client actually reports; a Claude id becomes its name, anything else stays as it is.
+                line(t("Model", "Modell"), Provider.claude.label(for: model))
+            }
             if let used = usage.used { line(usage.limit == nil ? t("Last request", "Letzte Anfrage") : t("Tokens in use", "Token belegt"), used.formatted()) }
             if let limit = usage.limit { line(t("Context window", "Kontextfenster"), limit.formatted()) }
             if let five = usage.five { line(t("5-hour limit", "5-Stunden-Limit"), five.formatted(.number.precision(.fractionLength(0))) + " %") }

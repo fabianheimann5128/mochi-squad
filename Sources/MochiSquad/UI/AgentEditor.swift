@@ -57,23 +57,23 @@ struct AgentEditor: View {
             divider
             VStack(alignment: .leading, spacing: 14) {
                 row(t("Provider", "Anbieter")) {
-                    PillPicker(selection: Binding(get: { agent.provider }, set: { agent.provider = $0; agent.model = $0.models().first ?? ""; agent.effort = ""; agent.account = nil }),
+                    PillPicker(selection: Binding(get: { agent.provider }, set: { agent.provider = $0; agent.model = $0.defaultModel(); agent.effort = ""; agent.account = nil }),
                                options: Provider.allCases.map { ($0, $0.vendor + " · " + $0.title) })
                 }
                 row(t("Model", "Modell")) {
                     HStack(spacing: 8) {
-                        choice(agent.model.isEmpty ? "–" : agent.model, agent.models.map { ($0, $0) }, current: agent.model) { model in
+                        PillMenu(title: agent.model.isEmpty ? "–" : agent.modelLabel, options: agent.models.map { ($0, agent.provider.label(for: $0, account: agent.account)) }, current: agent.model) { model in
                             agent.model = model
                             if !agent.efforts.contains(agent.effort) { agent.effort = "" }
                         }
-                        choice(agent.effort.isEmpty ? AgentWizard.autoEffort : t("Reasoning depth: \(agent.effort)", "Denktiefe: \(agent.effort)"),
-                               [("", AgentWizard.autoEffort)] + agent.efforts.map { ($0, $0) }, current: agent.effort) { agent.effort = $0 }
+                        PillMenu(title: agent.effort.isEmpty ? AgentWizard.autoEffort : t("Reasoning depth: \(agent.effort)", "Denktiefe: \(agent.effort)"),
+                               options: [("", AgentWizard.autoEffort)] + agent.efforts.map { ($0, $0) }, current: agent.effort) { agent.effort = $0 }
                     }
                 }
                 if agent.provider == .codex, !settings.accounts.isEmpty {
                     row(t("ChatGPT plan", "ChatGPT-Abo")) {
-                        choice(settings.accounts.first { $0.id == agent.account }?.name ?? AgentWizard.mainPlan,
-                               [("", AgentWizard.mainPlan)] + settings.accounts.map { ($0.id, $0.name) }, current: agent.account ?? "") { id in
+                        PillMenu(title: settings.accounts.first { $0.id == agent.account }?.name ?? AgentWizard.mainPlan,
+                               options: [("", AgentWizard.mainPlan)] + settings.accounts.map { ($0.id, $0.name) }, current: agent.account ?? "") { id in
                             agent.account = id.isEmpty ? nil : id
                             agent = agent.withModel()
                         }
@@ -162,23 +162,6 @@ struct AgentEditor: View {
     }
 
     /// A choice from a short list, drawn in the app's own style instead of the system's pop-up button.
-    private func choice(_ title: String, _ options: [(value: String, label: String)], current: String, pick: @escaping (String) -> Void) -> some View {
-        Menu {
-            ForEach(options, id: \.value) { option in
-                Button { pick(option.value) } label: {
-                    if option.value == current { Label(option.label, systemImage: "checkmark") } else { Text(option.label) }
-                }
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Text(title).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(Desk.dim)
-            }
-            .foregroundStyle(Desk.text).padding(.horizontal, 12).frame(height: 32)
-            .background(Desk.card, in: Capsule()).overlay { Capsule().strokeBorder(Desk.edge) }.contentShape(Capsule())
-        }.menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
-    }
-
     // Names of the look's parts, in the order of their raw values.
     private static var builds: [String] { [t("Classic", "Klassisch"), t("Tall", "Groß"), t("Wide", "Breit"), t("Small", "Klein")] }
     private static var tops: [String] {

@@ -120,26 +120,32 @@ struct AgentWizard: View {
             PillPicker(selection: Binding(get: { agent.provider }, set: { agent.provider = $0; agent.model = ""; agent.effort = ""; agent.account = nil }),
                        options: Provider.allCases.map { ($0, $0.vendor + " · " + $0.title) })
             HStack(spacing: 8) {
-                Picker("", selection: $agent.model) {
-                    Text(t("Choose a model", "Modell wählen")).tag("")
-                    ForEach(agent.models, id: \.self) { Text($0).tag($0) }
-                }.labelsHidden().fixedSize()
-                    .onChange(of: agent.model) { _, _ in if !agent.efforts.contains(agent.effort) { agent.effort = "" } }
-                Picker("", selection: $agent.effort) {
-                    Text(Self.autoEffort).tag("")
-                    ForEach(agent.efforts, id: \.self) { Text($0).tag($0) }
-                }.labelsHidden().fixedSize()
+                PillMenu(title: agent.model.isEmpty ? t("Choose a model", "Modell wählen") : agent.modelLabel,
+                         options: agent.models.map { ($0, agent.provider.label(for: $0, account: agent.account)) }, current: agent.model) { model in
+                    agent.model = model
+                    if !agent.efforts.contains(agent.effort) { agent.effort = "" }
+                }
+                if !agent.efforts.isEmpty {
+                    PillMenu(title: agent.effort.isEmpty ? Self.autoEffort : t("Reasoning depth: \(agent.effort)", "Denktiefe: \(agent.effort)"),
+                             options: [("", Self.autoEffort)] + agent.efforts.map { ($0, $0) }, current: agent.effort) { agent.effort = $0 }
+                }
             }
             if agent.provider == .codex, !settings.accounts.isEmpty {
                 HStack(spacing: 8) {
                     Text(t("ChatGPT plan", "ChatGPT-Abo")).font(.system(size: 13)).foregroundStyle(Desk.dim)
-                    Picker("", selection: Binding(get: { agent.account ?? "" }, set: { agent.account = $0.isEmpty ? nil : $0; agent.model = "" })) {
-                        Text(Self.mainPlan).tag("")
-                        ForEach(settings.accounts) { Text($0.name).tag($0.id) }
-                    }.labelsHidden().fixedSize()
+                    PillMenu(title: settings.accounts.first { $0.id == agent.account }?.name ?? Self.mainPlan,
+                             options: [("", Self.mainPlan)] + settings.accounts.map { ($0.id, $0.name) }, current: agent.account ?? "") { id in
+                        agent.account = id.isEmpty ? nil : id
+                        agent.model = ""
+                    }
                 }
             }
-            Text(t("Choose a model. The reasoning depth can stay on automatic.", "Wähle ein Modell. Die Denktiefe kann auf automatisch bleiben.")).font(.system(size: 12.5)).foregroundStyle(Desk.dim)
+            // The hint is there only while it is needed.
+            Text(agent.model.isEmpty ? t("Choose a model. The reasoning depth can stay on automatic.", "Wähle ein Modell. Die Denktiefe kann auf automatisch bleiben.")
+                                     : t("Fable is the most capable, Opus a strong all-rounder, Sonnet and Haiku are faster and use less of your plan.",
+                                         "Fable ist am stärksten, Opus ein starker Allrounder, Sonnet und Haiku sind schneller und verbrauchen weniger von deinem Abo."))
+                .font(.system(size: 12.5)).foregroundStyle(Desk.dim).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                .opacity(agent.provider == .codex && !agent.model.isEmpty ? 0 : 1)
         }
     }
 

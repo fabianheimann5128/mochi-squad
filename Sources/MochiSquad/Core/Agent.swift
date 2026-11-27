@@ -7,15 +7,27 @@ enum Provider: String, Codable, CaseIterable, Identifiable {
     var title: String { self == .claude ? "Claude Code" : "Codex" }
     var vendor: String { self == .claude ? "Anthropic" : "OpenAI" }
 
-    /// Models to choose from; the first one is the fallback for agents without a valid model.
-    /// `account` is an extra ChatGPT subscription whose plan may offer a different list.
+    /// Models to choose from. `account` is an extra ChatGPT subscription whose plan may offer a different list.
     func models(account: String? = nil) -> [String] {
-        self == .claude ? ["opus", "sonnet", "haiku"] : CodexCatalog.models(account: account).map(\.slug)
+        self == .claude ? ClaudeModels.all.map(\.id) : CodexCatalog.models(account: account).map(\.slug)
+    }
+
+    /// The model a new agent gets, and the fallback for an agent whose model is no longer offered.
+    func defaultModel(account: String? = nil) -> String {
+        self == .claude ? ClaudeModels.standard : models(account: account).first ?? ""
+    }
+
+    /// Name of a model as people know it ("Opus 5.5", "GPT-6.2-Sol"); unknown ids are shown as they are.
+    func label(for model: String, account: String? = nil) -> String {
+        switch self {
+        case .claude: return ClaudeModels.all.first { $0.id == model }?.label ?? model
+        case .codex: return CodexCatalog.models(account: account).first { $0.slug == model }?.display_name ?? model
+        }
     }
 
     func efforts(for model: String, account: String? = nil) -> [String] {
         switch self {
-        case .claude: return model == "haiku" ? [] : ["low", "medium", "high", "xhigh", "max"]
+        case .claude: return model.contains("haiku") ? [] : ["low", "medium", "high", "xhigh", "max"]
         case .codex:
             let all = CodexCatalog.models(account: account)
             let entry = all.first { $0.slug == model } ?? all.first
@@ -24,11 +36,28 @@ enum Provider: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// The Claude models an agent can work with. Claude Code takes the exact ids; the short names always mean the
+/// newest model of a family and stay available for agents that were created with them.
+enum ClaudeModels {
+    struct Model { let id: String, label: String }
+    static let standard = "claude-opus-5-5"
+    static var all: [Model] {
+        [Model(id: "claude-fable-5-2", label: "Fable 5.2"),
+         Model(id: "claude-opus-5-5", label: "Opus 5.5"),
+         Model(id: "claude-sonnet-5-5", label: "Sonnet 5.5"),
+         Model(id: "claude-haiku-5-5", label: "Haiku 5.5"),
+         Model(id: "opus", label: t("Opus · always the newest", "Opus · immer das neueste")),
+         Model(id: "sonnet", label: t("Sonnet · always the newest", "Sonnet · immer das neueste")),
+         Model(id: "haiku", label: t("Haiku · always the newest", "Haiku · immer das neueste"))]
+    }
+}
+
 /// Model list that Codex caches itself (models_cache.json in its home folder).
 enum CodexCatalog {
     struct Model: Decodable {
         struct Level: Decodable { let effort: String }
         let slug: String
+        let display_name: String?
         let visibility: String
         let supported_reasoning_levels: [Level]
     }
@@ -114,12 +143,13 @@ struct Agent: Codable, Identifiable, Hashable {
     /// Models and reasoning levels on offer for this agent's provider and subscription.
     var models: [String] { provider.models(account: account) }
     var efforts: [String] { provider.efforts(for: model, account: account) }
+    var modelLabel: String { provider.label(for: model, account: account) }
 
-    /// Every agent has an explicit model; if it is missing or does not fit the provider, the provider's first one applies.
+    /// Every agent has an explicit model; if it is missing or does not fit the provider, the provider's default applies.
     func withModel() -> Agent {
-        guard !models.contains(model), let first = models.first else { return self }
+        guard !models.contains(model), !models.isEmpty else { return self }
         var copy = self
-        copy.model = first
+        copy.model = provider.defaultModel(account: account)
         if !copy.efforts.contains(copy.effort) { copy.effort = "" }
         return copy
     }
@@ -142,7 +172,7 @@ struct Agent: Codable, Identifiable, Hashable {
     }
 
     static func coordinator(name: String, project: String, provider: Provider = .claude) -> Agent {
-        Agent(name: name, job: "", provider: provider, model: provider.models().first ?? "", project: project,
+        Agent(name: name, job: "", provider: provider, model: provider.defaultModel(), project: project,
               avatar: MochiLook.coordinator.key, isCoordinator: true)
     }
 }

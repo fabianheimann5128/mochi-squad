@@ -30,6 +30,8 @@ import SwiftUI
     private var committed = ""
     /// What the recognition wrote into the field last; if the field differs, the user typed.
     private var written = ""
+    /// The latest result of the current segment.
+    private var heard = ""
     private var peak: CGFloat = 0
     private var lastLevel = Date.distantPast
 
@@ -99,6 +101,7 @@ import SwiftUI
         guard listening, let recognizer else { return }
         round += 1
         let current = round
+        heard = ""
         task?.cancel()
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
@@ -118,14 +121,23 @@ import SwiftUI
                     self.recognize(into: text)
                     return
                 }
-                let joined = Self.join(self.committed, spoken)
-                if !spoken.isEmpty, text.wrappedValue != joined { text.wrappedValue = joined }
+                // During a long stretch of speech the recognition may start over inside the same segment and from
+                // then on report only what came after. What it had heard so far is kept, not overwritten.
+                if Self.startedOver(previous: self.heard, latest: spoken) {
+                    self.committed = Self.join(self.committed, self.heard)
+                }
+                if !spoken.isEmpty { self.heard = spoken }
+                let joined = Self.join(self.committed, self.heard)
+                if !self.heard.isEmpty, text.wrappedValue != joined { text.wrappedValue = joined }
                 self.written = text.wrappedValue
                 if final {
-                    self.committed = Self.join(self.committed, spoken)
+                    self.committed = joined
                     self.recognize(into: text)
                 } else if failed {
-                    self.stop()
+                    // A segment ends with an error after a long time (or a short network hiccup). The text is kept;
+                    // recording goes on with a new segment, unless this one never heard anything.
+                    self.committed = joined
+                    if self.heard.isEmpty { self.stop() } else { self.recognize(into: text) }
                 }
             }
         }
@@ -156,6 +168,19 @@ import SwiftUI
         levels.removeFirst()
         levels.append(peak * 0.75 + (levels.last ?? 0) * 0.25)
         peak = 0
+    }
+
+    /// True if `latest` is not a revision of `previous` but the start of a new stretch of speech: it no longer begins
+    /// with the same words, or it is far shorter. Partial results only ever revise their end and grow.
+    nonisolated static func startedOver(previous: String, latest: String) -> Bool {
+        func words(_ text: String) -> [String] {
+            text.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
+        }
+        let before = words(previous), now = words(latest)
+        guard !before.isEmpty, !now.isEmpty else { return false }
+        if before.count >= 6, now.count * 2 < before.count { return true }
+        let compared = min(2, before.count, now.count)
+        return now.count < before.count && Array(now.prefix(compared)) != Array(before.prefix(compared))
     }
 
     nonisolated static func join(_ before: String, _ spoken: String) -> String {
