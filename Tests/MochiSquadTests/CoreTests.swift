@@ -748,4 +748,18 @@ import Testing
         #expect(SessionManager.awakeLevel(open: 2, working: true, always: false) == .wholeMac)
         #expect(SessionManager.awakeLevel(open: 0, working: false, always: true) == .wholeMac)
     }
+
+    @Test func routineTriggersReadWell() {
+        var routine = Routine(agent: Agent(name: "Mira", job: "", project: "/tmp/p"))
+        routine.hour = 8; routine.minute = 5
+        #expect(routine.kind == .time && routine.summary.hasSuffix("08:05"))
+        let before = routine.plan
+        routine.trigger = .hours; routine.every = 6
+        #expect(routine.summary == "every 6 hours" && routine.plan != before)
+        routine.every = 5
+        #expect(routine.hours == 1)
+        routine.trigger = .folder; routine.folder = "/Users/x/Downloads"
+        #expect(routine.summary == "when “Downloads” changes")
+        #expect(Notifier.summary(of: "line one\n\nline two\nline three", limit: 20) == "line two line three")
+    }
 }

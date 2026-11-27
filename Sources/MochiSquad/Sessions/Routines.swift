@@ -26,13 +26,39 @@ struct Routine: Codable, Identifiable, Equatable {
     var days: [Int] = []
     var active = false
     var allowWeb = false
+    /// What starts the routine; nil means a fixed time.
+    var trigger: Trigger?
+    /// For `.hours`: every how many hours.
+    var every: Int?
+    /// For `.folder`: the folder whose changes start the routine.
+    var folder: String?
+    /// Tell the user only when there is something new; otherwise the run stays silent.
+    var quiet: Bool?
+
+    enum Trigger: String, Codable, CaseIterable { case time, hours, folder }
+    static let hourChoices = [1, 2, 3, 4, 6, 12]
+    var kind: Trigger { trigger ?? .time }
+    var hours: Int { Self.hourChoices.contains(every ?? 0) ? every! : 1 }
 
     init(agent: Agent) {
         project = agent.project; agentID = agent.id; provider = agent.provider.rawValue; self.agent = AgentSnapshot(agent)
     }
 
     /// The part the user edits. Two routines that agree here differ at most in what the app keeps current itself.
-    var plan: [String] { [task, "\(hour)", "\(minute)", days.map(String.init).joined(separator: ","), "\(active)", "\(allowWeb)"] }
+    var plan: [String] {
+        [task, "\(hour)", "\(minute)", days.map(String.init).joined(separator: ","), "\(active)", "\(allowWeb)",
+         kind.rawValue, "\(hours)", folder ?? "", "\(quiet == true)"]
+    }
+
+    /// One line for lists: "daily at 08:00", "every 2 hours", "when Downloads changes".
+    var summary: String {
+        switch kind {
+        case .time: return rhythm + t(" at ", " um ") + time
+        case .hours: return hours == 1 ? t("every hour", "jede Stunde") : t("every \(hours) hours", "alle \(hours) Stunden")
+        case .folder: return t("when “\(folderName)” changes", "wenn sich „\(folderName)“ ändert")
+        }
+    }
+    var folderName: String { folder.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "–" }
 
     static var dayNames: [String] {
         L10n.language == .en ? ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] : ["", "Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
@@ -57,6 +83,8 @@ struct RoutineRun: Decodable, Identifiable {
     let code: Int?
     let output: String?
     let journal: String?
+    /// A quiet routine found nothing new.
+    let silent: Bool?
     var id: String { routine + start }
 }
 
@@ -67,6 +95,9 @@ struct RoutineRun: Decodable, Identifiable {
     @Published private(set) var scheduleIssues = [String: String]()
     /// Routines whose test run, started from the app, is still going.
     @Published private(set) var testing = Set<String>()
+    /// Called for every run that finished while the app was open (not for those read at launch).
+    var onFinished: ((RoutineRun) -> Void)?
+    private var runsLoaded = false
     private let file: URL
     private let runFile: URL
     private var runOffset = 0
@@ -77,6 +108,7 @@ struct RoutineRun: Decodable, Identifiable {
         self.runFile = runFile
         routines = JSONFile.load([Routine].self, from: file) ?? []
         readRuns()
+        runsLoaded = true
     }
 
     func routines(for agent: UUID) -> [Routine] { routines.filter { $0.agentID == agent } }
@@ -159,6 +191,7 @@ struct RoutineRun: Decodable, Identifiable {
         runOffset += complete.count
         let fresh = complete.split(separator: 10).compactMap { try? JSONDecoder().decode(RoutineRun.self, from: Data($0)) }
         runs = Array((runs + fresh).suffix(500))
+        if runsLoaded { fresh.forEach { onFinished?($0) } }
     }
 
     /// Sets up the launchd jobs of all routines and checks that macOS really knows them
@@ -182,12 +215,20 @@ struct RoutineRun: Decodable, Identifiable {
             if let day { entry["Weekday"] = day }
             return entry
         }
-        let content: [String: Any] = [
+        var content: [String: Any] = [
             "Label": label + routine.id,
             "ProgramArguments": [AppPaths.python.path, "-B", script.path, routine.id],
-            "StartCalendarInterval": intervals,
             "StandardErrorPath": AppPaths.file("routine-\(routine.id).log").path,
         ]
+        switch routine.kind {
+        case .time: content["StartCalendarInterval"] = intervals
+        case .hours: content["StartInterval"] = routine.hours * 3600
+        case .folder:
+            guard let folder = routine.folder else { uninstall(routine.id); return }
+            // macOS starts the routine itself when the folder changes; a burst of changes starts it at most every two minutes.
+            content["WatchPaths"] = [folder]
+            content["ThrottleInterval"] = 120
+        }
         let id = routine.id, target = plist(id)
         let failed = t("macOS did not accept the schedule. The routine will not start on its own; save it again or check ~/Library/LaunchAgents.",
                        "macOS hat den Zeitplan nicht angenommen. Die Routine startet nicht von selbst; speichere sie erneut oder prüfe ~/Library/LaunchAgents.")

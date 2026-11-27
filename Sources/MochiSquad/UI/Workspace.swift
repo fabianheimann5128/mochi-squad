@@ -154,7 +154,8 @@ struct Workspace: View {
 
     /// Runs of routines belong in the chat of their agent.
     private func attachRoutineRuns() {
-        for run in routines.runs {
+        // A quiet routine that found nothing new leaves no trace in the chat.
+        for run in routines.runs where run.silent != true {
             guard let journal = run.journal, AgentSession.isJournal(journal), FileManager.default.fileExists(atPath: journal),
                   let id = run.agent.flatMap(UUID.init), agents.agent(id) != nil else { continue }
             agents.attach(routineJournal: journal, to: id, lastLine: (run.output ?? "").split(separator: "\n").last.map(String.init),

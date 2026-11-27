@@ -82,6 +82,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             messengers?.announce(text)
         }
         state.limits.start()
+        // Routine results come to the user: as a Mac notification and on the phone. Quiet routines only when there is news.
+        state.routines.onFinished = { [weak messengers = state.messengers] run in
+            guard run.silent != true, run.code != 75 else { return }
+            let who = run.name ?? t("Routine", "Routine")
+            let body = run.code == 0 ? Notifier.summary(of: run.output ?? "")
+                                     : t("The routine failed: ", "Die Routine ist fehlgeschlagen: ") + Notifier.summary(of: run.output ?? "", limit: 160)
+            Notifier.post(title: who, body: body.isEmpty ? t("Done.", "Fertig.") : body)
+            messengers?.announce(who + ": " + (body.isEmpty ? t("Done.", "Fertig.") : body))
+        }
         state.messengers.start()
     }
 

@@ -322,8 +322,8 @@ private struct RoutinePanel: View {
                     ForEach(saved) { routine in
                         Button { draft = routine } label: {
                             HStack(spacing: 10) {
-                                Image(systemName: "clock").font(.system(size: 12)).foregroundStyle(Desk.dim)
-                                Text(routine.rhythm + t(" at ", " um ") + routine.time).font(.system(size: 13, weight: .medium))
+                                Image(systemName: routine.kind == .folder ? "folder" : "clock").font(.system(size: 12)).foregroundStyle(Desk.dim)
+                                Text(routine.summary.prefix(1).uppercased() + routine.summary.dropFirst()).font(.system(size: 13, weight: .medium)).lineLimit(1)
                                 Spacer()
                                 Circle().fill(routine.active ? Desk.success : Desk.faint).frame(width: 6, height: 6)
                             }.padding(.horizontal, 10).frame(height: 36)
@@ -335,8 +335,8 @@ private struct RoutinePanel: View {
             }
             if let shown { form(shown) } else {
                 Text(t("No routine", "Keine Routine")).font(.system(size: 15, weight: .semibold))
-                Text(t("So far \(agent.name) only works when asked. A routine runs at a fixed time through macOS, even when Mochi Squad is closed.",
-                       "\(agent.name) arbeitet bisher nur auf Zuruf. Eine Routine läuft zur festen Zeit über macOS, auch wenn Mochi Squad geschlossen ist."))
+                Text(t("So far \(agent.name) only works when asked. A routine runs at a fixed time, every few hours or when a folder changes, through macOS, even when Mochi Squad is closed. You get the result as a notification and on Telegram or WhatsApp.",
+                       "\(agent.name) arbeitet bisher nur auf Zuruf. Eine Routine läuft zur festen Zeit, alle paar Stunden oder wenn sich ein Ordner ändert, über macOS, auch wenn Mochi Squad geschlossen ist. Das Ergebnis bekommst du als Mitteilung und per Telegram oder WhatsApp."))
                     .font(.system(size: 12.5)).foregroundStyle(Desk.dim).fixedSize(horizontal: false, vertical: true)
             }
             if !isNew {
@@ -358,7 +358,7 @@ private struct RoutinePanel: View {
         let stored = saved.first { $0.id == routine.id }
         // Only what the user edits here counts as a change; agent details are refreshed by the store on every save.
         let changed = stored?.plan != routine.plan
-        let ready = !routine.task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let ready = !routine.task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (routine.kind != .folder || routine.folder != nil)
         HStack(spacing: 8) {
             Toggle("", isOn: Binding(get: { routine.active }, set: { on in
                 var copy = routine; copy.active = on
@@ -394,6 +394,11 @@ private struct RoutinePanel: View {
             }
         label(t("When", "Wann"))
         VStack(alignment: .leading, spacing: 10) {
+            PillPicker(selection: Binding(get: { routine.kind }, set: { var c = routine; c.trigger = $0 == .time ? nil : $0; draft = c }),
+                       options: [(Routine.Trigger.time, t("At a time", "Zur Uhrzeit")), (.hours, t("Every few hours", "Alle paar Stunden")),
+                                 (.folder, t("Folder changes", "Ordner ändert sich"))])
+            switch routine.kind {
+            case .time:
             HStack(spacing: 8) {
                 Image(systemName: "clock").foregroundStyle(Desk.dim)
                 Text(routine.rhythm.prefix(1).uppercased() + routine.rhythm.dropFirst()).font(.system(size: 13.5, weight: .medium))
@@ -420,7 +425,40 @@ private struct RoutinePanel: View {
                     }.buttonStyle(.plain)
                 }
             }
+            case .hours:
+                HStack(spacing: 8) {
+                    Image(systemName: "clock.arrow.circlepath").foregroundStyle(Desk.dim)
+                    Text(t("Every", "Alle")).font(.system(size: 13.5, weight: .medium))
+                    Picker("", selection: Binding(get: { routine.hours }, set: { var c = routine; c.every = $0; draft = c })) {
+                        ForEach(Routine.hourChoices, id: \.self) { Text(t($0 == 1 ? "hour" : "\($0) hours", $0 == 1 ? "Stunde" : "\($0) Stunden")).tag($0) }
+                    }.labelsHidden().fixedSize()
+                    Spacer()
+                }
+            case .folder:
+                HStack(spacing: 8) {
+                    Image(systemName: "folder").foregroundStyle(Desk.dim)
+                    Text(routine.folder.map { $0.replacingOccurrences(of: NSHomeDirectory(), with: "~") } ?? t("No folder chosen", "Kein Ordner gewählt"))
+                        .font(.system(size: 13)).lineLimit(1).truncationMode(.head).foregroundStyle(routine.folder == nil ? Desk.dim : Desk.text)
+                    Spacer()
+                    Button(routine.folder == nil ? t("Choose …", "Wählen …") : t("Change", "Ändern")) {
+                        let panel = NSOpenPanel()
+                        panel.canChooseFiles = false; panel.canChooseDirectories = true; panel.allowsMultipleSelection = false
+                        panel.prompt = t("Watch", "Beobachten")
+                        if panel.runModal() == .OK, let url = panel.url { var c = routine; c.folder = url.path; draft = c }
+                    }.buttonStyle(.pill)
+                }
+                Text(t("macOS starts the routine as soon as something in the folder changes, at most every two minutes.",
+                       "macOS startet die Routine, sobald sich im Ordner etwas ändert, höchstens alle zwei Minuten."))
+                    .font(.system(size: 11.5)).foregroundStyle(Desk.dim).fixedSize(horizontal: false, vertical: true)
+            }
         }.padding(12).overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Desk.edge) }
+        Toggle(isOn: Binding(get: { routine.quiet == true }, set: { var c = routine; c.quiet = $0 ? true : nil; draft = c })) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(t("Only tell me when there is something new", "Nur melden, wenn es etwas Neues gibt")).font(.system(size: 12.5))
+                Text(t("The agent compares with its last run; quiet runs leave no message.", "Der Agent vergleicht mit seinem letzten Lauf; stille Läufe hinterlassen keine Nachricht."))
+                    .font(.system(size: 11.5)).foregroundStyle(Desk.dim)
+            }
+        }.toggleStyle(.checkbox)
         Toggle(isOn: Binding(get: { routine.allowWeb }, set: { var c = routine; c.allowWeb = $0; draft = c })) {
             Text(t("May search the web and read pages", "Darf im Internet suchen und Seiten lesen")).font(.system(size: 12.5))
         }.toggleStyle(.checkbox)
@@ -442,7 +480,7 @@ private struct RoutinePanel: View {
                         Text(Timestamp.date(run.start).map { $0.formatted(.dateTime.day().month(.abbreviated).hour().minute()) } ?? run.start)
                             .font(.system(size: 13).monospacedDigit())
                         Spacer()
-                        Text(run.code == 0 ? t("done", "fertig") : run.code == 75 ? t("skipped", "übersprungen") : t("error \(run.code ?? -1)", "Fehler \(run.code ?? -1)")).font(.system(size: 12))
+                        Text(run.silent == true ? t("nothing new", "nichts Neues") : run.code == 0 ? t("done", "fertig") : run.code == 75 ? t("skipped", "übersprungen") : t("error \(run.code ?? -1)", "Fehler \(run.code ?? -1)")).font(.system(size: 12))
                             .foregroundStyle(run.code == 0 ? Desk.dim : Desk.danger)
                     }
                     if let output = run.output, !output.isEmpty {

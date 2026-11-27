@@ -9,6 +9,7 @@ rules as a regular session) and always appends the result to routine-runs.jsonl,
 import datetime
 import fcntl
 import json
+import os
 import subprocess
 import sys
 import uuid
@@ -34,13 +35,56 @@ def find_routine(routine_id, path=None):
     return next((r for r in routines if isinstance(r, dict) and r.get("id") == routine_id), None)
 
 
-def build_spec(routine, owner, session_id, language="en"):
+NOTHING_NEW = "NOTHING_NEW"
+
+
+def previous_output(routine_id, path=None):
+    """What the last finished run of this routine reported, so the next one can tell what is new."""
+    path = Path(path or common.DATA / "routine-runs.jsonl")
+    try:
+        with open(path, "rb") as log:
+            log.seek(max(0, os.fstat(log.fileno()).st_size - 512 * 1024))
+            lines = log.read().decode("utf-8", "replace").splitlines()
+    except OSError:
+        return ""
+    for line in reversed(lines):
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        if (isinstance(record, dict) and record.get("routine") == routine_id and record.get("code") == 0
+                and record.get("output") and not record.get("silent")):
+            return str(record["output"]).strip()[-1500:]
+    return ""
+
+
+def routine_task(routine, owner, previous=""):
+    """The task as the agent gets it: what started the run, what it found last time, and when to stay silent."""
+    parts = []
+    if routine.get("trigger") == "folder" and routine.get("folder"):
+        parts.append(f"The folder `{routine['folder']}` just changed. Look at what is new there first.")
+    parts.append(str(routine.get("task") or "").strip())
+    if routine.get("quiet") is True:
+        if previous:
+            parts.append("Your previous run reported:\n<<<\n" + previous + "\n>>>")
+        parts.append(f"If there is nothing new since then and nothing that needs {owner}'s attention, answer with exactly "
+                     f"{NOTHING_NEW} and nothing else. Otherwise answer with a short summary of what is new.")
+    return "\n\n".join(p for p in parts if p)
+
+
+def silent(output):
+    """True if a quiet routine found nothing worth reporting."""
+    return NOTHING_NEW in str(output or "").strip()[-200:]
+
+
+def build_spec(routine, owner, session_id, language="en", previous=""):
     # The coordinator's tools exist only while the app runs. In routines it works like any other agent.
     agent = routine.get("agent") or {}
     if isinstance(agent, dict) and agent.get("isCoordinator"):
         agent = dict(agent, isCoordinator=False, job=agent.get("job") or "coordinator")
     return launcher.attach_skills(launcher.validate_spec({
-        "provider": routine.get("provider"), "project": routine.get("project"), "task": routine.get("task"),
+        "provider": routine.get("provider"), "project": routine.get("project"),
+        "task": routine_task(routine, owner or "the user", previous),
         "sessionId": session_id, "owner": owner, "language": language, "unattended": True,
         "allowWeb": routine.get("allowWeb") is True,
         "agent": agent, "account": agent.get("account") or "" if isinstance(agent, dict) else "",
@@ -113,7 +157,10 @@ def main(argv):
             record.update(code=75, output=t("Skipped: an earlier run of this routine is still working.",
                                             "Übersprungen: Ein früherer Lauf dieser Routine arbeitet noch."))
         else:
-            spec = build_spec(routine, str(settings.get("ownerName") or ""), str(uuid.uuid4()), common.language())
+            if routine.get("trigger") == "folder" and not Path(str(routine.get("folder") or "")).is_dir():
+                raise launcher.SpecError(t("The watched folder no longer exists.", "Der beobachtete Ordner existiert nicht mehr."))
+            previous = previous_output(routine_id) if routine.get("quiet") is True else ""
+            spec = build_spec(routine, str(settings.get("ownerName") or ""), str(uuid.uuid4()), common.language(), previous)
             binary = common.find_client(spec["provider"])
             if not binary:
                 record.update(code=127, output=t("The client is not installed on this Mac.",
@@ -121,6 +168,8 @@ def main(argv):
             else:
                 code, output, journal = execute(spec, binary)
                 record.update(code=code, output=output, journal=journal)
+                if routine.get("quiet") is True and code == 0 and silent(output):
+                    record["silent"] = True
     except launcher.SpecError as error:
         record.update(code=2, output=str(error))
     except subprocess.TimeoutExpired:

@@ -186,6 +186,28 @@ class ConnectorTests(unittest.TestCase):
             connectors.main("login", "claude", "/tmp")
 
 
+class QuietRoutineTests(unittest.TestCase):
+    def test_task_carries_trigger_previous_result_and_quiet_rule(self):
+        plain = routine.routine_task({"task": "Check the shop."}, "Alex")
+        self.assertEqual(plain, "Check the shop.")
+        quiet = routine.routine_task({"task": "Check the shop.", "quiet": True, "trigger": "folder", "folder": "/tmp/in"}, "Alex", "3 orders")
+        self.assertIn("`/tmp/in` just changed", quiet)
+        self.assertIn("3 orders", quiet)
+        self.assertIn(routine.NOTHING_NEW, quiet)
+        self.assertTrue(routine.silent("Looked at everything.\nNOTHING_NEW"))
+        self.assertFalse(routine.silent("Two new orders came in."))
+
+    def test_previous_output_skips_failures_silence_and_other_routines(self):
+        with tempfile.TemporaryDirectory() as folder:
+            log = Path(folder) / "runs.jsonl"
+            rows = [{"routine": "a1", "code": 0, "output": "first"}, {"routine": "b2", "code": 0, "output": "other"},
+                    {"routine": "a1", "code": 1, "output": "broken"}, {"routine": "a1", "code": 0, "output": "NOTHING_NEW", "silent": True}]
+            log.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+            self.assertEqual(routine.previous_output("a1", log), "first")
+            self.assertEqual(routine.previous_output("zz", log), "")
+            self.assertEqual(routine.previous_output("a1", Path(folder) / "missing"), "")
+
+
 class RoutineTests(unittest.TestCase):
     def test_find_and_build(self):
         with tempfile.TemporaryDirectory() as folder:
