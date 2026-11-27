@@ -90,6 +90,7 @@ import Foundation
             return self.deliver(from: session, to: to, text: text)
         }
         session.onJournal = { [weak self] path in self?.agents.remember(journal: path, for: agent.id) }
+        session.onWorkingChanged = { [weak self] in self?.keepAwake() }
         do { try session.launch(spec: spec, tools: tools) } catch {
             bridge.revoke(session: session.id)
             session.end()

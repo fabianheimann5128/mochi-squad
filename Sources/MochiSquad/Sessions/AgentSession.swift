@@ -99,6 +99,8 @@ enum LaunchError: LocalizedError {
     var onPost: ((String, String) -> String)?
     /// New history detected (path of the history file).
     var onJournal: ((String) -> Void)?
+    /// Called when the session starts or stops working, so the Mac's sleep setting follows at once.
+    var onWorkingChanged: (() -> Void)?
 
     /// Launch data and status file. Inside the app data, which agents may neither read nor write.
     private let folder: URL
@@ -191,7 +193,7 @@ enum LaunchError: LocalizedError {
         // Busy means: the history was written just now, or the client itself says it can be interrupted. The second
         // sign covers long steps (a command that runs for minutes) during which nothing is written.
         let now = isRunning && (touched.map { Date().timeIntervalSince($0) < 7 } == true || Self.showsBusy(screenText(lines: 8)))
-        if now != working { working = now }
+        if now != working { working = now; onWorkingChanged?() }
         var ask = isRunning ? TerminalPromptScanner.scan(terminal) : nil
         // The client introduces Claude in Chrome once with a screen that only waits for Return. The user already
         // switched computer use on for this agent, so the app confirms it instead of leaving the session waiting.
@@ -242,6 +244,7 @@ enum LaunchError: LocalizedError {
     fileprivate func terminated(exitCode: Int32?) {
         isRunning = false
         working = false
+        onWorkingChanged?()
         prompt = nil
         endedAt = Date()
         failed = exitCode != 0
