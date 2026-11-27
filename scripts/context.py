@@ -45,7 +45,7 @@ def claude(path, data):
     except (OSError, ValueError):
         pass
     base = previous.get("base") if isinstance(previous.get("base"), int) else used
-    publish(path, dict(base=base, historyPath=data.get("transcript_path"), model=(data.get("model") or {}).get("display_name"),
+    publish(path, dict(base=base, answerInside=False, historyPath=data.get("transcript_path"), model=(data.get("model") or {}).get("display_name"),
                        used=used, limit=window.get("context_window_size"), percent=window.get("used_percentage"),
                        cached=usage.get("cache_read_input_tokens"), cacheWrite=usage.get("cache_creation_input_tokens"),
                        fresh=usage.get("input_tokens"), output=usage.get("output_tokens"),
@@ -85,6 +85,7 @@ def codex_record(data, record):
             data["fresh"] = max(0, usage["input_tokens"] - usage["cached_input_tokens"])
         if used is not None and "base" not in data:
             data["base"] = used
+        data["answerInside"] = True
         data.update(used=used, limit=limit, percent=100 * used / limit if used is not None else None,
                     cached=usage.get("cached_input_tokens"), output=usage.get("output_tokens"))
     rates = value.get("rate_limits") or {}

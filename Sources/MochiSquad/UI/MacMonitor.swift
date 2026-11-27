@@ -37,11 +37,14 @@ import SwiftUI
         thermal = ProcessInfo.processInfo.thermalState
     }
 
+    /// One send right to the host port for the whole app: asking for it on every sample would pile up references.
+    nonisolated static let host: mach_port_t = mach_host_self()
+
     nonisolated static func cpuLoad() -> host_cpu_load_info? {
         var info = host_cpu_load_info()
         var count = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info>.size / MemoryLayout<integer_t>.size)
         let result = withUnsafeMutablePointer(to: &info) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, $0, &count) }
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { host_statistics(host, HOST_CPU_LOAD_INFO, $0, &count) }
         }
         return result == KERN_SUCCESS ? info : nil
     }
@@ -51,7 +54,7 @@ import SwiftUI
         var stats = vm_statistics64()
         var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
         let result = withUnsafeMutablePointer(to: &stats) {
-            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count) }
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { host_statistics64(host, HOST_VM_INFO64, $0, &count) }
         }
         guard result == KERN_SUCCESS else { return nil }
         let page = UInt64(vm_kernel_page_size)

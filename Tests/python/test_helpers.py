@@ -218,6 +218,24 @@ class SyntheticTests(unittest.TestCase):
             self.assertEqual(result["usage"]["used"], 10)
 
 
+class ContextBaseTests(unittest.TestCase):
+    def test_base_comes_from_the_session_start_only(self):
+        with tempfile.TemporaryDirectory() as folder:
+            journal = Path(folder) / "chat.jsonl"
+            def answer(tokens):
+                return json.dumps({"type": "assistant", "message": {"model": "claude-opus-5-5", "content": [{"type": "text", "text": "ok"}],
+                                                                   "usage": {"input_tokens": tokens}}}) + "\n"
+            journal.write_text(answer(100))
+            first = history.read(journal, "claude", 0, 40)
+            self.assertEqual(first["usage"]["base"], 100)
+            self.assertFalse(first["usage"]["answerInside"])
+            with open(journal, "a") as handle:
+                handle.write(answer(240))
+            later = history.read(journal, "claude", first["position"], 40)
+            self.assertNotIn("base", later["usage"])
+            self.assertEqual(history.read(journal, "claude", 0, 40)["usage"]["base"], 100)
+
+
 class CompactTests(unittest.TestCase):
     def test_commands_run_without_tools_or_saved_sessions(self):
         claude = compact.claude_command("/bin/claude", "P")

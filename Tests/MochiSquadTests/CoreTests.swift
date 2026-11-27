@@ -786,12 +786,18 @@ import Testing
     @Test func contextWindowSplitsByWhatFillsIt() {
         var usage = Usage()
         #expect(usage.parts.isEmpty)
-        usage.used = 63_340; usage.base = 43_873; usage.output = 826
+        // Codex: the answer is inside what is used.
+        usage.used = 63_340; usage.base = 43_873; usage.output = 826; usage.answerInside = true
         #expect(usage.parts.map(\.tokens) == [43_873, 18_641, 826])
         usage.limit = 200_000
         #expect(usage.parts.last?.kind == .free && usage.parts.last?.tokens == 136_660)
+        // Claude (7.2): the answer comes on top of the context that was read.
+        usage.answerInside = false; usage.used = 150; usage.base = 100; usage.output = 50; usage.limit = 1000
+        #expect(usage.parts.map(\.tokens) == [100, 50, 50, 800])
+        usage.used = 100; usage.output = 10
+        #expect(usage.parts.map(\.kind) == [.base, .answer, .free])
         // A base larger than the window's content never goes negative.
-        usage.base = 90_000
+        usage.used = 63_340; usage.output = 826; usage.limit = 200_000; usage.base = 90_000
         #expect(usage.parts.first?.tokens == 63_340 && usage.parts.allSatisfy { $0.tokens > 0 })
     }
 

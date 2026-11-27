@@ -26,17 +26,25 @@ struct Usage: Decodable, Equatable {
     var used, limit, cached, output, cacheWrite, fresh, skills, tools: Int?
     /// Tokens the session started with: instructions, tools, skills and the first exchange.
     var base: Int?
+    /// Codex counts the last answer in `used`; Claude reports it separately (`output`), it joins the context next turn.
+    var answerInside: Bool?
     var percent, five, week: Double?
 
     /// The context window split by what fills it; parts in tokens, in drawing order. Empty without numbers.
     var parts: [(kind: ContextPart, tokens: Int)] {
         guard let used, used > 0 else { return [] }
-        // Without a known window size (an old history) there is no "free" part to show.
-        let limit = max(self.limit ?? used, used)
         let start = min(max(0, base ?? 0), used)
-        let answer = min(max(0, output ?? 0), used - start)
-        let talk = max(0, used - start - answer)
-        return [(.base, start), (.conversation, talk), (.answer, answer), (.free, limit - used)].filter { $0.tokens > 0 }
+        if answerInside == true {
+            // The answer is part of what the context holds.
+            let answer = min(max(0, output ?? 0), used - start)
+            let limit = max(self.limit ?? used, used)
+            return [(.base, start), (.conversation, used - start - answer), (.answer, answer), (.free, limit - used)].filter { $0.tokens > 0 }
+        }
+        // The answer comes on top of what was read; without a known window size there is no "free" part.
+        let answer = max(0, output ?? 0)
+        let filled = used + answer
+        let limit = max(self.limit ?? filled, filled)
+        return [(.base, start), (.conversation, used - start), (.answer, answer), (.free, limit - filled)].filter { $0.tokens > 0 }
     }
 }
 
@@ -119,7 +127,12 @@ struct ActivityEvent: Decodable, Identifiable, Equatable {
                 lines.append(contentsOf: page.messages)
             }
             position = page.position
-            if page.usage.used != nil { usage = page.usage } else if let model = page.usage.model { usage.model = model }
+            if page.usage.used != nil {
+                // A read that continues where the last one stopped knows nothing about the session's start: keep it.
+                var fresh = page.usage
+                if fresh.base == nil { fresh.base = usage.base }
+                usage = fresh
+            } else if let model = page.usage.model { usage.model = model }
             // When appending, prepare only the new lines; finished bubbles stay untouched.
             if initial { bubbles = Bubble.make(from: lines) } else { bubbles += Bubble.make(from: page.messages, after: previous) }
             lineCount = lines.count

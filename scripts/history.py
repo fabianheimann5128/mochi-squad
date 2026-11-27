@@ -178,7 +178,7 @@ def read(path, provider, offset, count):
                         stats["cacheWrite"] = usage.get("cache_creation_input_tokens", 0)
                         stats["cached"] = usage.get("cache_read_input_tokens", 0)
                         stats["used"] = usage["input_tokens"] + stats["cached"] + usage.get("cache_creation_input_tokens", 0)
-                        if not skipped and "base" not in stats:
+                        if offset == 0 and not skipped and "base" not in stats:
                             stats["base"] = stats["used"]
                         stats["output"] = usage.get("output_tokens")
                     text = body or ""
@@ -198,7 +198,40 @@ def read(path, provider, offset, count):
             if isinstance(text, str) and text.strip():
                 result.append(dict(id=pos, role=role, text=text.strip(), timestamp=row.get("timestamp") or ""))
                 total += 1
+        if provider == "claude" and offset == 0 and skipped and "base" not in stats:
+            base = claude_base(f)
+            if base is not None:
+                stats["base"] = base
+        # Claude reports the context without the answer just written; Codex counts the answer in. The display needs to know.
+        stats["answerInside"] = provider == "codex"
         return dict(messages=list(result), position=f.tell(), older=total > count or skipped, usage=stats)
+
+
+def claude_base(f, limit=2 * 1024 * 1024):
+    """Tokens of the first answer in a Claude history: what the session started with. Read from the file's start,
+    at most `limit` bytes, for histories whose end alone was read."""
+    end = f.tell()
+    try:
+        f.seek(0)
+        read = 0
+        while read < limit:
+            line = f.readline()
+            if not line:
+                break
+            read += len(line)
+            if b'"input_tokens"' not in line or b'"assistant"' not in line:
+                continue
+            try:
+                row = json.loads(line)
+            except ValueError:
+                continue
+            msg = row.get("message") or {}
+            usage = msg.get("usage") or {}
+            if row.get("type") == "assistant" and msg.get("model") != "<synthetic>" and "input_tokens" in usage:
+                return usage["input_tokens"] + usage.get("cache_read_input_tokens", 0) + usage.get("cache_creation_input_tokens", 0)
+        return None
+    finally:
+        f.seek(end)
 
 
 
