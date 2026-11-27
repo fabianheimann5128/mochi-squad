@@ -1,30 +1,53 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-	<key>CFBundleDevelopmentRegion</key><string>en</string>
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Mochi Squad</string>
+	<key>CFBundleExecutable</key>
+	<string>MochiSquad</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIdentifier</key>
+	<string>dev.mochisquad.app</string>
 	<key>CFBundleLocalizations</key>
 	<array>
 		<string>en</string>
 		<string>de</string>
 	</array>
-	<key>CFBundleName</key><string>Mochi Squad</string>
-	<key>CFBundleDisplayName</key><string>Mochi Squad</string>
-	<key>CFBundleIdentifier</key><string>dev.mochisquad.app</string>
-	<key>CFBundleExecutable</key><string>MochiSquad</string>
-	<key>CFBundleIconFile</key><string>AppIcon</string>
-	<key>CFBundlePackageType</key><string>APPL</string>
-	<key>CFBundleVersion</key><string>2</string>
-	<key>CFBundleShortVersionString</key><string>0.2.0</string>
-	<key>LSMinimumSystemVersion</key><string>14.0</string>
-	<key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
-	<key>NSHighResolutionCapable</key><true/>
-	<key>SUFeedURL</key><string>https://github.com/fabianheimann5128/mochi-squad/releases/latest/download/appcast.xml</string>
-	<key>SUPublicEDKey</key><string></string>
-	<key>SUEnableAutomaticChecks</key><true/>
-	<key>NSAppleEventsUsageDescription</key><string>Agents you allow to operate the computer control other apps for you.</string>
-	<key>NSMicrophoneUsageDescription</key><string>Mochi Squad records your voice when you dictate a message.</string>
-	<key>NSSpeechRecognitionUsageDescription</key><string>Mochi Squad turns your spoken message into text.</string>
-	<key>NSDocumentsFolderUsageDescription</key><string>Mochi Squad opens the project folders you choose for your agents.</string>
-	<key>NSDesktopFolderUsageDescription</key><string>Mochi Squad opens the project folders you choose for your agents.</string>
-	<key>NSDownloadsFolderUsageDescription</key><string>Mochi Squad opens the project folders you choose for your agents.</string>
-</dict></plist>
+	<key>CFBundleName</key>
+	<string>Mochi Squad</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.2.0</string>
+	<key>CFBundleVersion</key>
+	<string>2</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.developer-tools</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Agents you allow to operate the computer control other apps for you.</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>Mochi Squad opens the project folders you choose for your agents.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Mochi Squad opens the project folders you choose for your agents.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>Mochi Squad opens the project folders you choose for your agents.</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Mochi Squad records your voice when you dictate a message.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Mochi Squad turns your spoken message into text.</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/fabianheimann5128/mochi-squad/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>GrWsSQEEPx6YUcBnKm4FCZO2w4Cn0GidRtoVZUACOGc=</string>
+</dict>
+</plist>
