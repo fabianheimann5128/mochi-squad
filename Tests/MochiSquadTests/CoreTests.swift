@@ -932,4 +932,52 @@ import Testing
         agent.model = "claude-opus-5-5"
         #expect(agent.withModel().effort == "high")
     }
+
+    @MainActor @Test func memoryEditsAndMovesSafely() throws {
+        let root = try folder(), fm = FileManager.default
+        defer { try? fm.removeItem(at: root) }
+        let old = root.appendingPathComponent("old"), new = root.appendingPathComponent("new")
+        let store = MemoryStore(folder: old)
+        try store.remember("first", project: "/tmp/Shop", author: "Otto")
+        try store.remember("second", project: "/tmp/Shop", author: "Otto")
+        // 8.3: a line inserted elsewhere meanwhile does not make the edit hit the wrong entry.
+        let note = try #require(store.note(for: "/tmp/Shop"))
+        let second = try #require(note.entries.last)
+        var text = try String(contentsOf: note.url, encoding: .utf8)
+        text = text.replacingOccurrences(of: "- first", with: "- inserted\n- first")
+        try text.write(to: note.url, atomically: true, encoding: .utf8)
+        try store.edit(second, in: note, to: "second corrected")
+        #expect(store.note(for: "/tmp/Shop")?.entries.map(\.text) == ["inserted", "first", "second corrected"])
+        // A text that is gone is reported, not guessed.
+        #expect(throws: MemoryStore.Failure.self) { try store.edit(second, in: note, to: "again") }
+        // 8.8: a path with quotes round-trips.
+        try store.remember("odd", project: "/tmp/with \"quote\"", author: "Otto")
+        #expect(store.note(for: "/tmp/with \"quote\"")?.entries.first?.text == "odd")
+        #expect(MemoryStore.unquoted(MemoryStore.quoted("a\\b\"c")) == "a\\b\"c")
+        // 8.11 properties are no entries, 8.13 "+" is one.
+        let tagged = old.appendingPathComponent("Tagged.md")
+        try "---\nmochi: project\nproject: \"/tmp/T\"\ntags:\n  - hidden\n---\n+ plus\n".write(to: tagged, atomically: true, encoding: .utf8)
+        store.reload()
+        #expect(store.note(for: "/tmp/T")?.entries.map(\.text) == ["plus"])
+        // 8.7: a note made outside the app is found before a new one is created.
+        let outside = old.appendingPathComponent("About me.md")
+        try "---\nmochi: profile\n---\n- outside\n".write(to: outside, atomically: true, encoding: .utf8)
+        try store.remember("inside", project: nil, author: "Otto")
+        #expect(!fm.fileExists(atPath: old.appendingPathComponent("About me 2.md").path) && store.profile?.entries.count == 2)
+        // 8.2: a full note refuses instead of crashing.
+        try ("---\nmochi: project\nproject: \"/tmp/Big\"\n---\n" + String(repeating: "- x\n", count: 131_058)).write(to: old.appendingPathComponent("Big.md"), atomically: true, encoding: .utf8)
+        store.reload()
+        #expect(throws: MemoryStore.Failure.self) { try store.remember("one more", project: "/tmp/Big", author: "Otto") }
+        // 8.1 / 8.15: only Mochi notes move, a note in both places is merged.
+        try "# my own note".write(to: old.appendingPathComponent("Personal.md"), atomically: true, encoding: .utf8)
+        try fm.createDirectory(at: new, withIntermediateDirectories: true)
+        try "---\nmochi: profile\n---\n- already there\n".write(to: new.appendingPathComponent("About me.md"), atomically: true, encoding: .utf8)
+        let failed = store.move(to: new)
+        #expect(failed.isEmpty)
+        #expect(fm.fileExists(atPath: old.appendingPathComponent("Personal.md").path))
+        #expect(!fm.fileExists(atPath: new.appendingPathComponent("Personal.md").path))
+        #expect(Set(store.profile?.entries.map(\.text) ?? []) == ["already there", "outside", "inside"])
+        // 8.14: common ways of writing secrets are caught.
+        #expect(MemoryStore.looksSecret("My password is fictional") && MemoryStore.looksSecret("-----BEGIN OPENSSH PRIVATE KEY-----"))
+    }
 }

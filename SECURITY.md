@@ -75,7 +75,9 @@ A skill is a folder with instructions (`SKILL.md`) and sometimes scripts. Whatev
 
 ## Mochi Memory
 
-Agents save lasting facts with their post tool (`post remember`); the app writes them into Markdown notes in `~/Mochi Memory` or the folder you chose, each with the agent's name and the date. Only the app writes on behalf of agents, so the sender is certain, and text that looks like a password, key or token is refused. What is in memory goes into the briefing of every agent of that project, including agents with fewer rights, so do not put anything there an agent should not read. Anyone and any program that can write to the folder can change what your agents believe; keep it in a place only you use. The notes leave your Mac only as part of an agent's briefing, like any other instruction.
+Agents save lasting facts with their post tool (`post remember`); the app writes them into Markdown notes in `~/Mochi Memory` or the folder you chose, each with the agent's name and the date. Only the app writes on behalf of agents, so the author is certain. Text that looks like a password, key or token is refused, and such lines written by hand are kept out of every briefing; this is pattern matching, so do not put secrets there yourself.
+
+What is in memory goes into the briefing of the agents, marked as information and not as instructions, with who saved each line. An agent that can do more than others (full access, computer use, the coordinator) gets only what you wrote yourself and what agents with the same reach saved: a restricted agent that read a hostile web page cannot steer a privileged one through memory. Agents cannot read or write the memory folder directly; the sandbox locks it. Anyone and any program that can write to the folder can still change what your agents believe, so keep it in a place only you use. Changing the folder moves only Mochi notes; other Markdown files stay where they are.
 
 ## Messengers
 

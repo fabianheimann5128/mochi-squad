@@ -187,13 +187,52 @@ class MemoryTests(unittest.TestCase):
             (root / "Random.md").write_text("- not a memory note\n")
             folder, profile, project = memory.for_project("/tmp/shop", settings={}, home=home)
             self.assertEqual(folder, root)
-            self.assertEqual(profile, ["Likes short answers"])
-            self.assertEqual(project, ["Runs on Shopify"])
+            self.assertEqual(profile, [("Likes short answers", "Mira")])
+            self.assertEqual(project, [("Runs on Shopify", None)])
             chosen = memory.folder({"memoryFolder": "/elsewhere"}, home)
             self.assertEqual(chosen, Path("/elsewhere"))
             spec = launcher.attach_memory({"project": "/tmp/shop"}, settings={}, home=home)
             spec.update(post="/x/post", team=[], unattended=False)
             self.assertEqual(spec["memoryProject"], ["Runs on Shopify"])
+            self.assertEqual(spec["memoryProfile"], ["Likes short answers (saved by Mira)"])
+
+    def test_notes_are_read_carefully(self):
+        with tempfile.TemporaryDirectory() as home:
+            root = Path(home) / "Mochi Memory"
+            root.mkdir()
+            # 8.11 properties are no facts, 8.13 "+" counts, 8.6 secrets stay out, 8.8 quoted paths.
+            (root / "About me.md").write_text("---\nmochi: profile\ntags:\n  - private-tag\n---\n+ plus-fact\n- password: fictional\n- My password is fictional\n")
+            (root / "Odd.md").write_text('---\nmochi: project\nproject: "/tmp/with \\"quote\\""\n---\n- odd fact\n')
+            _, profile, project = memory.for_project('/tmp/with "quote"', settings={}, home=home)
+            self.assertEqual(profile, [("plus-fact", None)])
+            self.assertEqual(project, [("odd fact", None)])
+            # 8.10: links and special files are not read.
+            os.symlink("/etc/hosts", str(root / "Link.md"))
+            os.mkfifo(str(root / "Pipe.md"))
+            self.assertIsNone(memory.read_note(root / "Link.md"))
+            self.assertIsNone(memory.read_note(root / "Pipe.md"))
+
+    def test_newest_entries_fit_the_briefing(self):
+        many = [("fact %02d " % i + "word " * 38, None) for i in range(60)]
+        kept = memory.clip(many)
+        self.assertEqual(kept[-1][0][:7], "fact 59")
+        self.assertLessEqual(sum(len(t) for t, _ in kept), memory.MAX_CHARS)
+        huge = memory.clip([("long text " * 700, None), ("short", None)])
+        self.assertEqual(huge[-1], ("short", None))
+        self.assertTrue(huge[0][0].endswith("…") and len(huge[0][0]) == memory.MAX_ENTRY)
+
+    def test_privileged_agents_get_only_trusted_entries(self):
+        with tempfile.TemporaryDirectory() as home:
+            root = Path(home) / "Mochi Memory"
+            root.mkdir()
+            (root / "About me.md").write_text("---\nmochi: profile\n---\n- by reader · Reader · 2026-11-27\n- by boss · Boss · 2026-11-27\n- by hand\n- by owner · Alex · 2026-11-27\n")
+            (Path(home) / "agents.json").write_text(json.dumps([{"name": "Reader"}, {"name": "Boss", "fullAccess": True}]))
+            strong = launcher.attach_memory({"project": "/tmp/p", "owner": "Alex", "agent": {"fullAccess": True}}, settings={}, home=home, data=home)
+            self.assertEqual([x.split(" (saved")[0] for x in strong["memoryProfile"]], ["by boss", "by hand", "by owner"])
+            plain = launcher.attach_memory({"project": "/tmp/p", "owner": "Alex", "agent": {}}, settings={}, home=home, data=home)
+            self.assertEqual(len(plain["memoryProfile"]), 4)
+            # 8.5: the memory folder is locked for the sandbox.
+            self.assertIn(str(root), launcher.locked_paths(home))
 
     def test_remember_command(self):
         self.assertEqual(post.parse(["remember", "Uses", "Shopify"]), {"to": "@memory", "text": "Uses Shopify"})

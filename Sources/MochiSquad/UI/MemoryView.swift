@@ -31,6 +31,8 @@ struct MemoryView: View {
         .task {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(3))
+                // While a line is being corrected the list stays still; the save checks the note again anyway.
+                guard editing == nil else { continue }
                 withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { memory.reload() }
             }
         }
@@ -149,6 +151,11 @@ struct MemoryView: View {
                 }
                 HStack(spacing: 6) {
                     Text(byline(entry)).font(.system(size: 11.5)).foregroundStyle(Desk.faint)
+                    if MemoryStore.looksSecret(entry.text) {
+                        // Written by hand outside the app: kept in the note, but never given to agents.
+                        Label(t("not given to agents", "geht nicht an Agenten"), systemImage: "lock.fill")
+                            .font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Desk.warning)
+                    }
                     if fresh {
                         Text(t("new", "neu")).font(.system(size: 10.5, weight: .semibold)).foregroundStyle(Desk.accent)
                             .padding(.horizontal, 6).frame(height: 16).background(Desk.accent.opacity(0.15), in: Capsule())
@@ -188,7 +195,9 @@ struct MemoryView: View {
             Text(memory.folder.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")).font(.system(size: 11.5)).foregroundStyle(Desk.faint).lineLimit(1).truncationMode(.head)
             Button(t("Change folder …", "Ordner ändern …"), action: chooseFolder).buttonStyle(.plain).font(.system(size: 11.5, weight: .medium)).foregroundStyle(Desk.accent)
             Spacer()
-            Text(t("Passwords, keys and tokens are never stored.", "Passwörter, Schlüssel und Tokens werden nie gespeichert.")).font(.system(size: 11.5)).foregroundStyle(Desk.faint)
+            Text(t("Anything that looks like a password, key or token is refused. Do not add such things yourself.",
+                   "Was nach Passwort, Schlüssel oder Token aussieht, wird abgelehnt. Trag so etwas auch selbst nicht ein."))
+                .font(.system(size: 11.5)).foregroundStyle(Desk.faint).lineLimit(2).multilineTextAlignment(.trailing)
         }
     }
 
@@ -198,7 +207,7 @@ struct MemoryView: View {
         let text = draft.trimmingCharacters(in: .whitespaces)
         guard !text.isEmpty else { return }
         do {
-            try withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+            _ = try withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
                 try memory.remember(text, project: selected, author: settings.value.ownerName.isEmpty ? t("You", "Du") : settings.value.ownerName)
             }
             draft = ""; notice = nil
@@ -224,15 +233,11 @@ struct MemoryView: View {
             url = url.appendingPathComponent("Mochi Squad", isDirectory: true)
             try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         }
-        let old = memory.folder
+        // Only Mochi notes move; a note that exists in both places is merged. The choice is saved after the move.
+        let failed = memory.move(to: url)
         settings.value.memoryFolder = url.path
-        // Notes already written move along, unless the new folder has its own of the same name.
-        if let files = try? FileManager.default.contentsOfDirectory(at: old, includingPropertiesForKeys: nil) {
-            for file in files where file.pathExtension == "md" && !FileManager.default.fileExists(atPath: url.appendingPathComponent(file.lastPathComponent).path) {
-                try? FileManager.default.moveItem(at: file, to: url.appendingPathComponent(file.lastPathComponent))
-            }
-        }
-        memory.use(url)
+        notice = failed.isEmpty ? nil : t("These notes stayed in the old folder: \(failed.joined(separator: ", ")).",
+                                          "Diese Notizen sind im alten Ordner geblieben: \(failed.joined(separator: ", ")).")
     }
 
     private func openInObsidian(_ app: URL) {
