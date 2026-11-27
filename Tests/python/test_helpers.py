@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import tempfile
 import threading
@@ -128,11 +129,52 @@ class LimitTests(unittest.TestCase):
                 "primary": {"used_percent": 12.0, "window_minutes": 10080, "resets_at": 1796050916},
                 "secondary": {"used_percent": 130, "window_minutes": 300, "resets_at": None}}}}
             (day / "rollout-a.jsonl").write_text('{"type": "session_meta"}\n' + json.dumps(report) + "\n" + '{"type": "event_msg", "payload": {}}\n')
-            entry = limits.codex(home, "codex")
+            entry = limits.codex(home, "codex", data=home)
             self.assertEqual(entry["week"], {"percent": 12.0, "resets": 1796050916})
             self.assertEqual(entry["five"]["percent"], 100.0)
             self.assertEqual(entry["stamp"], "2026-11-27T13:48:02Z")
-            self.assertIsNone(limits.codex(Path(home) / "missing", "codex"))
+            with tempfile.TemporaryDirectory() as empty:
+                self.assertIsNone(limits.codex(Path(home) / "missing", "codex", data=empty))
+
+    def test_codex_prefers_the_most_recently_written_file_and_keeps_the_last_value(self):
+        with tempfile.TemporaryDirectory() as home:
+            def report(day, percent, mtime):
+                folder = Path(home) / ("sessions/2026/11/%02d" % day)
+                folder.mkdir(parents=True, exist_ok=True)
+                file = folder / ("rollout-%d.jsonl" % day)
+                file.write_text(json.dumps({"timestamp": "t", "payload": {"rate_limits": {
+                    "primary": {"used_percent": percent, "window_minutes": 10080, "resets_at": 1796050916}}}}) + "\n")
+                os.utime(file, (mtime, mtime))
+            report(24, 97, 2000)
+            for day in (25, 26, 27):
+                report(day, 18, 1000)
+            # 4.1: a conversation continued later lies in an older day folder.
+            self.assertEqual(limits.codex(home, "codex", data=home)["week"]["percent"], 97.0)
+            # 4.2: newer conversations without a report keep the last value.
+            for day in (28, 29, 30):
+                folder = Path(home) / ("sessions/2026/11/%02d" % day)
+                folder.mkdir(parents=True)
+                (folder / "rollout-x.jsonl").write_text('{"type": "session_meta"}\n')
+            for file in Path(home).glob("sessions/2026/11/2[4-7]/*.jsonl"):
+                file.unlink()
+            self.assertEqual(limits.codex(home, "codex", data=home)["week"]["percent"], 97.0)
+
+    def test_broken_reports_are_skipped_and_values_checked(self):
+        with tempfile.TemporaryDirectory() as data:
+            # 4.3: a broken stored window is dropped, values over 100 are clamped.
+            (Path(data) / limits.CLAUDE_FILE).write_text(json.dumps({"five": {"percent": "x"}, "week": {"percent": 125, "resets": 1e100}, "stamp": "s"}))
+            entry = limits.claude(data)
+            self.assertIsNone(entry["five"])
+            self.assertEqual(entry["week"], {"percent": 100.0, "resets": None})
+            # 4.4: an odd report does not stop the search.
+            day = Path(data) / "sessions/2026/11/27"
+            day.mkdir(parents=True)
+            good = {"timestamp": "t", "payload": {"rate_limits": {"primary": {"used_percent": 20, "window_minutes": 10080}}}}
+            odd = {"timestamp": "t", "payload": {"rate_limits": {"primary": ["not", "a", "dict"]}}}
+            (day / "rollout-a.jsonl").write_text(json.dumps(good) + "\n" + json.dumps(odd) + "\n")
+            self.assertEqual(limits.codex(data, "codex", data=data)["week"]["percent"], 20.0)
+            self.assertIsNone(limits.window(float("nan")))
+            self.assertIsNone(limits.window(True))
 
 
 class MemoryTests(unittest.TestCase):

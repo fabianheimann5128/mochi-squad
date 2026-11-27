@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Security
 
@@ -428,6 +429,8 @@ enum Keychain {
         telegram.onMessage = { [weak self] text in self?.receive(text, from: "Telegram") }
         whatsapp.onMessage = { [weak self] text in self?.receive(text, from: "WhatsApp") }
         team.onAppend = { [weak self] line, project in self?.forward(line, project: project) }
+        watchers = [telegram.$state.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.flush("Telegram") },
+                    whatsapp.$state.receive(on: DispatchQueue.main).sink { [weak self] _ in self?.flush("WhatsApp") }]
     }
 
     func start() { telegram.start(); whatsapp.start() }
@@ -436,8 +439,29 @@ enum Keychain {
     /// A message of the app itself (for example a usage warning) to every connected messenger, whether the user
     /// wrote from there recently or not.
     func announce(_ text: String) {
-        telegram.send("ℹ️ " + text)
-        whatsapp.send("Mochi Squad: " + text)
+        deliver("ℹ️ " + text, to: "Telegram")
+        deliver("Mochi Squad: " + text, to: "WhatsApp")
+    }
+
+    /// Messages of the app wait while a set-up messenger is still connecting, and go out once it is ready.
+    private var pending = [String: [String]]()
+    private var watchers = [AnyCancellable]()
+
+    private func deliver(_ text: String, to channel: String) {
+        let configured = channel == "Telegram" ? settings.messengers.telegram?.userID != nil : settings.messengers.whatsapp != nil
+        guard configured else { return }
+        if ready(channel) { send(text, to: channel) } else { pending[channel, default: []] = Array((pending[channel, default: []] + [text]).suffix(10)) }
+    }
+
+    private func ready(_ channel: String) -> Bool {
+        if channel == "Telegram" { return telegram.state == .ready }
+        if case .open = whatsapp.state { return true }
+        return false
+    }
+
+    private func flush(_ channel: String) {
+        guard ready(channel), let waiting = pending.removeValue(forKey: channel) else { return }
+        waiting.forEach { send($0, to: channel) }
     }
 
     private func send(_ text: String, to channel: String) {

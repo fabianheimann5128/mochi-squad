@@ -6,11 +6,39 @@ struct PlanLimit: Decodable, Identifiable, Equatable {
         let percent: Double
         /// Unix time at which the window starts over, if the client said so.
         let resets: Double?
+
+        init(percent: Double, resets: Double?) {
+            self.percent = percent.isFinite ? min(100, max(0, percent)) : 0
+            self.resets = resets.flatMap { $0.isFinite && $0 > 0 && $0 < 4_102_444_800 ? $0 : nil }
+        }
+
+        /// Values are checked here as well: whatever a file says, the app only works with 0–100 % and real times.
+        init(from decoder: Decoder) throws {
+            let values = try decoder.container(keyedBy: CodingKeys.self)
+            let percent = try values.decode(Double.self, forKey: .percent)
+            guard percent.isFinite else { throw DecodingError.dataCorruptedError(forKey: .percent, in: values, debugDescription: "not finite") }
+            self.init(percent: percent, resets: try? values.decodeIfPresent(Double.self, forKey: .resets))
+        }
+        private enum CodingKeys: String, CodingKey { case percent, resets }
     }
     let id: String
     let five: Window?
     let week: Window?
     let stamp: String?
+
+    init(id: String, five: Window?, week: Window?, stamp: String?) {
+        self.id = id; self.five = five; self.week = week; self.stamp = stamp
+    }
+
+    /// A broken window is dropped on its own; the rest of the entry stays.
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(String.self, forKey: .id)
+        five = try? values.decodeIfPresent(Window.self, forKey: .five)
+        week = try? values.decodeIfPresent(Window.self, forKey: .week)
+        stamp = try? values.decodeIfPresent(String.self, forKey: .stamp)
+    }
+    private enum CodingKeys: String, CodingKey { case id, five, week, stamp }
 
     var highest: Double { max(five?.percent ?? 0, week?.percent ?? 0) }
     var date: Date? { stamp.flatMap { PlanLimit.parse($0) } }
@@ -31,10 +59,10 @@ struct PlanLimit: Decodable, Identifiable, Equatable {
     /// Called with a warning text when a limit crosses a threshold.
     var onWarning: ((String) -> Void)?
     static let thresholds: [Double] = [80, 95]
-    /// Thresholds already reported, per window; kept across launches so a restart does not warn again.
-    private var warned: [String: Double] {
-        get { (UserDefaults.standard.dictionary(forKey: "usageWarnings") as? [String: Double]) ?? [:] }
-        set { UserDefaults.standard.set(newValue.filter { $0.value > 0 }.suffix(40).reduce(into: [:]) { $0[$1.key] = $1.value }, forKey: "usageWarnings") }
+    /// Per plan and window: the period it belongs to and the highest threshold reported in it. Kept across launches.
+    private var warned: [String: [Double]] {
+        get { (UserDefaults.standard.dictionary(forKey: "usageWarnings.v2") as? [String: [Double]]) ?? [:] }
+        set { UserDefaults.standard.set(newValue, forKey: "usageWarnings.v2") }
     }
     private var timer: Timer?
 
@@ -45,22 +73,41 @@ struct PlanLimit: Decodable, Identifiable, Equatable {
         }
     }
 
+    /// Decodes each entry on its own, so one unreadable plan never hides the others.
+    private struct Lenient: Decodable {
+        let limit: PlanLimit?
+        init(from decoder: Decoder) throws { limit = try? PlanLimit(from: decoder) }
+    }
+
     func refresh() async {
-        guard let fresh = try? await PythonTool.run("limits", [], as: [PlanLimit].self) else { return }
+        guard let rows = try? await PythonTool.run("limits", [], as: [Lenient].self) else { return }
+        let fresh = rows.compactMap(\.limit)
         if fresh != limits { limits = fresh }
         check(fresh)
     }
 
     /// The thresholds `limit` crossed that were not reported yet; remembers them as reported.
-    func crossed(_ limit: PlanLimit) -> [(window: String, percent: Double, threshold: Double, resets: Double?)] {
+    /// A window whose reset time has passed, or whose report is older than the window itself, warns no more. Without a
+    /// reset time, the period follows from the report's date, and a clear drop in usage counts as a new period.
+    func crossed(_ limit: PlanLimit, now: Date = Date()) -> [(window: String, percent: Double, threshold: Double, resets: Double?)] {
         var result = [(window: String, percent: Double, threshold: Double, resets: Double?)]()
-        for (name, window) in [("five", limit.five), ("week", limit.week)] {
+        var store = warned
+        for (name, window, span) in [("five", limit.five, 5 * 3600.0), ("week", limit.week, 7 * 86400.0)] {
             guard let window else { continue }
-            let key = limit.id + "." + name + "." + String(Int(window.resets ?? 0))
-            guard let threshold = Self.thresholds.last(where: { window.percent >= $0 }), threshold > (warned[key] ?? 0) else { continue }
-            warned[key] = threshold
+            if let resets = window.resets, resets <= now.timeIntervalSince1970 { continue }
+            if let date = limit.date, now.timeIntervalSince(date) > span { continue }
+            let period = window.resets ?? ((limit.date ?? now).timeIntervalSince1970 / span).rounded(.down)
+            let key = limit.id + "." + name
+            var reported = store[key].flatMap { $0.count == 2 && $0[0] == period ? $0[1] : nil } ?? 0
+            if window.percent < 50 { reported = 0 }
+            guard let threshold = Self.thresholds.last(where: { window.percent >= $0 }), threshold > reported else {
+                store[key] = [period, reported]
+                continue
+            }
+            store[key] = [period, threshold]
             result.append((name, window.percent, threshold, window.resets))
         }
+        warned = store
         return result
     }
 

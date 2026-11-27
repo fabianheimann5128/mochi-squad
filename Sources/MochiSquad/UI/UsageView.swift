@@ -84,7 +84,10 @@ struct UsagePanel: View {
                 }
             }.frame(height: 5)
             if let resets = window.resets {
-                Text(t("Starts over ", "Beginnt neu ") + LimitStore.when(resets)).font(.system(size: 11)).foregroundStyle(Desk.faint)
+                // A window whose reset time has passed shows an old value until the client reports again.
+                Text(resets > Date().timeIntervalSince1970 ? t("Starts over ", "Beginnt neu ") + LimitStore.when(resets)
+                                                          : t("Has started over since; new numbers follow with the next answer", "Inzwischen neu gestartet; neue Zahlen kommen mit der nächsten Antwort"))
+                    .font(.system(size: 11)).foregroundStyle(Desk.faint)
             }
         }
     }

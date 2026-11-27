@@ -735,19 +735,30 @@ import Testing
     }
 
     @MainActor @Test func usageWarnsOncePerThresholdAndWindow() {
-        UserDefaults.standard.removeObject(forKey: "usageWarnings")
-        defer { UserDefaults.standard.removeObject(forKey: "usageWarnings") }
+        UserDefaults.standard.removeObject(forKey: "usageWarnings.v2")
+        defer { UserDefaults.standard.removeObject(forKey: "usageWarnings.v2") }
         let store = LimitStore()
-        func limit(_ week: Double, resets: Double = 100) -> PlanLimit {
-            PlanLimit(id: "claude", five: nil, week: .init(percent: week, resets: resets), stamp: "2026-11-27T12:00:00Z")
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let stamp = ISO8601DateFormatter().string(from: now.addingTimeInterval(-60))
+        func limit(_ week: Double, resets: Double? = 1_800_100_000) -> PlanLimit {
+            PlanLimit(id: "claude", five: nil, week: .init(percent: week, resets: resets), stamp: stamp)
         }
-        #expect(store.crossed(limit(50)).isEmpty)
-        #expect(store.crossed(limit(81)).map(\.threshold) == [80])
-        #expect(store.crossed(limit(85)).isEmpty)
-        #expect(store.crossed(limit(96)).map(\.threshold) == [95])
-        #expect(store.crossed(limit(99)).isEmpty)
+        #expect(store.crossed(limit(50), now: now).isEmpty)
+        #expect(store.crossed(limit(81), now: now).map(\.threshold) == [80])
+        #expect(store.crossed(limit(85), now: now).isEmpty)
+        #expect(store.crossed(limit(96), now: now).map(\.threshold) == [95])
+        #expect(store.crossed(limit(99), now: now).isEmpty)
         // A new week warns again.
-        #expect(store.crossed(limit(82, resets: 200)).map(\.threshold) == [80])
+        #expect(store.crossed(limit(82, resets: 1_800_700_000), now: now).map(\.threshold) == [80])
+        // 4.7: a window whose reset has passed warns no more.
+        #expect(store.crossed(limit(97, resets: 1_799_000_000), now: now).isEmpty)
+        // 4.6: without a reset time a clear drop starts a new period.
+        #expect(store.crossed(limit(83, resets: nil), now: now).map(\.threshold) == [80])
+        #expect(store.crossed(limit(2, resets: nil), now: now).isEmpty)
+        #expect(store.crossed(limit(83, resets: nil), now: now).map(\.threshold) == [80])
+        // 4.5: absurd numbers are clamped or dropped instead of crashing.
+        let wild = PlanLimit.Window(percent: 1e100, resets: 1e100)
+        #expect(wild.percent == 100 && wild.resets == nil)
         #expect(limit(1).date != nil && store.name("codex") == "ChatGPT")
     }
 

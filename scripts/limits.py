@@ -21,46 +21,73 @@ TAIL = 256 * 1024
 CLAUDE_FILE = "limits-claude.json"
 
 
+LATEST_RESET = 4102444800  # 2100-01-01: anything later is no real reset time
+SCAN_DAYS = 14
+SCAN_FILES = 8
+
+
 def window(percent, resets=None):
-    if not isinstance(percent, (int, float)):
+    """A usage window, or None if the numbers are unusable. Percent is clamped to 0–100."""
+    if isinstance(percent, bool) or not isinstance(percent, (int, float)) or percent != percent or percent in (float("inf"), float("-inf")):
         return None
-    return {"percent": max(0.0, min(100.0, float(percent))), "resets": resets if isinstance(resets, (int, float)) else None}
+    valid_reset = (not isinstance(resets, bool) and isinstance(resets, (int, float)) and resets == resets
+                   and 0 < resets < LATEST_RESET)
+    return {"percent": max(0.0, min(100.0, float(percent))), "resets": resets if valid_reset else None}
+
+
+def checked(stored):
+    """A stored window read back: checked again, never trusted as it is."""
+    return window(stored.get("percent"), stored.get("resets")) if isinstance(stored, dict) else None
 
 
 def claude(data=None):
     record = common.read_json(Path(data or common.DATA) / CLAUDE_FILE, None)
     if not isinstance(record, dict):
         return None
-    return {"id": "claude", "five": record.get("five"), "week": record.get("week"), "stamp": record.get("stamp")}
+    five, week = checked(record.get("five")), checked(record.get("week"))
+    if not five and not week:
+        return None
+    return {"id": "claude", "five": five, "week": week, "stamp": record.get("stamp") if isinstance(record.get("stamp"), str) else None}
 
 
 def remember_claude(rates, data=None, now=None):
     """Called by the status line of a Claude session: stores the plan limits it just reported."""
     rates = rates if isinstance(rates, dict) else {}
-    five, week = rates.get("five_hour") or {}, rates.get("seven_day") or {}
+    five, week = rates.get("five_hour"), rates.get("seven_day")
+    five, week = five if isinstance(five, dict) else {}, week if isinstance(week, dict) else {}
     entry = {"five": window(five.get("used_percentage"), five.get("resets_at")),
              "week": window(week.get("used_percentage"), week.get("resets_at")),
              "stamp": now or datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
     if entry["five"] is None and entry["week"] is None:
         return
-    target = Path(data or common.DATA) / CLAUDE_FILE
-    temp = target.with_name("." + CLAUDE_FILE + "." + str(os.getpid()))
+    write(Path(data or common.DATA) / CLAUDE_FILE, entry)
+
+
+def write(target, entry):
+    temp = target.with_name("." + target.name + "." + str(os.getpid()))
     temp.write_text(json.dumps(entry), encoding="utf-8")
     os.replace(temp, target)
 
 
-def newest_rollouts(home, count=3):
-    """The most recently written history files of a Codex folder (sessions/YYYY/MM/DD/rollout-*.jsonl)."""
-    found = []
-    # Look at the last few days, in case today's folder is still empty.
+def recent_rollouts(home, days=SCAN_DAYS):
+    """History files of the last days, most recently written first. A conversation continued today still lies in
+    the folder of the day it began, so the date of the folder alone does not tell which file is current."""
     base = Path(home) / "sessions"
-    if not base.is_dir():
+    folders = []
+    try:
+        for year in sorted((p for p in base.iterdir() if p.is_dir()), reverse=True)[:2]:
+            for month in sorted((p for p in year.iterdir() if p.is_dir()), reverse=True)[:2]:
+                folders += sorted((p for p in month.iterdir() if p.is_dir()), reverse=True)
+    except OSError:
         return []
-    for year in sorted((p for p in base.iterdir() if p.is_dir()), reverse=True)[:1]:
-        for month in sorted((p for p in year.iterdir() if p.is_dir()), reverse=True)[:2]:
-            for day in sorted((p for p in month.iterdir() if p.is_dir()), reverse=True)[:3]:
-                found += [p for p in day.glob("rollout-*.jsonl") if p.is_file()]
-    return sorted(found, key=lambda p: p.stat().st_mtime, reverse=True)[:count]
+    files = []
+    for day in sorted(folders, reverse=True)[:days]:
+        for file in day.glob("rollout-*.jsonl"):
+            try:
+                files.append((file.stat().st_mtime, file))
+            except OSError:
+                continue
+    return [file for _, file in sorted(files, key=lambda pair: pair[0], reverse=True)]
 
 
 def codex_limits(file):
@@ -79,10 +106,15 @@ def codex_limits(file):
             record = json.loads(line)
         except ValueError:
             continue
-        rates = ((record.get("payload") or {}).get("rate_limits")) or {}
-        result = {"five": None, "week": None, "stamp": record.get("timestamp")}
+        payload = record.get("payload") if isinstance(record, dict) else None
+        rates = payload.get("rate_limits") if isinstance(payload, dict) else None
+        if not isinstance(rates, dict):
+            continue
+        result = {"five": None, "week": None, "stamp": record.get("timestamp") if isinstance(record.get("timestamp"), str) else None}
         for key in ("primary", "secondary"):
-            interval = rates.get(key) or {}
+            interval = rates.get(key)
+            if not isinstance(interval, dict):
+                continue
             field = {300: "five", 10080: "week"}.get(interval.get("window_minutes"))
             if field:
                 result[field] = window(interval.get("used_percent"), interval.get("resets_at"))
@@ -91,22 +123,43 @@ def codex_limits(file):
     return None
 
 
-def codex(home, ident):
-    for file in newest_rollouts(home):
+def codex(home, ident, data=None):
+    """The newest report of a Codex folder. The last one found is kept, so new conversations that have not reported
+    yet do not make the plan disappear from the display."""
+    cache = Path(data or common.DATA) / ("limits-" + ident.replace(":", "-") + ".json")
+    for file in recent_rollouts(home)[:SCAN_FILES]:
         found = codex_limits(file)
         if found:
-            return dict(found, id=ident)
+            entry = dict(found, id=ident)
+            try:
+                write(cache, entry)
+            except OSError:
+                pass
+            return entry
+    stored = common.read_json(cache, None)
+    if isinstance(stored, dict) and stored.get("id") == ident:
+        five, week = checked(stored.get("five")), checked(stored.get("week"))
+        if five or week:
+            return {"id": ident, "five": five, "week": week, "stamp": stored.get("stamp") if isinstance(stored.get("stamp"), str) else None}
     return None
 
 
 def collect(data=None):
-    entries = [claude(data)]
-    entries.append(codex(common.codex_home(), "codex"))
+    """Every subscription on its own: one broken report never hides the others."""
+    jobs = [lambda: claude(data), lambda: codex(common.codex_home(), "codex", data)]
     extra = Path(data or common.DATA) / "accounts" / "codex"
     if extra.is_dir():
         for home in sorted(p for p in extra.iterdir() if p.is_dir() and common.ACCOUNT_ID.fullmatch(p.name)):
-            entries.append(codex(home, "codex:" + home.name))
-    return [entry for entry in entries if entry]
+            jobs.append(lambda home=home: codex(home, "codex:" + home.name, data))
+    entries = []
+    for job in jobs:
+        try:
+            entry = job()
+        except Exception:  # noqa: BLE001 – a single unreadable source must not cost the whole display
+            entry = None
+        if entry:
+            entries.append(entry)
+    return entries
 
 
 if __name__ == "__main__":
