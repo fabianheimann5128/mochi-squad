@@ -999,7 +999,7 @@ import Testing
         let store = MemoryStore(folder: root.appendingPathComponent("Mochi Memory"))
         #expect(store.notes.isEmpty)
         let day = Date(timeIntervalSince1970: 1_795_000_000)
-        let note = try store.remember("Fabian wants answers in German", project: nil, author: "Mira", source: bot, date: day)
+        let note = try store.remember("Alex wants answers in German", project: nil, author: "Mira", source: bot, date: day)
         #expect(note.kind == .profile && note.title == "About me" && note.entries.first?.author == "Mira")
         try store.remember("The shop runs on Shopify", project: "/tmp/Shop", author: "Otto", source: bot, date: day)
         let shop = try #require(store.note(for: "/tmp/Shop"))
@@ -1199,7 +1199,7 @@ import Testing
         let store = MemoryStore(folder: a)
         // Origin: id and rights go into the line and come back; the user's own entries are marked as such.
         try store.remember("Prefers German", project: nil, author: "Mira", source: bot)
-        try store.remember("Likes tea", project: nil, author: "Fabian", source: MemorySource(user: true))
+        try store.remember("Likes tea", project: nil, author: "Alex", source: MemorySource(user: true))
         var profile = store.entries(for: nil)
         #expect(profile[0].source == bot && profile[0].unconfirmed && profile[1].byUser && !profile[1].unconfirmed)
         // Confirming keeps the origin and marks it.
