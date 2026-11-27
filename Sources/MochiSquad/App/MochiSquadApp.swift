@@ -96,7 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let body = run.code == 0 ? Notifier.summary(of: run.output ?? "")
                                      : t("The routine failed: ", "Die Routine ist fehlgeschlagen: ") + Notifier.summary(of: run.output ?? "", limit: 160)
             Notifier.post(title: who, body: body.isEmpty ? t("Done.", "Fertig.") : body)
-            if toPhone { messengers?.announce(who + ": " + (body.isEmpty ? t("Done.", "Fertig.") : body)) }
+            if toPhone, let project = run.project { messengers?.announce(who + ": " + (body.isEmpty ? t("Done.", "Fertig.") : body), project: project) }
         }
         state.routines.deliverMissed()
         state.messengers.start()

@@ -437,20 +437,38 @@ enum Keychain {
     func stop() { telegram.stop(); whatsapp.stop() }
 
     /// A message of the app itself (for example a usage warning) to every connected messenger, whether the user
-    /// wrote from there recently or not.
-    func announce(_ text: String) {
-        deliver("ℹ️ " + text, to: "Telegram")
-        deliver("Mochi Squad: " + text, to: "WhatsApp")
+    /// wrote from there recently or not. With `project`, only while that project is still the messenger's one.
+    func announce(_ text: String, project: String? = nil) {
+        deliver("ℹ️ " + text, to: "Telegram", project: project)
+        deliver("Mochi Squad: " + text, to: "WhatsApp", project: project)
     }
 
-    /// Messages of the app wait while a set-up messenger is still connecting, and go out once it is ready.
-    private var pending = [String: [String]]()
+    /// A message of the app waiting while a set-up messenger is still connecting. It is bound to the account it was
+    /// meant for and, if it came from a project, to that project: it goes out only if both are still the same.
+    struct Waiting: Equatable {
+        let text: String
+        let recipient: String
+        let project: String?
+    }
+    private(set) var pending = [String: [Waiting]]()
     private var watchers = [AnyCancellable]()
 
-    private func deliver(_ text: String, to channel: String) {
-        let configured = channel == "Telegram" ? settings.messengers.telegram?.userID != nil : settings.messengers.whatsapp != nil
-        guard configured else { return }
-        if ready(channel) { send(text, to: channel) } else { pending[channel, default: []] = Array((pending[channel, default: []] + [text]).suffix(10)) }
+    /// The account a messenger talks to now: the paired Telegram user or the linked WhatsApp number.
+    func recipient(_ channel: String) -> String? {
+        if channel == "Telegram" { return settings.messengers.telegram?.userID.map { "telegram:\($0)" } }
+        return settings.messengers.whatsapp.map { "whatsapp:" + $0.number }
+    }
+
+    private func allowed(_ waiting: Waiting, on channel: String) -> Bool {
+        guard recipient(channel) == waiting.recipient else { return false }
+        return waiting.project == nil || waiting.project == settings.messengerProject?.path
+    }
+
+    func deliver(_ text: String, to channel: String, project: String? = nil) {
+        guard let recipient = recipient(channel) else { return }
+        if project != nil, project != settings.messengerProject?.path { return }
+        if ready(channel) { return send(text, to: channel) }
+        pending[channel, default: []] = Array((pending[channel, default: []] + [Waiting(text: text, recipient: recipient, project: project)]).suffix(10))
     }
 
     private func ready(_ channel: String) -> Bool {
@@ -459,9 +477,15 @@ enum Keychain {
         return false
     }
 
-    private func flush(_ channel: String) {
-        guard ready(channel), let waiting = pending.removeValue(forKey: channel) else { return }
-        waiting.forEach { send($0, to: channel) }
+    /// Sends what waits once the messenger is ready; what no longer belongs to its account or project is dropped,
+    /// and so is everything once the messenger is unlinked.
+    func flush(_ channel: String) {
+        guard var waiting = pending[channel] else { return }
+        waiting.removeAll { !allowed($0, on: channel) }
+        pending[channel] = waiting.isEmpty ? nil : waiting
+        guard ready(channel), !waiting.isEmpty else { return }
+        pending[channel] = nil
+        waiting.forEach { send($0.text, to: channel) }
     }
 
     private func send(_ text: String, to channel: String) {
