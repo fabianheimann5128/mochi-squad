@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Manages all running sessions and the collaboration of the agents: agent post, team chat,
@@ -172,15 +173,37 @@ import Foundation
     /// Releases ended sessions after a short while, unless the interface is showing them.
     private func prune() {
         keepAwake()
+        settleHandovers()
         let stale = sessions.filter { s in
             !s.isRunning && !pinned.contains(s.id) && (s.endedAt.map { Date().timeIntervalSince($0) > 20 } ?? false)
         }
         stale.forEach { close($0, keepWaiting: true) }
     }
 
-    /// Chat id of a Claude agent's latest history, to continue there.
     /// Agents whose conversation is being summarised right now.
     @Published private(set) var compacting = Set<UUID>()
+
+    /// A fresh session after tidying up, until its client has written its own history: the agent's chats as they
+    /// were before, to put back if the new session ends without one.
+    private struct PendingHandover { let session: UUID; let agent: UUID; let journals: [String] }
+    private var handovers = [PendingHandover]()
+
+    private func settleHandovers() {
+        handovers.removeAll { handover in
+            guard let session = sessions.first(where: { $0.id == handover.session }) else { return true }
+            if journalAppeared(for: handover) { return true }
+            guard !session.isRunning else { return false }
+            // The new session ended without a history of its own: the old chat is the agent's chat again.
+            agents.update(handover.agent) { $0.journals = handover.journals }
+            notice = t("The fresh session could not start; the chat stays as it was.", "Die frische Sitzung konnte nicht starten; der Chat bleibt, wie er war.")
+            return true
+        }
+    }
+
+    private func journalAppeared(for handover: PendingHandover) -> Bool {
+        guard let agent = agents.agent(handover.agent) else { return true }
+        return agent.journals.contains { !handover.journals.contains($0) && FileManager.default.fileExists(atPath: $0) }
+    }
 
     /// The newest conversation of an agent that a person had (not a routine run), as a history file.
     func latestConversation(of agent: Agent) -> String? {
@@ -190,8 +213,10 @@ import Foundation
     /// "Tidy up": the agent's long conversation is summarised and the agent goes on in a fresh session that starts
     /// with the summary. The old conversation moves to "More chats". Returns an error text, or nil on success.
     ///
-    /// Everything the summary depends on is noted at the start (session, history and its size, provider and plan)
-    /// and checked again before the switch: if anything moved on meanwhile, nothing is replaced.
+    /// Everything the summary depends on is noted at the start (session, history and the exact content summarised,
+    /// provider and plan) and checked again before the switch: if anything moved on meanwhile, nothing is replaced.
+    /// What the new session needs is checked before the old one ends, and the old chat comes back if the new
+    /// session does not start.
     func compact(_ agent: Agent) async -> String? {
         guard !compacting.contains(agent.id) else { return nil }
         let before = latestSession(for: agent.id)
@@ -201,14 +226,14 @@ import Foundation
         guard let journal = latestConversation(of: agent) else {
             return t("There is no conversation to tidy up yet.", "Es gibt noch keinen Verlauf zum Aufräumen.")
         }
-        let size = Self.fileSize(journal)
         let liveID = before?.isRunning == true ? before?.id : nil
+        if let problem = startProblem(for: agent, replacing: liveID) { return problem }
         let provider = agent.provider, account = agent.account, model = agent.model
         // The history is read in the format of the program that wrote it.
         let format: Provider = URL(fileURLWithPath: journal).lastPathComponent.hasPrefix("rollout-") ? .codex : .claude
         compacting.insert(agent.id)
         defer { compacting.remove(agent.id) }
-        struct Result: Decodable { let summary: String?; let error: String? }
+        struct Result: Decodable { let summary: String?; let error: String?; let revision: String? }
         let args = [format.rawValue, provider.rawValue, journal, provider == .codex ? (account ?? "") : "", provider == .codex ? model : ""]
         guard let result = try? await PythonTool.run("compact", args, as: Result.self) else {
             return t("The summary could not be made.", "Die Zusammenfassung ließ sich nicht erstellen.")
@@ -221,22 +246,48 @@ import Foundation
                      "Programm oder Abo von \(agent.name) wurden zwischendurch geändert; nichts wurde übergeben. Räum noch einmal auf.")
         }
         let now = latestSession(for: agent.id)
-        let moved = latestConversation(of: current) != journal || Self.fileSize(journal) != size
-            || (now?.isRunning == true && now?.id != liveID) || now?.working == true
+        let nowID = now?.isRunning == true ? now?.id : nil
+        if liveID != nil, nowID == nil {
+            return t("The session was ended meanwhile, so nothing was handed over.", "Die Sitzung wurde zwischendurch beendet, daher wurde nichts übergeben.")
+        }
+        // The same content, not just the same size: a correction of equal length counts too.
+        let revision = await Task.detached { Self.revision(of: journal) }.value
+        let moved = latestConversation(of: current) != journal || result.revision == nil || revision != result.revision
+            || nowID != liveID || now?.working == true
         guard !moved else {
             return t("The chat went on while the summary was being written; nothing was replaced. Tidy up again when it is quiet.",
                      "Der Chat ging weiter, während die Zusammenfassung entstand; nichts wurde ersetzt. Räum noch einmal auf, wenn Ruhe ist.")
         }
-        // What can be checked before the old session ends is checked first.
-        guard FileManager.default.fileExists(atPath: current.project) else { return SessionError.projectMissing.localizedDescription }
+        if let problem = startProblem(for: current, replacing: nowID) { return problem }
+        let previous = current.journals
         if let now, now.isRunning { close(now) }
         agents.archiveConversations(of: current.id)
         do {
-            _ = try launch(current, task: Self.compactTask(summary))
+            let session = try launch(current, task: Self.compactTask(summary))
+            handovers.append(PendingHandover(session: session.id, agent: current.id, journals: previous))
             return nil
         } catch {
-            return error.localizedDescription + " " + t("The old chat is under “More chats”.", "Der alte Chat liegt unter „Weitere Chats“.")
+            agents.update(current.id) { $0.journals = previous }
+            return error.localizedDescription + " " + t("The chat stays as it was.", "Der Chat bleibt, wie er war.")
         }
+    }
+
+    /// Why a fresh session for `agent` could not start right now, checked without starting it. A running session
+    /// that the fresh one replaces frees its place.
+    private func startProblem(for agent: Agent, replacing live: UUID?) -> String? {
+        guard FileManager.default.fileExists(atPath: agent.project) else { return SessionError.projectMissing.localizedDescription }
+        guard live != nil || runningCount < Self.maxRunning else { return SessionError.tooMany.localizedDescription }
+        if agent.isCoordinator, bridge.mcpConfig == nil { return SessionError.toolsNotReady.localizedDescription }
+        return nil
+    }
+
+    /// A fingerprint of a history's content.
+    nonisolated static func revision(of path: String) -> String? {
+        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? handle.close() }
+        var hash = SHA256()
+        while let chunk = try? handle.read(upToCount: 1 << 20), !chunk.isEmpty { hash.update(data: chunk) }
+        return hash.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
     nonisolated static func fileSize(_ path: String) -> Int {

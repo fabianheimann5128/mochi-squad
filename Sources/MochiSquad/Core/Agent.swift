@@ -109,6 +109,9 @@ struct Agent: Codable, Identifiable, Hashable {
     /// History files written by routine runs. They are shown in the chat like any other, but a new message never
     /// continues from one, and one that was dropped from `journals` is not attached a second time.
     var routineJournals: [String]?
+    /// Conversations moved out of the chat by tidying up. "More chats" lists them even where the client keeps no
+    /// index entry for them (some Codex histories).
+    var archivedJournals: [String]?
     var lastTask = ""
     var lastLine: String?
     var updated: Date?
@@ -320,7 +323,12 @@ struct AgentTemplate: Identifiable {
 
     /// The agent's conversations leave its chat and show under "More chats"; routine runs stay attached.
     func archiveConversations(of id: UUID) {
-        update(id) { agent in agent.journals = agent.journals.filter { (agent.routineJournals ?? []).contains($0) } }
+        update(id) { agent in
+            let routines = agent.routineJournals ?? []
+            let moved = agent.journals.filter { !routines.contains($0) }
+            agent.archivedJournals = Array((((agent.archivedJournals ?? []).filter { !moved.contains($0) }) + moved).suffix(100))
+            agent.journals = agent.journals.filter { routines.contains($0) }
+        }
     }
 
     /// Adds the history of a routine run to the agent's chat, once. The preview moves only forward in time.

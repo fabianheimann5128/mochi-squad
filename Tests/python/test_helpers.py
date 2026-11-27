@@ -305,8 +305,41 @@ class ContextBaseTests(unittest.TestCase):
             with open(journal, "a") as handle:
                 handle.write(answer(240))
             later = history.read(journal, "claude", first["position"], 40)
-            self.assertNotIn("base", later["usage"])
+            # A read that continues knows the session's start too: always the first answer, never the page's first.
+            self.assertEqual(later["usage"]["base"], 100)
             self.assertEqual(history.read(journal, "claude", 0, 40)["usage"]["base"], 100)
+
+    def test_codex_and_new_chats_keep_the_first_base(self):
+        with tempfile.TemporaryDirectory() as folder:
+            # K1: Codex, read at once and then continued.
+            journal = Path(folder) / "rollout-x.jsonl"
+            def count(total):
+                return json.dumps({"type": "event_msg", "payload": {"type": "token_count", "info": {
+                    "last_token_usage": {"total_tokens": total, "input_tokens": total, "cached_input_tokens": 0},
+                    "model_context_window": 1000}}}) + "\n"
+            journal.write_text(count(100))
+            first = history.read(journal, "codex", 0, 40)
+            with open(journal, "a") as handle:
+                handle.write(count(240))
+            self.assertEqual(first["usage"]["base"], 100)
+            self.assertEqual(history.read(journal, "codex", first["position"], 40)["usage"]["base"], 100)
+            # K2: a new Claude chat whose first answer arrives while it is watched.
+            chat = Path(folder) / "chat.jsonl"
+            chat.write_text(json.dumps({"type": "user", "message": {"content": "Hi"}}) + "\n")
+            empty = history.read(chat, "claude", 0, 40)
+            self.assertNotIn("base", empty["usage"])
+            answer = {"type": "assistant", "message": {"model": "m", "content": [{"type": "text", "text": "ok"}], "usage": {"input_tokens": 101}}}
+            with open(chat, "a") as handle:
+                handle.write(json.dumps(answer) + "\n")
+            self.assertEqual(history.read(chat, "claude", empty["position"], 40)["usage"]["base"], 101)
+            # K3: side chains are no session start, in a long history read from its end too.
+            long = Path(folder) / "long.jsonl"
+            side = dict(answer, isSidechain=True, message=dict(answer["message"], usage={"input_tokens": 25}))
+            filler = json.dumps({"type": "user", "message": {"content": "x" * 1000}}) + "\n"
+            long.write_text(json.dumps(side) + "\n" + json.dumps(dict(answer, message=dict(answer["message"], usage={"input_tokens": 100}))) + "\n"
+                            + filler * 4300 + json.dumps(answer) + "\n")
+            self.assertGreater(long.stat().st_size, history.TAIL_BYTES)
+            self.assertEqual(history.read(long, "claude", 0, 40)["usage"]["base"], 100)
 
 
 class CompactTests(unittest.TestCase):
@@ -325,6 +358,60 @@ class CompactTests(unittest.TestCase):
             self.assertIn(feature, codex[codex.index("--disable"):])
         self.assertIn("notify=[]", codex)
         self.assertIn('{"disableAllHooks": true}', claude)
+
+    def test_long_messages_fill_the_budget_and_memory_stays_small(self):
+        with tempfile.TemporaryDirectory() as folder:
+            journal = Path(folder) / "chat.jsonl"
+            def row(kind, text):
+                return json.dumps({"type": kind, "message": {"content": text}} if kind == "user"
+                                  else {"type": kind, "message": {"model": "m", "content": [{"type": "text", "text": text}]}}) + "\n"
+            # D4: a very long task followed by a short answer still fills the window with the task's end.
+            journal.write_text(row("user", "start " + "word " * 16000 + "THE END") + row("assistant", "OK"))
+            text = compact.conversation(journal, "claude")
+            self.assertTrue(text.endswith("Agent: OK"))
+            self.assertIn("User (end of a longer message): …", text)
+            self.assertIn("THE END", text)
+            self.assertGreater(len(text), compact.MAX_CHARS - 100)
+            self.assertLessEqual(len(text), compact.MAX_CHARS)
+            # D5: many messages: the newest ones, in order, within the budget.
+            journal.write_text("".join(row("user" if i % 2 else "assistant", f"m{i} " + "x" * 1200) for i in range(3000)))
+            text = compact.conversation(journal, "claude")
+            self.assertTrue(text.rstrip().split("\n\n")[-1].startswith("User: m2999"))
+            self.assertLessEqual(len(text), compact.MAX_CHARS)
+            self.assertEqual(len(compact.revision(journal)), 64)
+
+    def test_tidied_up_chats_stay_in_more_chats(self):
+        with tempfile.TemporaryDirectory() as folder:
+            project = os.path.realpath(folder)
+            rollout = Path(folder) / "rollout-2026-11-27T10-00-00-abc.jsonl"
+            rollout.write_text(json.dumps({"type": "event_msg", "payload": {"type": "user_message", "message": "Build the shop page"}}) + "\n")
+            (Path(folder) / "agents.json").write_text(json.dumps([
+                {"project": folder, "archivedJournals": [str(rollout), "/etc/hosts", str(Path(folder) / "gone.jsonl")]},
+                {"project": "/elsewhere", "archivedJournals": [str(rollout)]}]))
+            items = history.archived_chats(project, set(), data=folder)
+            self.assertEqual([(i["provider"], i["title"]) for i in items], [("codex", "Build the shop page")])
+            self.assertEqual(history.archived_chats(project, {str(rollout)}, data=folder), [])
+
+    def test_codex_tools_are_checked_before_a_summary(self):
+        # A stand-in for Codex that reports the tools it would offer to the address it is given.
+        with tempfile.TemporaryDirectory() as folder:
+            fake = Path(folder) / "codex"
+            fake.write_text("#!/usr/bin/python3\nimport json, re, sys, urllib.request\n"
+                            "args = ' '.join(sys.argv)\nurl = re.search(r'base_url=\"([^\"]+)\"', args).group(1)\n"
+                            "tools = sys.argv[sys.argv.index('--tools-json') + 1] if '--tools-json' in sys.argv else '[]'\n"
+                            "req = urllib.request.Request(url + '/responses', data=json.dumps({'tools': json.loads(tools)}).encode(), method='POST')\n"
+                            "try:\n    urllib.request.urlopen(req, timeout=5)\nexcept Exception:\n    pass\n")
+            fake.chmod(0o755)
+            def command(tools):
+                return lambda probe: compact.codex_command(str(fake), "P", folder, folder + "/o", "", (), probe)[:-1] + ["--tools-json", json.dumps(tools), "P"]
+            env = {"PATH": "/usr/bin:/bin"}
+            self.assertEqual(compact.offered_tools(command([{"type": "function", "name": "request_user_input"}]), folder, env), ["request_user_input"])
+            self.assertEqual(compact.offered_tools(command([{"name": "spawn_agent"}, {"name": "view_image"}]), folder, env), ["spawn_agent", "view_image"])
+            self.assertIsNone(compact.offered_tools(lambda probe: ["/usr/bin/true"], folder, env))
+            codex = compact.codex_command("/bin/codex", "P", "/tmp/x", "/tmp/x/o.txt", "", (), "http://127.0.0.1:1/v1")
+            self.assertIn('model_provider="mochi_probe"', codex)
+            for feature in ("goals", "multi_agent", "view_image"):
+                self.assertIn(feature, codex)
 
     def test_codex_without_a_server_list_does_not_run(self):
         with tempfile.TemporaryDirectory() as folder:

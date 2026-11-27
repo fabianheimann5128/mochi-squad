@@ -32,18 +32,22 @@ struct Usage: Decodable, Equatable {
 
     /// The context window split by what fills it; parts in tokens, in drawing order. Empty without numbers.
     var parts: [(kind: ContextPart, tokens: Int)] {
-        guard let used, used > 0 else { return [] }
+        // Numbers beyond any real context window are ignored rather than added up (they could overflow).
+        let ceiling = 1 << 40
+        guard let used, used > 0, used <= ceiling else { return [] }
+        let output = self.output.map { min(max(0, $0), ceiling) }
+        let window = self.limit.map { min(max(0, $0), ceiling) }
         let start = min(max(0, base ?? 0), used)
         if answerInside == true {
             // The answer is part of what the context holds.
             let answer = min(max(0, output ?? 0), used - start)
-            let limit = max(self.limit ?? used, used)
+            let limit = max(window ?? used, used)
             return [(.base, start), (.conversation, used - start - answer), (.answer, answer), (.free, limit - used)].filter { $0.tokens > 0 }
         }
         // The answer comes on top of what was read; without a known window size there is no "free" part.
         let answer = max(0, output ?? 0)
         let filled = used + answer
-        let limit = max(self.limit ?? filled, filled)
+        let limit = max(window ?? filled, filled)
         return [(.base, start), (.conversation, used - start), (.answer, answer), (.free, limit - filled)].filter { $0.tokens > 0 }
     }
 }
@@ -129,8 +133,9 @@ struct ActivityEvent: Decodable, Identifiable, Equatable {
             position = page.position
             if page.usage.used != nil {
                 // A read that continues where the last one stopped knows nothing about the session's start: keep it.
+                // The base belongs to the session's start and does not change once known.
                 var fresh = page.usage
-                if fresh.base == nil { fresh.base = usage.base }
+                if !initial, let known = usage.base { fresh.base = known } else if fresh.base == nil { fresh.base = usage.base }
                 usage = fresh
             } else if let model = page.usage.model { usage.model = model }
             // When appending, prepare only the new lines; finished bubbles stay untouched.

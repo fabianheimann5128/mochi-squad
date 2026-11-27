@@ -104,7 +104,40 @@ def list_chats(project):
             continue
     for index, home in enumerate(common.codex_homes()):
         items += codex_threads(Path(os.environ.get("CODEX_SQLITE_HOME", home)) if index == 0 else home, project)
+    items += archived_chats(project, {item["path"] for item in items})
     return sorted(items, key=lambda x: -x["modified"])
+
+
+def archived_chats(project, known, data=None):
+    """Conversations the app moved out of an agent's chat in this project that no client index lists (a Codex
+    history without a database entry, for example). Only history files of the two clients are taken."""
+    agents = common.read_json(Path(data or common.DATA) / "agents.json", []) or []
+    items = []
+    for agent in agents if isinstance(agents, list) else []:
+        if not isinstance(agent, dict) or not isinstance(agent.get("project"), str):
+            continue
+        if os.path.realpath(agent["project"]) != project:
+            continue
+        for path in agent.get("archivedJournals") or []:
+            if not isinstance(path, str) or path in known or not path.endswith(".jsonl") or not os.path.isfile(path):
+                continue
+            provider = "codex" if Path(path).name.startswith("rollout-") else "claude"
+            title = ""
+            try:
+                with open(path, "rb") as f:
+                    for message in messages(f, provider, {}, True):
+                        if message["role"] == "user":
+                            title = message["text"]
+                            break
+                        if f.tell() > 2 * 1024 * 1024:
+                            break
+            except OSError:
+                continue
+            known.add(path)
+            items.append(dict(id=Path(path).stem, path=path, provider=provider,
+                              title=" ".join(title.split())[:120] or ("Codex session" if provider == "codex" else "Claude session"),
+                              modified=os.path.getmtime(path)))
+    return items
 
 
 def codex_threads(db_root, project):
@@ -131,9 +164,85 @@ def codex_threads(db_root, project):
 TAIL_BYTES = 4 * 1024 * 1024
 
 
+def messages(f, provider, stats, from_start):
+    """Yields the messages of a history from the file's current position on, as dicts (id, role, text, timestamp),
+    and collects model and usage numbers in `stats`. `from_start`: the reading began at the session's start, so the
+    first usage seen is what the session started with (its base)."""
+    for pos, row in records(f):
+        kind = row.get("type")
+        role, text = "", ""
+        if provider == "claude":
+            if kind == "attachment" and (row.get("attachment") or {}).get("type") == "queued_command" and not row.get("isSidechain"):
+                # Message delivered while the agent worked: counts like a user line.
+                queued = user_text((row.get("attachment") or {}).get("prompt"))
+                if queued:
+                    yield dict(id=pos, role="user", text=queued, timestamp=row.get("timestamp") or "")
+                continue
+            if kind == "attachment":
+                attachment = row.get("attachment") or {}
+                if attachment.get("type") == "skill_listing" and attachment.get("skillCount") is not None:
+                    stats["skills"] = attachment["skillCount"]
+            if kind == "api-request-shape":
+                tools = (row.get("shape") or {}).get("tools")
+                if isinstance(tools, list):
+                    stats["tools"] = len(tools)
+            if kind not in ("assistant", "user") or row.get("isMeta") or row.get("isSidechain"):
+                continue
+            msg = row.get("message") or {}
+            body = msg.get("content")
+            if isinstance(body, list):
+                body = "\n\n".join(x.get("text", "") for x in body if isinstance(x, dict) and x.get("type") == "text")
+            if kind == "assistant":
+                used = claude_usage(row)
+                if msg.get("model") != "<synthetic>":
+                    stats["model"] = msg.get("model") or stats.get("model")
+                if used is not None:
+                    usage = msg["usage"]
+                    stats["fresh"] = usage["input_tokens"]
+                    stats["cacheWrite"] = usage.get("cache_creation_input_tokens", 0)
+                    stats["cached"] = usage.get("cache_read_input_tokens", 0)
+                    stats["used"] = used
+                    if from_start and "base" not in stats:
+                        stats["base"] = used
+                    stats["output"] = usage.get("output_tokens")
+                text = body or ""
+            else:
+                text = user_text(body)
+            role = kind
+        else:
+            had_base = "base" in stats
+            codex_record(stats, row)
+            if not from_start and not had_base:
+                stats.pop("base", None)
+            payload = row.get("payload") or {}
+            if kind == "event_msg" and payload.get("type") in ("agent_message", "user_message"):
+                role = "assistant" if payload["type"] == "agent_message" else "user"
+                text = payload.get("message", "")
+                text = user_text(text) if role == "user" else agent_text(text)
+            elif kind == "event_msg" and payload.get("type") == "item_completed":
+                # Newer Codex versions report messages as completed items.
+                role, text = codex_item(payload.get("item"))
+        if isinstance(text, str) and text.strip():
+            yield dict(id=pos, role=role, text=text.strip(), timestamp=row.get("timestamp") or "")
+
+
+def claude_usage(row):
+    """Tokens a Claude answer read, or None. Claude Code's own error notes ("<synthetic>") have no usage that counts."""
+    msg = row.get("message") or {}
+    usage = msg.get("usage") or {}
+    if row.get("type") != "assistant" or msg.get("model") == "<synthetic>" or row.get("isMeta") or row.get("isSidechain"):
+        return None
+    if not isinstance(usage.get("input_tokens"), int):
+        return None
+    return usage["input_tokens"] + int(usage.get("cache_read_input_tokens") or 0) + int(usage.get("cache_creation_input_tokens") or 0)
+
+
 def read(path, provider, offset, count):
     """Messages from `offset` on, at most the last `count`. A first read (offset 0) of a long file starts near
-    its end instead of parsing everything for one page; `older` then says that more exists."""
+    its end instead of parsing everything for one page; `older` then says that more exists.
+
+    The base (what the session started with) always comes from the session's first usage: from this read if it
+    began at the start, otherwise from a look at the file's beginning, the same way for both clients."""
     result = deque(maxlen=count)
     total, stats = 0, {}
     with open(path, "rb") as f:
@@ -142,64 +251,12 @@ def read(path, provider, offset, count):
         f.seek(size - TAIL_BYTES if skipped else offset)
         if skipped:
             f.readline()
-        for pos, row in records(f):
-            kind = row.get("type")
-            role, text = "", ""
-            if provider == "claude":
-                if kind == "attachment" and (row.get("attachment") or {}).get("type") == "queued_command" and not row.get("isSidechain"):
-                    # Message delivered while the agent worked: counts like a user line.
-                    queued = user_text((row.get("attachment") or {}).get("prompt"))
-                    if queued:
-                        result.append(dict(id=pos, role="user", text=queued, timestamp=row.get("timestamp") or ""))
-                        total += 1
-                    continue
-                if kind == "attachment":
-                    attachment = row.get("attachment") or {}
-                    if attachment.get("type") == "skill_listing" and attachment.get("skillCount") is not None:
-                        stats["skills"] = attachment["skillCount"]
-                if kind == "api-request-shape":
-                    tools = (row.get("shape") or {}).get("tools")
-                    if isinstance(tools, list):
-                        stats["tools"] = len(tools)
-                if kind not in ("assistant", "user") or row.get("isMeta") or row.get("isSidechain"):
-                    continue
-                msg = row.get("message") or {}
-                body = msg.get("content")
-                if isinstance(body, list):
-                    body = "\n\n".join(x.get("text", "") for x in body if isinstance(x, dict) and x.get("type") == "text")
-                if kind == "assistant":
-                    # Claude Code writes its own error notes as "<synthetic>" messages: shown, but no model and no usage.
-                    synthetic = msg.get("model") == "<synthetic>"
-                    usage = {} if synthetic else msg.get("usage") or {}
-                    if not synthetic:
-                        stats["model"] = msg.get("model") or stats.get("model")
-                    if "input_tokens" in usage:
-                        stats["fresh"] = usage["input_tokens"]
-                        stats["cacheWrite"] = usage.get("cache_creation_input_tokens", 0)
-                        stats["cached"] = usage.get("cache_read_input_tokens", 0)
-                        stats["used"] = usage["input_tokens"] + stats["cached"] + usage.get("cache_creation_input_tokens", 0)
-                        if offset == 0 and not skipped and "base" not in stats:
-                            stats["base"] = stats["used"]
-                        stats["output"] = usage.get("output_tokens")
-                    text = body or ""
-                else:
-                    text = user_text(body)
-                role = kind
-            else:
-                codex_record(stats, row)
-                payload = row.get("payload") or {}
-                if kind == "event_msg" and payload.get("type") in ("agent_message", "user_message"):
-                    role = "assistant" if payload["type"] == "agent_message" else "user"
-                    text = payload.get("message", "")
-                    text = user_text(text) if role == "user" else agent_text(text)
-                elif kind == "event_msg" and payload.get("type") == "item_completed":
-                    # Newer Codex versions report messages as completed items.
-                    role, text = codex_item(payload.get("item"))
-            if isinstance(text, str) and text.strip():
-                result.append(dict(id=pos, role=role, text=text.strip(), timestamp=row.get("timestamp") or ""))
-                total += 1
-        if provider == "claude" and offset == 0 and skipped and "base" not in stats:
-            base = claude_base(f)
+        from_start = offset == 0 and not skipped
+        for message in messages(f, provider, stats, from_start):
+            result.append(message)
+            total += 1
+        if not from_start and stats.get("used") is not None and "base" not in stats:
+            base = first_base(f, provider)
             if base is not None:
                 stats["base"] = base
         # Claude reports the context without the answer just written; Codex counts the answer in. The display needs to know.
@@ -207,28 +264,33 @@ def read(path, provider, offset, count):
         return dict(messages=list(result), position=f.tell(), older=total > count or skipped, usage=stats)
 
 
-def claude_base(f, limit=2 * 1024 * 1024):
-    """Tokens of the first answer in a Claude history: what the session started with. Read from the file's start,
-    at most `limit` bytes, for histories whose end alone was read."""
+def first_base(f, provider, limit=2 * 1024 * 1024):
+    """Tokens of the first usage in a history: what the session started with. Read from the file's start, at most
+    `limit` bytes, with the same rules as a full read (no side chains, no meta lines, no synthetic answers)."""
     end = f.tell()
     try:
         f.seek(0)
-        read = 0
-        while read < limit:
+        read_bytes = 0
+        while read_bytes < limit:
             line = f.readline()
             if not line:
                 break
-            read += len(line)
-            if b'"input_tokens"' not in line or b'"assistant"' not in line:
+            read_bytes += len(line)
+            marker = b'"input_tokens"' if provider == "claude" else b'"token_count"'
+            if marker not in line:
                 continue
             try:
                 row = json.loads(line)
             except ValueError:
                 continue
-            msg = row.get("message") or {}
-            usage = msg.get("usage") or {}
-            if row.get("type") == "assistant" and msg.get("model") != "<synthetic>" and "input_tokens" in usage:
-                return usage["input_tokens"] + usage.get("cache_read_input_tokens", 0) + usage.get("cache_creation_input_tokens", 0)
+            if provider == "claude":
+                used = claude_usage(row)
+            else:
+                probe = {}
+                codex_record(probe, row)
+                used = probe.get("base")
+            if used is not None:
+                return used
         return None
     finally:
         f.seek(end)

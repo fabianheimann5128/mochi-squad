@@ -925,6 +925,11 @@ import Testing
         // A base larger than the window's content never goes negative.
         usage.used = 63_340; usage.output = 826; usage.limit = 200_000; usage.base = 90_000
         #expect(usage.parts.first?.tokens == 63_340 && usage.parts.allSatisfy { $0.tokens > 0 })
+        // K4: numbers no context window has are dropped instead of overflowing.
+        usage.answerInside = false; usage.used = Int.max; usage.output = 1; usage.base = nil; usage.limit = nil
+        #expect(usage.parts.isEmpty)
+        usage.used = 1_000; usage.output = Int.max; usage.limit = Int.max
+        #expect(usage.parts.allSatisfy { $0.tokens > 0 })
     }
 
     @MainActor @Test func memoryKeepsFactsAsObsidianNotes() throws {
@@ -1205,5 +1210,7 @@ import Testing
         store.save(agent)
         store.archiveConversations(of: agent.id)
         #expect(store.agent(agent.id)?.journals == ["/run.jsonl"])
+        // D7: the moved conversations stay listed for "More chats", also without a client index entry.
+        #expect(store.agent(agent.id)?.archivedJournals == ["/a.jsonl", "/b.jsonl"])
     }
 }
