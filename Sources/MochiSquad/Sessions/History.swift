@@ -24,7 +24,32 @@ struct Usage: Decodable, Equatable {
     var model: String?
     var historyPath: String?
     var used, limit, cached, output, cacheWrite, fresh, skills, tools: Int?
+    /// Tokens the session started with: instructions, tools, skills and the first exchange.
+    var base: Int?
     var percent, five, week: Double?
+
+    /// The context window split by what fills it; parts in tokens, in drawing order. Empty without numbers.
+    var parts: [(kind: ContextPart, tokens: Int)] {
+        guard let used, used > 0 else { return [] }
+        // Without a known window size (an old history) there is no "free" part to show.
+        let limit = max(self.limit ?? used, used)
+        let start = min(max(0, base ?? 0), used)
+        let answer = min(max(0, output ?? 0), used - start)
+        let talk = max(0, used - start - answer)
+        return [(.base, start), (.conversation, talk), (.answer, answer), (.free, limit - used)].filter { $0.tokens > 0 }
+    }
+}
+
+enum ContextPart: CaseIterable {
+    case base, conversation, answer, free
+    var title: String {
+        switch self {
+        case .base: return t("Instructions, tools and skills", "Anweisungen, Werkzeuge und Skills")
+        case .conversation: return t("Conversation", "Gesprächsverlauf")
+        case .answer: return t("Last answer", "Letzte Antwort")
+        case .free: return t("Free", "Frei")
+        }
+    }
 }
 
 /// Event from history.py activity: what an agent did last.

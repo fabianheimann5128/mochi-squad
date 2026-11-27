@@ -728,6 +728,8 @@ import Testing
     }
 
     @MainActor @Test func usageWarnsOncePerThresholdAndWindow() {
+        UserDefaults.standard.removeObject(forKey: "usageWarnings")
+        defer { UserDefaults.standard.removeObject(forKey: "usageWarnings") }
         let store = LimitStore()
         func limit(_ week: Double, resets: Double = 100) -> PlanLimit {
             PlanLimit(id: "claude", five: nil, week: .init(percent: week, resets: resets), stamp: "2026-11-27T12:00:00Z")
@@ -761,5 +763,17 @@ import Testing
         routine.trigger = .folder; routine.folder = "/Users/x/Downloads"
         #expect(routine.summary == "when “Downloads” changes")
         #expect(Notifier.summary(of: "line one\n\nline two\nline three", limit: 20) == "line two line three")
+    }
+
+    @Test func contextWindowSplitsByWhatFillsIt() {
+        var usage = Usage()
+        #expect(usage.parts.isEmpty)
+        usage.used = 63_340; usage.base = 43_873; usage.output = 826
+        #expect(usage.parts.map(\.tokens) == [43_873, 18_641, 826])
+        usage.limit = 200_000
+        #expect(usage.parts.last?.kind == .free && usage.parts.last?.tokens == 136_660)
+        // A base larger than the window's content never goes negative.
+        usage.base = 90_000
+        #expect(usage.parts.first?.tokens == 63_340 && usage.parts.allSatisfy { $0.tokens > 0 })
     }
 }

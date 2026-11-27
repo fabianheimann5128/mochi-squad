@@ -31,7 +31,11 @@ struct PlanLimit: Decodable, Identifiable, Equatable {
     /// Called with a warning text when a limit crosses a threshold.
     var onWarning: ((String) -> Void)?
     static let thresholds: [Double] = [80, 95]
-    private var warned = [String: Double]()
+    /// Thresholds already reported, per window; kept across launches so a restart does not warn again.
+    private var warned: [String: Double] {
+        get { (UserDefaults.standard.dictionary(forKey: "usageWarnings") as? [String: Double]) ?? [:] }
+        set { UserDefaults.standard.set(newValue.filter { $0.value > 0 }.suffix(40).reduce(into: [:]) { $0[$1.key] = $1.value }, forKey: "usageWarnings") }
+    }
     private var timer: Timer?
 
     func start() {

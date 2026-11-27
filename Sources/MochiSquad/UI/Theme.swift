@@ -173,3 +173,28 @@ struct PillMenu: View {
         }.menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
     }
 }
+
+/// Ring chart: segments in order, clockwise from the top, with small gaps; the centre shows `label`.
+struct Donut<Label: View>: View {
+    let parts: [(color: Color, value: Double)]
+    var lineWidth: CGFloat = 12
+    @ViewBuilder let label: () -> Label
+
+    var body: some View {
+        let total = max(parts.reduce(0) { $0 + $1.value }, 0.0001)
+        let gap = parts.count > 1 ? 0.006 : 0
+        ZStack {
+            Circle().stroke(Color.white.opacity(0.06), lineWidth: lineWidth)
+            ForEach(Array(parts.enumerated()), id: \.offset) { index, part in
+                let start = parts.prefix(index).reduce(0) { $0 + $1.value } / total
+                let end = start + part.value / total
+                Circle().trim(from: start + gap, to: max(start + gap, end - gap))
+                    .stroke(part.color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .butt))
+                    .rotationEffect(.degrees(-90))
+            }
+            label()
+        }
+        .padding(lineWidth / 2)
+        .animation(.easeOut(duration: 0.4), value: parts.map(\.value))
+    }
+}

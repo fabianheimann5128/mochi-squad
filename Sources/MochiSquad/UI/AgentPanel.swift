@@ -62,6 +62,7 @@ private struct ComputerView: View {
                     }
                 }
                 Facts(agent: agent, extra: nil)
+                MacMonitor()
             }
         }
     }
@@ -91,6 +92,7 @@ private struct ComputerView: View {
                 TimelineView(.periodic(from: session.started, by: 1)) { moment in
                     Facts(agent: agent, extra: session.isRunning ? (t("Running for", "Läuft seit"), clock(moment.date.timeIntervalSince(session.started))) : ("Status", session.status))
                 }
+                MacMonitor()
                 if !files.isEmpty {
                     Text(t("Recently edited", "Zuletzt bearbeitet")).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Desk.dim)
                     ForEach(files, id: \.path) { url in
@@ -266,26 +268,59 @@ private struct ContextView: View {
 
 private struct UsageNumbers: View {
     let usage: Usage
+
+    static func color(_ part: ContextPart) -> Color {
+        switch part {
+        case .base: return Color(red: 0.62, green: 0.48, blue: 1.0)
+        case .conversation: return Desk.accent
+        case .answer: return Desk.success
+        case .free: return Color.white.opacity(0.10)
+        }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            if let percent = usage.percent ?? usage.used.flatMap({ used in usage.limit.map { 100 * Double(used) / Double(max(1, $0)) } }) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(percent.formatted(.number.precision(.fractionLength(0))) + " %").font(.system(size: 26, weight: .semibold).monospacedDigit())
-                    Text(t("used", "genutzt")).font(.system(size: 15)).foregroundStyle(Desk.dim)
-                }
-                GeometryReader { bar in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color.white.opacity(0.08))
-                        Capsule().fill(Desk.accent).frame(width: bar.size.width * min(1, max(0, percent / 100)))
+        let parts = usage.parts
+        let total = max(1, parts.reduce(0) { $0 + $1.tokens })
+        VStack(alignment: .leading, spacing: 12) {
+            if !parts.isEmpty {
+                HStack(alignment: .center, spacing: 16) {
+                    Donut(parts: parts.map { (Self.color($0.kind), Double($0.tokens)) }, lineWidth: 14) {
+                        VStack(spacing: 0) {
+                            if usage.limit != nil {
+                                let used = 100 * Double(total - (parts.first { $0.kind == .free }?.tokens ?? 0)) / Double(total)
+                                Text("\(Int(used.rounded())) %").font(.system(size: 22, weight: .semibold).monospacedDigit())
+                                Text(t("full", "belegt")).font(.system(size: 11)).foregroundStyle(Desk.dim)
+                            } else {
+                                Text(Self.tokens(total)).font(.system(size: 20, weight: .semibold).monospacedDigit())
+                                Text(t("tokens", "Token")).font(.system(size: 11)).foregroundStyle(Desk.dim)
+                            }
+                        }
+                    }.frame(width: 118, height: 118)
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(parts, id: \.kind) { part in
+                            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                                Circle().fill(part.kind == .free ? Desk.faint : Self.color(part.kind)).frame(width: 8, height: 8)
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(part.kind.title).font(.system(size: 12)).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                                    Text("\(Int((100 * Double(part.tokens) / Double(total)).rounded())) % · " + Self.tokens(part.tokens))
+                                        .font(.system(size: 11).monospacedDigit()).foregroundStyle(Desk.dim)
+                                }
+                            }
+                        }
                     }
-                }.frame(height: 4)
+                }
+                Rectangle().fill(Desk.rule).frame(height: 1)
             }
             if let model = usage.model {
                 // The model the client actually reports; a Claude id becomes its name, anything else stays as it is.
                 line(t("Model", "Modell"), Provider.claude.label(for: model))
             }
-            if let used = usage.used { line(usage.limit == nil ? t("Last request", "Letzte Anfrage") : t("Tokens in use", "Token belegt"), used.formatted()) }
-            if let limit = usage.limit { line(t("Context window", "Kontextfenster"), limit.formatted()) }
+            if let limit = usage.limit { line(t("Context window", "Kontextfenster"), Self.tokens(limit)) }
+            if let used = usage.used, let cached = usage.cached, used > 0 {
+                line(t("From the cache", "Aus dem Zwischenspeicher"), "\(Int((100 * Double(min(cached, used)) / Double(used)).rounded())) %")
+            }
+            if let skills = usage.skills { line("Skills", "\(skills)") }
+            if let tools = usage.tools { line(t("Tools", "Werkzeuge"), "\(tools)") }
             if let five = usage.five { line(t("5-hour limit", "5-Stunden-Limit"), five.formatted(.number.precision(.fractionLength(0))) + " %") }
             if let week = usage.week { line(t("Weekly limit", "Wochenlimit"), week.formatted(.number.precision(.fractionLength(0))) + " %") }
             if usage.used == nil && usage.model == nil {
@@ -293,6 +328,14 @@ private struct UsageNumbers: View {
             }
         }.padding(14).frame(maxWidth: .infinity, alignment: .leading).background(Desk.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
+
+    /// 12 400 → "12.4k", 1 000 000 → "1M".
+    static func tokens(_ value: Int) -> String {
+        if value >= 1_000_000 { return (Double(value) / 1_000_000).formatted(.number.precision(.fractionLength(0...1))) + "M" }
+        if value >= 1000 { return (Double(value) / 1000).formatted(.number.precision(.fractionLength(0...1))) + "k" }
+        return "\(value)"
+    }
+
     private func line(_ name: String, _ value: String) -> some View {
         HStack {
             Text(name).foregroundStyle(Desk.dim)

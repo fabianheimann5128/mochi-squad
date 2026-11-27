@@ -175,6 +175,8 @@ def read(path, provider, offset, count):
                         stats["cacheWrite"] = usage.get("cache_creation_input_tokens", 0)
                         stats["cached"] = usage.get("cache_read_input_tokens", 0)
                         stats["used"] = usage["input_tokens"] + stats["cached"] + usage.get("cache_creation_input_tokens", 0)
+                        if not skipped and "base" not in stats:
+                            stats["base"] = stats["used"]
                         stats["output"] = usage.get("output_tokens")
                     text = body or ""
                 else:
