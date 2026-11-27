@@ -284,7 +284,7 @@ private struct ContextView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(t("\(agent.name)'s context", "Kontext von \(agent.name)")).font(.system(size: 13, weight: .semibold)).foregroundStyle(Desk.dim)
-            if let session { Live(session: session, fallback: transcript.usage) } else { UsageNumbers(usage: transcript.usage) }
+            if let session { Live(session: session, fallback: transcript.usage, agent: agent) } else { UsageNumbers(usage: transcript.usage, agent: agent) }
             TidyUp(agent: agent, usage: session?.usage.used != nil ? session!.usage : transcript.usage)
             Button(action: openConnectors) { Label(t("Manage connectors", "Konnektoren verwalten"), systemImage: "puzzlepiece.extension") }.buttonStyle(.pill).padding(.top, 6)
             Text(t("Connectors are services (MCP servers) your agents may use. They are set up in the respective client.",
@@ -296,12 +296,15 @@ private struct ContextView: View {
     private struct Live: View {
         @ObservedObject var session: AgentSession
         let fallback: Usage
-        var body: some View { UsageNumbers(usage: session.usage.used != nil ? session.usage : fallback) }
+        var agent: Agent?
+        var body: some View { UsageNumbers(usage: session.usage.used != nil ? session.usage : fallback, agent: agent) }
     }
 }
 
 private struct UsageNumbers: View {
     let usage: Usage
+    /// The agent whose numbers these are: its provider and plan name the model.
+    var agent: Agent?
 
     static func color(_ part: ContextPart) -> Color {
         switch part {
@@ -347,7 +350,7 @@ private struct UsageNumbers: View {
             }
             if let model = usage.model {
                 // The model the client actually reports; a Claude id becomes its name, anything else stays as it is.
-                line(t("Model", "Modell"), Provider.claude.label(for: model))
+                line(t("Model", "Modell"), (agent?.provider ?? .claude).label(for: model, account: agent?.account))
             }
             if let limit = usage.limit { line(t("Context window", "Kontextfenster"), Self.tokens(limit)) }
             if let used = usage.used, let cached = usage.cached, used > 0 {

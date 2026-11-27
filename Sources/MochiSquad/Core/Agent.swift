@@ -146,11 +146,11 @@ struct Agent: Codable, Identifiable, Hashable {
     var modelLabel: String { provider.label(for: model, account: account) }
 
     /// Every agent has an explicit model; if it is missing or does not fit the provider, the provider's default applies.
+    /// The reasoning depth is checked as well, also when the model stays: another plan or model may not offer it.
     func withModel() -> Agent {
-        guard !models.contains(model), !models.isEmpty else { return self }
         var copy = self
-        copy.model = provider.defaultModel(account: account)
-        if !copy.efforts.contains(copy.effort) { copy.effort = "" }
+        if !models.isEmpty, !models.contains(model) { copy.model = provider.defaultModel(account: account) }
+        if !copy.effort.isEmpty, !copy.efforts.contains(copy.effort) { copy.effort = "" }
         return copy
     }
 

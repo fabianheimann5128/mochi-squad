@@ -346,14 +346,18 @@ import Testing
         #expect(SpeechInput.join("", "Hello") == "Hello")
         #expect(SpeechInput.join("Hello", "how are you") == "Hello how are you")
         #expect(SpeechInput.join("Hello", "") == "Hello")
-        // Growing and revised partial results are no new start.
+        // Growing, revised and shortened partial results are no new start (3.1).
         #expect(!SpeechInput.startedOver(previous: "Hello how", latest: "Hello how are you"))
         #expect(!SpeechInput.startedOver(previous: "I want to write two letters", latest: "I want to write to Lena"))
         #expect(!SpeechInput.startedOver(previous: "hello there", latest: "Hello, there!"))
         #expect(!SpeechInput.startedOver(previous: "", latest: "Hello"))
-        // The recognition began again and reports only the new words.
+        #expect(!SpeechInput.startedOver(previous: "Wir treffen uns morgen um zehn Uhr", latest: "Wir treffen"))
+        // A new stretch of speech, also when it is as long or longer (3.2).
         #expect(SpeechInput.startedOver(previous: "First I want to say that the team chat works well now", latest: "and then"))
-        #expect(SpeechInput.startedOver(previous: "Please check the routines", latest: "Also the"))
+        #expect(SpeechInput.startedOver(previous: "Erste Frage", latest: "zweite Frage"))
+        // With times from the recogniser: a later start is new speech, the same start a revision.
+        #expect(SpeechInput.startedOver(previous: "Erste Frage", latest: "Erste Frage und mehr", previousStart: 0.2, latestStart: 4.1))
+        #expect(!SpeechInput.startedOver(previous: "Wie geht", latest: "Wir gehen", previousStart: 0.2, latestStart: 0.2))
     }
 
     @Test func imagePreviewsKeepTheirProportions() {
@@ -890,5 +894,13 @@ import Testing
         #expect(store.restorable(home: home) == 1)
         try fm.removeItem(at: real)
         #expect(store.restorable(home: home) == 0)
+    }
+
+    @Test func reasoningDepthIsCheckedEvenWhenTheModelStays() {
+        var agent = Agent(name: "Mira", job: "", project: "/tmp/p")
+        agent.model = "claude-haiku-5-5"; agent.effort = "high"
+        #expect(agent.withModel().model == "claude-haiku-5-5" && agent.withModel().effort == "")
+        agent.model = "claude-opus-5-5"
+        #expect(agent.withModel().effort == "high")
     }
 }
