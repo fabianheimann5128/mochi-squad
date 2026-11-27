@@ -58,9 +58,11 @@ def previous_output(routine_id, path=None):
     return ""
 
 
-def routine_task(routine, owner, previous=""):
+def routine_task(routine, owner, previous="", given=""):
     """The task as the agent gets it: what started the run, what it found last time, and when to stay silent."""
     parts = []
+    if given:
+        parts.append(f"{owner} started this run with the message:\n<<<\n{given}\n>>>")
     if routine.get("trigger") == "folder" and routine.get("folder"):
         parts.append(f"The folder `{routine['folder']}` just changed. Look at what is new there first.")
     parts.append(str(routine.get("task") or "").strip())
@@ -77,14 +79,14 @@ def silent(output):
     return NOTHING_NEW in str(output or "").strip()[-200:]
 
 
-def build_spec(routine, owner, session_id, language="en", previous=""):
+def build_spec(routine, owner, session_id, language="en", previous="", given=""):
     # The coordinator's tools exist only while the app runs. In routines it works like any other agent.
     agent = routine.get("agent") or {}
     if isinstance(agent, dict) and agent.get("isCoordinator"):
         agent = dict(agent, isCoordinator=False, job=agent.get("job") or "coordinator")
     return launcher.attach_memory(launcher.attach_skills(launcher.validate_spec({
         "provider": routine.get("provider"), "project": routine.get("project"),
-        "task": routine_task(routine, owner or "the user", previous),
+        "task": routine_task(routine, owner or "the user", previous, given),
         "sessionId": session_id, "owner": owner, "language": language, "unattended": True,
         "allowWeb": routine.get("allowWeb") is True,
         "agent": agent, "account": agent.get("account") or "" if isinstance(agent, dict) else "",
@@ -145,6 +147,11 @@ def single_run(routine_id, folder=None):
 def main(argv):
     routine_id = argv[0] if argv else ""
     manual = "--now" in argv[1:]
+    # Text that came with the start (a messenger message after the keyword, or the start link's text).
+    given = ""
+    if "--input" in argv[1:]:
+        position = argv.index("--input")
+        given = argv[position + 1][:2000].strip() if position + 1 < len(argv) else ""
     routine = find_routine(routine_id)
     if not routine or (routine.get("active") is not True and not manual):
         return
@@ -160,7 +167,7 @@ def main(argv):
             if routine.get("trigger") == "folder" and not Path(str(routine.get("folder") or "")).is_dir():
                 raise launcher.SpecError(t("The watched folder no longer exists.", "Der beobachtete Ordner existiert nicht mehr."))
             previous = previous_output(routine_id) if routine.get("quiet") is True else ""
-            spec = build_spec(routine, str(settings.get("ownerName") or ""), str(uuid.uuid4()), common.language(), previous)
+            spec = build_spec(routine, str(settings.get("ownerName") or ""), str(uuid.uuid4()), common.language(), previous, given)
             binary = common.find_client(spec["provider"])
             if not binary:
                 record.update(code=127, output=t("The client is not installed on this Mac.",

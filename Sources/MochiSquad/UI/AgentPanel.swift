@@ -242,6 +242,39 @@ func clock(_ seconds: TimeInterval) -> String {
 
 // MARK: Context
 
+/// "Tidy up": summarise a long conversation and go on in a fresh session. Suggested once the context fills up.
+private struct TidyUp: View {
+    let agent: Agent
+    let usage: Usage
+    @EnvironmentObject private var manager: SessionManager
+    @State private var issue: String?
+
+    var body: some View {
+        let busy = manager.compacting.contains(agent.id)
+        let full = (usage.percent ?? 0) >= 60
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                issue = nil
+                Task { issue = await manager.compact(agent) }
+            } label: {
+                HStack(spacing: 8) {
+                    if busy { ProgressView().controlSize(.small) } else { Image(systemName: "sparkles") }
+                    Text(busy ? t("Summarising …", "Fasse zusammen …") : t("Summarise and start fresh", "Zusammenfassen und frisch weitermachen"))
+                }
+            }
+            .buttonStyle(.pill).disabled(busy || manager.latestConversation(of: agent) == nil)
+            Text(full ? t("The context is getting full. Tidying up makes \(agent.name) faster and saves usage; the old chat stays under “More chats”.",
+                          "Der Kontext wird voll. Aufräumen macht \(agent.name) schneller und spart Verbrauch; der alte Chat bleibt unter „Weitere Chats“.")
+                      : t("Long chats get slower and use more of your plan. This writes a short summary and continues in a fresh chat; the old one stays under “More chats”.",
+                          "Lange Chats werden langsamer und verbrauchen mehr vom Abo. Das schreibt eine kurze Zusammenfassung und macht in einem frischen Chat weiter; der alte bleibt unter „Weitere Chats“."))
+                .font(.system(size: 12)).foregroundStyle(full ? Desk.warning : Desk.dim).fixedSize(horizontal: false, vertical: true)
+            if let issue {
+                Label(issue, systemImage: "exclamationmark.triangle.fill").font(.system(size: 12)).foregroundStyle(Desk.warning).fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
 private struct ContextView: View {
     let agent: Agent
     let session: AgentSession?
@@ -252,6 +285,7 @@ private struct ContextView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text(t("\(agent.name)'s context", "Kontext von \(agent.name)")).font(.system(size: 13, weight: .semibold)).foregroundStyle(Desk.dim)
             if let session { Live(session: session, fallback: transcript.usage) } else { UsageNumbers(usage: transcript.usage) }
+            TidyUp(agent: agent, usage: session?.usage.used != nil ? session!.usage : transcript.usage)
             Button(action: openConnectors) { Label(t("Manage connectors", "Konnektoren verwalten"), systemImage: "puzzlepiece.extension") }.buttonStyle(.pill).padding(.top, 6)
             Text(t("Connectors are services (MCP servers) your agents may use. They are set up in the respective client.",
                    "Konnektoren sind Dienste (MCP-Server), die deine Agenten nutzen dürfen. Sie werden im jeweiligen Client eingerichtet."))
@@ -365,7 +399,7 @@ private struct RoutinePanel: View {
                     ForEach(saved) { routine in
                         Button { draft = routine } label: {
                             HStack(spacing: 10) {
-                                Image(systemName: routine.kind == .folder ? "folder" : "clock").font(.system(size: 12)).foregroundStyle(Desk.dim)
+                                Image(systemName: ["folder": "folder", "keyword": "number", "link": "link"][routine.kind.rawValue] ?? "clock").font(.system(size: 12)).foregroundStyle(Desk.dim)
                                 Text(routine.summary.prefix(1).uppercased() + routine.summary.dropFirst()).font(.system(size: 13, weight: .medium)).lineLimit(1)
                                 Spacer()
                                 Circle().fill(routine.active ? Desk.success : Desk.faint).frame(width: 6, height: 6)
@@ -402,6 +436,7 @@ private struct RoutinePanel: View {
         // Only what the user edits here counts as a change; agent details are refreshed by the store on every save.
         let changed = stored?.plan != routine.plan
         let ready = !routine.task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && (routine.kind != .folder || routine.folder != nil)
+            && (routine.kind != .keyword || (Routine.normalized(keyword: routine.keyword) != nil && keywordIssue(routine) == nil)) && (routine.kind != .link || routine.key != nil)
         HStack(spacing: 8) {
             Toggle("", isOn: Binding(get: { routine.active }, set: { on in
                 var copy = routine; copy.active = on
@@ -437,9 +472,14 @@ private struct RoutinePanel: View {
             }
         label(t("When", "Wann"))
         VStack(alignment: .leading, spacing: 10) {
-            PillPicker(selection: Binding(get: { routine.kind }, set: { var c = routine; c.trigger = $0 == .time ? nil : $0; draft = c }),
-                       options: [(Routine.Trigger.time, t("At a time", "Zur Uhrzeit")), (.hours, t("Every few hours", "Alle paar Stunden")),
-                                 (.folder, t("Folder changes", "Ordner ändert sich"))])
+            PillMenu(title: Self.triggerTitle(routine.kind),
+                     options: Routine.Trigger.allCases.map { ($0.rawValue, Self.triggerTitle($0)) }, current: routine.kind.rawValue) { raw in
+                var c = routine
+                let kind = Routine.Trigger(rawValue: raw) ?? .time
+                c.trigger = kind == .time ? nil : kind
+                if kind == .link, c.key == nil { c.key = Routine.newKey() }
+                draft = c
+            }
             switch routine.kind {
             case .time:
             HStack(spacing: 8) {
@@ -493,6 +533,35 @@ private struct RoutinePanel: View {
                 Text(t("macOS starts the routine as soon as something in the folder changes, at most every two minutes.",
                        "macOS startet die Routine, sobald sich im Ordner etwas ändert, höchstens alle zwei Minuten."))
                     .font(.system(size: 11.5)).foregroundStyle(Desk.dim).fixedSize(horizontal: false, vertical: true)
+            case .keyword:
+                HStack(spacing: 8) {
+                    Image(systemName: "number").foregroundStyle(Desk.dim)
+                    TextField(t("e.g. #report", "z. B. #bericht"), text: Binding(get: { routine.keyword ?? "" }, set: { var c = routine; c.keyword = $0; draft = c }))
+                        .textFieldStyle(.plain).font(.system(size: 13.5)).padding(.horizontal, 10).frame(height: 30).field(8)
+                }
+                if let issue = keywordIssue(routine) {
+                    Text(issue).font(.system(size: 11.5)).foregroundStyle(Desk.warning).fixedSize(horizontal: false, vertical: true)
+                }
+                Text(t("Write “\(Routine.normalized(keyword: routine.keyword) ?? "#report") …” to your coordinator on Telegram or WhatsApp. The routine starts, and the rest of your message goes along as part of the task. Works while Mochi Squad is open.",
+                       "Schreib „\(Routine.normalized(keyword: routine.keyword) ?? "#bericht") …“ per Telegram oder WhatsApp an deinen Koordinator. Die Routine startet, und der Rest deiner Nachricht geht als Teil des Auftrags mit. Funktioniert, solange Mochi Squad offen ist."))
+                    .font(.system(size: 11.5)).foregroundStyle(Desk.dim).fixedSize(horizontal: false, vertical: true)
+            case .link:
+                if let link = routine.startLink {
+                    HStack(spacing: 8) {
+                        Image(systemName: "link").foregroundStyle(Desk.dim)
+                        Text(link.absoluteString).font(.system(size: 11.5, design: .monospaced)).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                        Spacer(minLength: 4)
+                        Button(t("Copy", "Kopieren")) {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(link.absoluteString, forType: .string)
+                        }.buttonStyle(.pill)
+                    }
+                }
+                Text(t("Open this link from Shortcuts, Raycast, a Stream Deck or a script to start the routine; add “&text=…” to give it a task. Mochi Squad opens if it is closed. Anyone with the link can start the routine, so keep it to yourself.",
+                       "Öffne diesen Link aus Kurzbefehlen, Raycast, einem Stream Deck oder einem Skript, um die Routine zu starten; mit „&text=…“ gibst du ihr einen Auftrag mit. Mochi Squad öffnet sich, wenn es zu ist. Wer den Link hat, kann die Routine starten, also behalte ihn für dich."))
+                    .font(.system(size: 11.5)).foregroundStyle(Desk.dim).fixedSize(horizontal: false, vertical: true)
+                Button(t("New link (the old one stops working)", "Neuer Link (der alte geht dann nicht mehr)")) { var c = routine; c.key = Routine.newKey(); draft = c }
+                    .buttonStyle(.plain).font(.system(size: 11.5, weight: .medium)).foregroundStyle(Desk.accent)
             }
         }.padding(12).overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Desk.edge) }
         Toggle(isOn: Binding(get: { routine.quiet == true }, set: { var c = routine; c.quiet = $0 ? true : nil; draft = c })) {
@@ -536,4 +605,25 @@ private struct RoutinePanel: View {
     }
 
     private func label(_ text: String) -> some View { Text(text).font(.system(size: 12.5)).foregroundStyle(Desk.dim) }
+
+    static func triggerTitle(_ kind: Routine.Trigger) -> String {
+        switch kind {
+        case .time: return t("At a time", "Zur Uhrzeit")
+        case .hours: return t("Every few hours", "Alle paar Stunden")
+        case .folder: return t("When a folder changes", "Wenn sich ein Ordner ändert")
+        case .keyword: return t("When I send a keyword", "Wenn ich ein Stichwort schicke")
+        case .link: return t("With a start link", "Über einen Start-Link")
+        }
+    }
+
+    /// A keyword must be one word and belong to one routine only.
+    private func keywordIssue(_ routine: Routine) -> String? {
+        guard let word = Routine.normalized(keyword: routine.keyword) else {
+            return (routine.keyword ?? "").isEmpty ? nil : t("Use one word, for example #report.", "Nimm ein Wort, zum Beispiel #bericht.")
+        }
+        if store.routines.contains(where: { $0.id != routine.id && $0.kind == .keyword && Routine.normalized(keyword: $0.keyword) == word }) {
+            return t("Another routine already uses \(word).", "\(word) nutzt schon eine andere Routine.")
+        }
+        return nil
+    }
 }

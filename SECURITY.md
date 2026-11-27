@@ -62,11 +62,16 @@ A routine runs while you are away, so it trusts less than a chat does:
 - With Codex the user's tool servers are switched off, and the list is taken in the project folder the routine runs in.
 - Without "May search the web", the web tools are denied.
 - The same routine never runs twice at once.
+- **Keyword and start link.** A keyword routine starts when the paired messenger account writes its keyword; the rest of the message goes into the task. A start link (`mochisquad://run?routine=…&key=…`) carries a random 24-character key that is compared in constant time; anyone who has the link can start that routine, in the sandbox, with the text they add. Create a new link if it leaked. Both work only while the app runs (a link opens the app).
 - Rights, model and subscription of a routine always follow the agent as it is now. A form left open cannot bring back rights you took away.
 
 ## Skills
 
 A skill is a folder with instructions (`SKILL.md`) and sometimes scripts. Whatever a skill says, an agent that has it will try to do, within its rights: **use only skills from sources you trust**, as you would with any program. Skills you installed in Claude Code (`~/.claude/skills`) or Codex (`~/.codex/skills`, `~/.agents/skills`) are linked automatically and then reach agents of both kinds; take one out in the Skills window if it should not. Mochi Squad keeps added skills in its own data, where agents can neither read nor change them, and gives the agents a copy to read. Sandboxed agents cannot change that copy; an agent with full access can, until the app rebuilds it at the next launch or change. Links inside a skill are removed on import, so a skill cannot point at files outside its folder. Which agent gets which skill is decided by the list in the app's data, never by anything in a project or a session file.
+
+## Tidying up a conversation
+
+"Summarise and start fresh" sends the text of the agent's latest conversation (at most the last 60,000 characters) to the same provider in a one-off run without any tools, tool servers or saved session, in an empty temporary folder, and starts a new session whose first message is that summary. The summary is as reliable as the model that wrote it; the full conversation stays where it was and can be opened under "More chats".
 
 ## Mochi Memory
 

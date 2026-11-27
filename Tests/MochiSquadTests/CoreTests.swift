@@ -807,4 +807,38 @@ import Testing
         #expect(MemoryStore.parse(line: "- [[About me]]", index: 0) == nil)
         #expect(!MemoryStore.looksSecret("Prefers short answers and dark mode"))
     }
+
+    @MainActor @Test func keywordAndLinkTriggersFindTheirRoutine() throws {
+        let home = try folder()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let store = RoutineStore(file: home.appendingPathComponent("routines.json"), runFile: home.appendingPathComponent("runs.jsonl"))
+        let mira = Agent(name: "Mira", job: "", project: home.path)
+        var report = Routine(agent: mira)
+        report.task = "Report on the shop"; report.active = true; report.trigger = .keyword; report.keyword = "#Report"
+        store.save(report, agent: mira)
+        #expect(Routine.normalized(keyword: "Report") == "#report" && Routine.normalized(keyword: "two words") == nil)
+        let hit = try #require(store.match(message: "#report  the new orders "))
+        #expect(hit.routine.id == report.id && hit.input == "the new orders")
+        #expect(store.match(message: "#REPORT")?.input == "")
+        #expect(store.match(message: "please #report") == nil && store.match(message: "#reports") == nil)
+        report.active = false
+        store.save(report, agent: mira)
+        #expect(store.match(message: "#report") == nil)
+        // Start link: only the right key of an active link routine counts.
+        var linked = Routine(agent: mira)
+        linked.task = "Tidy the inbox"; linked.active = true; linked.trigger = .link; linked.key = Routine.newKey()
+        let link = try #require(linked.startLink)
+        #expect(link.absoluteString.hasPrefix("mochisquad://run?routine=\(linked.id)&key="))
+        #expect(linked.key?.count == 24 && Routine.newKey() != linked.key)
+        #expect(RoutineStore.same("abc", "abc") && !RoutineStore.same("abc", "abd") && !RoutineStore.same("abc", "abcd"))
+        store.save(linked, agent: mira)
+        let wrong = URL(string: "mochisquad://run?routine=\(linked.id)&key=wrongwrongwrongwrongwron")!
+        #expect(store.open(link: wrong) == nil)
+        #expect(store.open(link: URL(string: "https://example.com/run?routine=\(linked.id)&key=\(linked.key!)")!) == nil)
+    }
+
+    @Test func tidyUpTaskCarriesTheSummary() {
+        let task = SessionManager.compactTask("Goal: ship 0.2.1")
+        #expect(task.hasPrefix(SessionManager.compactMark) && task.contains("Goal: ship 0.2.1") && task.contains("wait for my next message"))
+    }
 }

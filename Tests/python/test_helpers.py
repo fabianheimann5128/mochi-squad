@@ -14,6 +14,7 @@ import connectors  # noqa: E402
 import context  # noqa: E402
 import history  # noqa: E402
 import post  # noqa: E402
+import compact  # noqa: E402
 import launcher  # noqa: E402
 import limits  # noqa: E402
 import memory  # noqa: E402
@@ -159,6 +160,52 @@ class MemoryTests(unittest.TestCase):
         self.assertIsNone(post.parse(["remember", "--about-me"]))
 
 
+class SyntheticTests(unittest.TestCase):
+    def test_client_error_notes_stay_messages_without_model(self):
+        with tempfile.TemporaryDirectory() as folder:
+            journal = Path(folder) / "chat.jsonl"
+            rows = [{"type": "user", "message": {"content": "hello"}},
+                    {"type": "assistant", "message": {"model": "claude-opus-5-5", "content": [{"type": "text", "text": "hi"}],
+                                                      "usage": {"input_tokens": 10, "cache_read_input_tokens": 0}}},
+                    {"type": "assistant", "message": {"model": "<synthetic>", "content": [{"type": "text", "text": "Not logged in"}],
+                                                      "usage": {"input_tokens": 0}}}]
+            journal.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+            result = history.read(journal, "claude", 0, 40)
+            self.assertEqual([m["role"] for m in result["messages"]], ["user", "assistant", "assistant"])
+            self.assertEqual(result["usage"]["model"], "claude-opus-5-5")
+            self.assertEqual(result["usage"]["used"], 10)
+
+
+class CompactTests(unittest.TestCase):
+    def test_commands_run_without_tools_or_saved_sessions(self):
+        claude = compact.claude_command("/bin/claude", "P")
+        self.assertIn("--no-session-persistence", claude)
+        self.assertEqual(claude[claude.index("--tools") + 1], "")
+        self.assertIn("--strict-mcp-config", claude)
+        codex = compact.codex_command("/bin/codex", "P", "/tmp/x", "/tmp/x/o.txt", "gpt-x", [("srv", True, "node", [])])
+        self.assertIn("--ephemeral", codex)
+        self.assertEqual(codex[codex.index("--sandbox") + 1], "read-only")
+        self.assertIn("mcp_servers.srv.enabled=false", codex)
+        self.assertEqual(codex[-1], "P")
+
+    def test_short_or_missing_conversations_are_refused(self):
+        self.assertIn("error", compact.summarise("claude", "/does/not/exist"))
+        self.assertIn("error", compact.summarise("other", "/x"))
+        with tempfile.TemporaryDirectory() as folder:
+            journal = Path(folder) / "chat.jsonl"
+            journal.write_text(json.dumps({"type": "user", "message": {"content": "hi"}}) + "\n")
+            self.assertIn("error", compact.summarise("claude", str(journal)))
+
+    def test_conversation_keeps_the_newest_part(self):
+        with tempfile.TemporaryDirectory() as folder:
+            journal = Path(folder) / "chat.jsonl"
+            rows = [{"type": "user" if i % 2 == 0 else "assistant", "message": {"content": "message %d " % i + "x" * 50}} for i in range(40)]
+            journal.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+            text = compact.conversation(journal, "claude", limit=500)
+            self.assertLessEqual(len(text), 500)
+            self.assertIn("message 39", text)
+
+
 class DirectiveTests(unittest.TestCase):
     def test_codex_directives_are_hidden(self):
         self.assertEqual(history.agent_text('::browser-complete{title="Checked views"}'), "")
@@ -222,6 +269,12 @@ class QuietRoutineTests(unittest.TestCase):
         self.assertIn(routine.NOTHING_NEW, quiet)
         self.assertTrue(routine.silent("Looked at everything.\nNOTHING_NEW"))
         self.assertFalse(routine.silent("Two new orders came in."))
+
+    def test_started_runs_carry_their_message(self):
+        task = routine.routine_task({"task": "Report on the shop.", "trigger": "keyword"}, "Alex", given="only orders from today")
+        self.assertTrue(task.startswith("Alex started this run with the message"))
+        self.assertIn("only orders from today", task)
+        self.assertIn("Report on the shop.", task)
 
     def test_previous_output_skips_failures_silence_and_other_routines(self):
         with tempfile.TemporaryDirectory() as folder:

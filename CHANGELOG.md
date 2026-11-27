@@ -2,6 +2,9 @@
 
 ## 0.2.1
 
+- **Tidy up long chats.** “Summarise and start fresh” in the context tab writes a short summary and continues in a fresh chat; suggested once the context fills up.
+- **Start routines from your phone or a link.** Send a keyword such as #report on Telegram or WhatsApp, or open a routine's start link from Shortcuts, Raycast or a script; text you add goes along as the task.
+- **Clear words on subscriptions.** The README explains what Anthropic and OpenAI say about using your own plan with Mochi Squad.
 - **Mochi Memory.** Your agents remember lasting facts about you and your projects and know them from their next start. Plain notes you can correct in the app or open in Obsidian.
 - **Plan usage at a glance.** A gauge in the left bar shows how much of your Claude and ChatGPT plans is used; at 80 % and 95 % you get a warning, also on your phone.
 - **Routines that only speak up when it matters.** Run every few hours or when a folder changes, report as a notification and on Telegram or WhatsApp, and stay silent when nothing is new.

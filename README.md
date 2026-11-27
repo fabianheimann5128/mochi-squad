@@ -30,9 +30,10 @@
 - **Operate the computer.** If you allow it, an agent takes over screen, mouse and keyboard: Codex through its computer control, Claude through its desktop control and the Chrome extension.
 - **Mochi Memory.** Agents remember lasting facts about you and your projects and know them from their next start. The notes are plain Markdown in `~/Mochi Memory` (or your Obsidian vault); you correct or delete anything in the app or in Obsidian.
 - **Plan usage.** A gauge shows how much of your Claude and ChatGPT plans is used and warns at 80 % and 95 %.
+- **Tidy up long chats.** One click summarises a long conversation and continues in a fresh chat: faster answers, less usage, nothing lost.
 - **Skills.** Teach your agents how you want a kind of work done. Take skills that are already on your Mac with one click, or drop a skill folder or .zip into the app. A skill works for Claude and Codex agents alike and is for all agents unless you narrow it down.
 - **Several ChatGPT plans.** Add more plans in Settings and choose per agent which one it works with.
-- **Routines.** Tasks at fixed times, every few hours or when a folder changes, through the macOS scheduler, even when the app is closed. Results arrive as a notification and on your phone; quiet routines speak up only when there is something new.
+- **Routines.** Tasks at fixed times, every few hours or when a folder changes (through the macOS scheduler, even when the app is closed), when you send a keyword such as `#report` from your phone, or from a start link you open in Shortcuts, Raycast or a script. Results arrive as a notification and on your phone; quiet routines speak up only when there is something new.
 - **Clear rights.** Three levels per agent: read only, edit in project, or full access. In the first two the agent runs in a sandbox with locked credentials; full access is something you switch on deliberately. Details in [SECURITY.md](SECURITY.md).
 - **English and German.** The interface comes in both languages. Agents answer in whatever language you write to them.
 
@@ -77,6 +78,12 @@ Both are set up in Settings under **Messengers** and connect your phone with the
 
 - **Telegram** uses a bot you create yourself in @BotFather. You paste its token, press Start on your phone and confirm your account. Only that account can write to the bot afterwards. This is Telegram's official bot interface.
 - **WhatsApp** links this Mac as a device of your own account, like WhatsApp Web, and uses only your "Message yourself" chat. There is no official way to do this for private accounts: the link uses the unofficial [Baileys](https://github.com/WhiskeySockets/Baileys) library, WhatsApp's terms do not allow it, and there is a small risk that WhatsApp blocks a number for it. It needs Node.js.
+
+## Is this allowed with my subscription?
+
+Mochi Squad never sees your sign-in. It starts the official, unmodified Claude Code and Codex programs on your own Mac, and you sign in there yourself, with your own account. Anthropic states that its rules for third-party apps do not prevent you from signing in to the unmodified Claude Code with your own subscription ([Claude Code legal and compliance](https://code.claude.com/docs/en/legal-and-compliance)); what third-party apps may not do is handle the sign-in or the tokens themselves, which Mochi Squad does not. OpenAI's Codex supports signing in with ChatGPT ([Codex authentication](https://learn.chatgpt.com/docs/auth)).
+
+Your use remains subject to the terms of Anthropic ([Consumer Terms](https://www.anthropic.com/legal/consumer-terms)) and OpenAI ([Terms of Use](https://openai.com/policies/terms-of-use/)), including their usage limits and their rules on automated use. The plans assume ordinary, individual use: scheduled routines and many agents in parallel are your own judgement, so keep them proportionate, never share your account with others, and check the current terms yourself. Mochi Squad is not affiliated with or endorsed by Anthropic or OpenAI. This is not legal advice.
 
 ## Where is my data?
 

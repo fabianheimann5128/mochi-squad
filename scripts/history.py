@@ -168,8 +168,11 @@ def read(path, provider, offset, count):
                 if isinstance(body, list):
                     body = "\n\n".join(x.get("text", "") for x in body if isinstance(x, dict) and x.get("type") == "text")
                 if kind == "assistant":
-                    usage = msg.get("usage") or {}
-                    stats["model"] = msg.get("model") or stats.get("model")
+                    # Claude Code writes its own error notes as "<synthetic>" messages: shown, but no model and no usage.
+                    synthetic = msg.get("model") == "<synthetic>"
+                    usage = {} if synthetic else msg.get("usage") or {}
+                    if not synthetic:
+                        stats["model"] = msg.get("model") or stats.get("model")
                     if "input_tokens" in usage:
                         stats["fresh"] = usage["input_tokens"]
                         stats["cacheWrite"] = usage.get("cache_creation_input_tokens", 0)

@@ -2,6 +2,9 @@
 
 ## 0.2.1
 
+- **Lange Chats aufräumen.** „Zusammenfassen und frisch weitermachen“ im Kontext-Tab schreibt eine kurze Zusammenfassung und macht in einem frischen Chat weiter; wird vorgeschlagen, sobald der Kontext voll wird.
+- **Routinen vom Handy oder per Link starten.** Schick ein Stichwort wie #bericht per Telegram oder WhatsApp, oder öffne den Start-Link einer Routine aus Kurzbefehlen, Raycast oder einem Skript; mitgeschickter Text geht als Auftrag mit.
+- **Klare Worte zu den Abos.** Die README erklärt, was Anthropic und OpenAI zur Nutzung des eigenen Abos mit Mochi Squad sagen.
 - **Mochi Memory.** Deine Agenten merken sich Bleibendes über dich und deine Projekte und wissen es ab ihrem nächsten Start. Schlichte Notizen, die du in der App korrigierst oder in Obsidian öffnest.
 - **Abo-Verbrauch auf einen Blick.** Ein Anzeiger in der linken Leiste zeigt, wie viel von deinen Claude- und ChatGPT-Abos verbraucht ist; bei 80 % und 95 % kommt eine Warnung, auch aufs Handy.
 - **Routinen, die sich nur melden, wenn es zählt.** Alle paar Stunden oder wenn sich ein Ordner ändert, Ergebnis als Mitteilung und per Telegram oder WhatsApp, still, wenn es nichts Neues gibt.

@@ -178,6 +178,49 @@ import Foundation
     }
 
     /// Chat id of a Claude agent's latest history, to continue there.
+    /// Agents whose conversation is being summarised right now.
+    @Published private(set) var compacting = Set<UUID>()
+
+    /// The newest conversation of an agent that a person had (not a routine run), as a history file.
+    func latestConversation(of agent: Agent) -> String? {
+        agent.journals.reversed().first { !(agent.routineJournals ?? []).contains($0) && FileManager.default.fileExists(atPath: $0) }
+    }
+
+    /// "Tidy up": the agent's long conversation is summarised and the agent goes on in a fresh session that starts
+    /// with the summary. The old conversation stays under "More chats". Returns an error text, or nil on success.
+    func compact(_ agent: Agent) async -> String? {
+        guard !compacting.contains(agent.id) else { return nil }
+        if let live = latestSession(for: agent.id), live.isRunning, live.working {
+            return t("\(agent.name) is working right now. Tidy up once the answer is there.", "\(agent.name) arbeitet gerade. Räum auf, sobald die Antwort da ist.")
+        }
+        guard let journal = latestConversation(of: agent) else {
+            return t("There is no conversation to tidy up yet.", "Es gibt noch keinen Verlauf zum Aufräumen.")
+        }
+        compacting.insert(agent.id)
+        defer { compacting.remove(agent.id) }
+        struct Result: Decodable { let summary: String?; let error: String? }
+        let args = [agent.provider.rawValue, journal, agent.provider == .codex ? (agent.account ?? "") : "", agent.provider == .codex ? agent.model : ""]
+        guard let result = try? await PythonTool.run("compact", args, as: Result.self) else {
+            return t("The summary could not be made.", "Die Zusammenfassung ließ sich nicht erstellen.")
+        }
+        guard let summary = result.summary, !summary.isEmpty else { return result.error ?? t("The summary is empty.", "Die Zusammenfassung ist leer.") }
+        // The agent may have been changed or removed while the summary was being written.
+        guard let current = agents.agent(agent.id) else { return nil }
+        if let live = latestSession(for: agent.id), live.isRunning { close(live) }
+        do {
+            _ = try launch(current, task: Self.compactTask(summary))
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    nonisolated static let compactMark = "[Summary of our earlier conversation]"
+    nonisolated static func compactTask(_ summary: String) -> String {
+        compactMark + "\n" + summary + "\n\nThis fresh session continues from that summary; the full earlier conversation is "
+            + "no longer in your context. Reply with one short sentence that you have the summary, then wait for my next message."
+    }
+
     func resumableChat(for agent: Agent) -> String? {
         guard agent.provider == .claude else { return nil }
         // Only Claude Code histories can be continued; after a provider switch the list holds Codex histories too.

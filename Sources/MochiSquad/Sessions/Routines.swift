@@ -34,8 +34,12 @@ struct Routine: Codable, Identifiable, Equatable {
     var folder: String?
     /// Tell the user only when there is something new; otherwise the run stays silent.
     var quiet: Bool?
+    /// For `.keyword`: the word that starts the routine from Telegram or WhatsApp, for example "#report".
+    var keyword: String?
+    /// For `.link`: the secret part of the start link.
+    var key: String?
 
-    enum Trigger: String, Codable, CaseIterable { case time, hours, folder }
+    enum Trigger: String, Codable, CaseIterable { case time, hours, folder, keyword, link }
     static let hourChoices = [1, 2, 3, 4, 6, 12]
     var kind: Trigger { trigger ?? .time }
     var hours: Int { Self.hourChoices.contains(every ?? 0) ? every! : 1 }
@@ -47,7 +51,30 @@ struct Routine: Codable, Identifiable, Equatable {
     /// The part the user edits. Two routines that agree here differ at most in what the app keeps current itself.
     var plan: [String] {
         [task, "\(hour)", "\(minute)", days.map(String.init).joined(separator: ","), "\(active)", "\(allowWeb)",
-         kind.rawValue, "\(hours)", folder ?? "", "\(quiet == true)"]
+         kind.rawValue, "\(hours)", folder ?? "", "\(quiet == true)", keyword ?? "", key ?? ""]
+    }
+
+    /// "#Report " → "#report"; nil when nothing usable is left. One word, so it cannot swallow normal sentences.
+    static func normalized(keyword: String?) -> String? {
+        guard let raw = keyword?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !raw.isEmpty, !raw.contains(" ") else { return nil }
+        let word = raw.hasPrefix("#") ? raw : "#" + raw
+        return word.count > 1 && word.count <= 32 ? word : nil
+    }
+
+    /// A random secret for the start link.
+    static func newKey() -> String {
+        let letters = Array("abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789")
+        var generator = SystemRandomNumberGenerator()
+        return String((0..<24).map { _ in letters.randomElement(using: &generator)! })
+    }
+
+    /// mochisquad://run?routine=<id>&key=<key>; anything after "&text=" goes along as the task of that run.
+    var startLink: URL? {
+        guard kind == .link, let key else { return nil }
+        var parts = URLComponents()
+        parts.scheme = "mochisquad"; parts.host = "run"
+        parts.queryItems = [URLQueryItem(name: "routine", value: id), URLQueryItem(name: "key", value: key)]
+        return parts.url
     }
 
     /// One line for lists: "daily at 08:00", "every 2 hours", "when Downloads changes".
@@ -56,6 +83,8 @@ struct Routine: Codable, Identifiable, Equatable {
         case .time: return rhythm + t(" at ", " um ") + time
         case .hours: return hours == 1 ? t("every hour", "jede Stunde") : t("every \(hours) hours", "alle \(hours) Stunden")
         case .folder: return t("when “\(folderName)” changes", "wenn sich „\(folderName)“ ändert")
+        case .keyword: return t("when you write “\(keyword ?? "#")”", "wenn du „\(keyword ?? "#")“ schreibst")
+        case .link: return t("with its start link", "über den Start-Link")
         }
     }
     var folderName: String { folder.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "–" }
@@ -158,11 +187,12 @@ struct RoutineRun: Decodable, Identifiable {
 
     /// Starts the routine right away, even when it is paused. `false` if the helper could not be started.
     @discardableResult
-    func runNow(_ routine: Routine) -> Bool {
+    func runNow(_ routine: Routine, input: String? = nil) -> Bool {
         guard let script = AppPaths.script("routine") else { return false }
         let process = Process()
         process.executableURL = AppPaths.python
         process.arguments = ["-B", script.path, routine.id, "--now"]
+            + (input.map { ["--input", String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(2000))] } ?? [])
         process.environment = AppPaths.helperEnvironment()
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
@@ -176,6 +206,34 @@ struct RoutineRun: Decodable, Identifiable {
         guard (try? process.run()) != nil else { return false }
         testing.insert(id)
         return true
+    }
+
+    /// The active keyword routine a messenger message starts, and the rest of the message as its input.
+    /// "#report the shop" starts the routine with the keyword "#report" and the input "the shop".
+    func match(message: String) -> (routine: Routine, input: String)? {
+        let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        let first = text.split(separator: " ", maxSplits: 1).first.map { String($0).lowercased() } ?? ""
+        guard first.hasPrefix("#"),
+              let routine = routines.first(where: { $0.active && $0.kind == .keyword && Routine.normalized(keyword: $0.keyword) == first }) else { return nil }
+        return (routine, String(text.dropFirst(first.count)).trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    /// Starts a routine from its start link, if the link's key is right. Returns the routine that runs.
+    @discardableResult
+    func open(link url: URL) -> Routine? {
+        guard url.scheme == "mochisquad", url.host == "run", let parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        let value = { (name: String) in parts.queryItems?.first { $0.name == name }?.value }
+        guard let id = value("routine"), let key = value("key"),
+              let routine = routines.first(where: { $0.id == id && $0.active && $0.kind == .link }),
+              let expected = routine.key, Self.same(key, expected) else { return nil }
+        return runNow(routine, input: value("text")) ? routine : nil
+    }
+
+    /// Compares secrets in constant time.
+    nonisolated static func same(_ a: String, _ b: String) -> Bool {
+        let x = Array(a.utf8), y = Array(b.utf8)
+        guard x.count == y.count else { return false }
+        return zip(x, y).reduce(0) { $0 | ($1.0 ^ $1.1) } == 0
     }
 
     /// Take over new runs from the position read last.
@@ -207,7 +265,10 @@ struct RoutineRun: Decodable, Identifiable {
     }
 
     private func install(_ routine: Routine) {
-        guard routine.active, let script = AppPaths.script("routine") else { uninstall(routine.id); return }
+        // A keyword or a start link starts the routine through the app; macOS has nothing to schedule.
+        guard routine.active, routine.kind != .keyword, routine.kind != .link, let script = AppPaths.script("routine") else {
+            uninstall(routine.id); return
+        }
         let valid = routine.days.filter { (1...7).contains($0) }
         let weekdays = valid.isEmpty ? [nil] : valid.map { Optional($0 % 7) }
         let intervals: [[String: Int]] = weekdays.map { day in
@@ -223,6 +284,7 @@ struct RoutineRun: Decodable, Identifiable {
         switch routine.kind {
         case .time: content["StartCalendarInterval"] = intervals
         case .hours: content["StartInterval"] = routine.hours * 3600
+        case .keyword, .link: return
         case .folder:
             guard let folder = routine.folder else { uninstall(routine.id); return }
             // macOS starts the routine itself when the folder changes; a burst of changes starts it at most every two minutes.

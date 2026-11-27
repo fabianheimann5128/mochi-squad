@@ -22,6 +22,7 @@ import SwiftUI
         memory = MemoryStore(folder: MemoryStore.folder(chosen: settings.value.memoryFolder))
         manager.memory = memory
         messengers = MessengerHub(manager: manager, settings: settings, team: team)
+        messengers.routines = routines
     }
 }
 
@@ -105,6 +106,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard Date().timeIntervalSince(skillsChecked) > 60 else { return }
         skillsChecked = Date()
         AppState.shared.skills.sync()
+    }
+
+    /// Start links of routines (mochisquad://run?routine=…&key=…). A wrong or unknown link does nothing.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        let routines = AppState.shared.routines
+        for url in urls {
+            if let routine = routines.open(link: url) {
+                Notifier.post(title: routine.agent.name, body: t("Routine started from its link.", "Routine über ihren Link gestartet."))
+            }
+        }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

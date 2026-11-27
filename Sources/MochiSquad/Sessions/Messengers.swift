@@ -412,6 +412,8 @@ enum Keychain {
     let whatsapp: WhatsAppLink
     private let manager: SessionManager
     private let settings: SettingsStore
+    /// Routines that a keyword from the phone can start.
+    weak var routines: RoutineStore?
     private let team: TeamLog
     /// When the user last wrote through a messenger. Answers follow for a while, then the phone stays quiet again.
     private var lastHeard = [String: Date]()
@@ -447,6 +449,16 @@ enum Keychain {
             return send(t("Mochi Squad is not set up yet. Open the app on your Mac first.", "Mochi Squad ist noch nicht eingerichtet. Öffne zuerst die App auf deinem Mac."), to: channel)
         }
         lastHeard[channel] = Date()
+        // "#keyword …" starts the routine with that keyword instead of going to the coordinator.
+        if let routines, let (routine, input) = routines.match(message: text) {
+            let what = routine.agent.name + " · " + routine.summary
+            if routines.runNow(routine, input: input.isEmpty ? nil : input) {
+                send(t("▶︎ Started: \(what). The result follows here.", "▶︎ Gestartet: \(what). Das Ergebnis kommt hierher."), to: channel)
+            } else {
+                send(t("The routine could not be started.", "Die Routine ließ sich nicht starten."), to: channel)
+            }
+            return
+        }
         manager.sendToTeam(text, project: project, via: channel)
     }
 
