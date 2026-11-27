@@ -3,6 +3,7 @@
 
   post list                      shows the agents that can be reached
   post send <name> <message>     delivers the message; the answer arrives as a new message in the own chat
+  post remember [--about-me] <fact>   saves a lasting fact in Mochi Memory (project note, or the note about the user)
 
 Letters land as out-*.json in the session's outbox (MOCHI_OUTBOX). The app collects them and writes the receipt
 next to them as out-*.result. The wording of receipts comes from the app, in the user's interface language.
@@ -24,6 +25,12 @@ def parse(args):
         return {"to": "?", "text": ""}
     if len(args) >= 3 and args[0] in ("send", "sende") and " ".join(args[2:]).strip():
         return {"to": args[1], "text": " ".join(args[2:])}
+    # Mochi Memory: the app writes the entry into the project's note, or with --about-me into the note about the user.
+    if len(args) >= 2 and args[0] == "remember":
+        about_me = args[1] == "--about-me"
+        text = " ".join(args[2:] if about_me else args[1:]).strip()
+        if text:
+            return {"to": "@memory-me" if about_me else "@memory", "text": text}
     return None
 
 

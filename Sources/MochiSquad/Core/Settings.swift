@@ -46,6 +46,8 @@ struct AppSettings: Codable, Equatable {
     var messengers: Messengers?
     /// Keeps the Mac from going to sleep on its own while the app is open (for a Mac that serves as the agents' computer).
     var alwaysAwake: Bool?
+    /// Folder of Mochi Memory; nil means ~/Mochi Memory. The Python helpers read it too.
+    var memoryFolder: String?
 
     /// Display name of the user in briefings; a neutral fallback while setup is missing.
     var owner: String { ownerName.trimmingCharacters(in: .whitespaces).isEmpty ? t("the user", "dem Nutzer") : ownerName }

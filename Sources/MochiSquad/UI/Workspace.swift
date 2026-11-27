@@ -41,6 +41,7 @@ struct Workspace: View {
     @State private var narrowPanel = false
     @State private var showConnectors = false
     @State private var showSkills = false
+    @State private var showMemory = false
 
     /// Below this window width the chat list gives way to the chat; the icon rail then shows the agents.
     private static let listFrom: CGFloat = 760
@@ -62,7 +63,7 @@ struct Workspace: View {
             HStack(spacing: 0) {
                 IconRail(project: current, selection: $nav.selection, showProcesses: $showProcesses, showsAgents: !list,
                          newAgent: newAgent, openSettings: { nav.showSettings = true }, openConnectors: { showConnectors = true },
-                         openSkills: { showSkills = true })
+                         openSkills: { showSkills = true }, openMemory: { showMemory = true })
                 if list {
                     Sidebar(project: current, selection: $nav.selection, showProcesses: $showProcesses,
                             chooseProject: choose, addProject: addProject, removeProject: removeProject, newAgent: newAgent,
@@ -119,6 +120,7 @@ struct Workspace: View {
         .sheet(isPresented: $nav.showSettings) { SettingsView().dialogStyle() }
         .sheet(isPresented: $showConnectors) { ConnectorsView(project: current).dialogStyle() }
         .sheet(isPresented: $showSkills) { SkillsView().dialogStyle() }
+        .sheet(isPresented: $showMemory) { MemoryView().dialogStyle() }
         .alert(AppPaths.appName, isPresented: Binding(get: { manager.notice != nil }, set: { if !$0 { manager.notice = nil } })) {
             Button("OK") { manager.notice = nil }
         } message: { Text(manager.notice ?? "") }

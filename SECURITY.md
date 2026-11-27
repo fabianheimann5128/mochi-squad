@@ -68,6 +68,10 @@ A routine runs while you are away, so it trusts less than a chat does:
 
 A skill is a folder with instructions (`SKILL.md`) and sometimes scripts. Whatever a skill says, an agent that has it will try to do, within its rights: **use only skills from sources you trust**, as you would with any program. Skills you installed in Claude Code (`~/.claude/skills`) or Codex (`~/.codex/skills`, `~/.agents/skills`) are linked automatically and then reach agents of both kinds; take one out in the Skills window if it should not. Mochi Squad keeps added skills in its own data, where agents can neither read nor change them, and gives the agents a copy to read. Sandboxed agents cannot change that copy; an agent with full access can, until the app rebuilds it at the next launch or change. Links inside a skill are removed on import, so a skill cannot point at files outside its folder. Which agent gets which skill is decided by the list in the app's data, never by anything in a project or a session file.
 
+## Mochi Memory
+
+Agents save lasting facts with their post tool (`post remember`); the app writes them into Markdown notes in `~/Mochi Memory` or the folder you chose, each with the agent's name and the date. Only the app writes on behalf of agents, so the sender is certain, and text that looks like a password, key or token is refused. What is in memory goes into the briefing of every agent of that project, including agents with fewer rights, so do not put anything there an agent should not read. Anyone and any program that can write to the folder can change what your agents believe; keep it in a place only you use. The notes leave your Mac only as part of an agent's briefing, like any other instruction.
+
 ## Messengers
 
 Telegram and WhatsApp let you write to the coordinator of one project from your phone. **A message from a messenger reaches the coordinator and nobody else**, whatever it mentions, and only the coordinator's answers go back to the phone. The coordinator is reached with the rights you gave it, full access and computer use included, and can hand out work to other agents as it can in the app.

@@ -2,6 +2,11 @@
 
 ## 0.2.1
 
+- **Mochi Memory.** Deine Agenten merken sich Bleibendes über dich und deine Projekte und wissen es ab ihrem nächsten Start. Schlichte Notizen, die du in der App korrigierst oder in Obsidian öffnest.
+- **Abo-Verbrauch auf einen Blick.** Ein Anzeiger in der linken Leiste zeigt, wie viel von deinen Claude- und ChatGPT-Abos verbraucht ist; bei 80 % und 95 % kommt eine Warnung, auch aufs Handy.
+- **Routinen, die sich nur melden, wenn es zählt.** Alle paar Stunden oder wenn sich ein Ordner ändert, Ergebnis als Mitteilung und per Telegram oder WhatsApp, still, wenn es nichts Neues gibt.
+- **Der Mac bleibt wach**, solange Agenten arbeiten; eine Einstellung hält ihn dauerhaft wach, für einen Mac, der dein Team laufen lässt.
+- **Kontext und Mac auf einen Blick.** Ein Ringdiagramm zeigt, was den Kontext eines Agenten füllt; der Computer-Tab zeigt Prozessor, Speicher und Temperatur live.
 - **Skills verknüpfen sich selbst.** Jeder Skill, den du in Claude Code oder Codex hast, ist ab dem ersten Start da und bleibt aktuell; neue oder geänderte Skills erscheinen von allein.
 - **Skills-Fenster aufgeräumt.** Suche, Filter nach Herkunft, eine Zeile pro Skill und ein Menü, um ihn im Finder zu zeigen oder wegzulassen.
 - **Genaue Modelle.** Claude-Agenten können Fable 5.2, Opus 5.5, Sonnet 5.5 oder Haiku 5.5 nutzen; Codex-Modelle tragen ihre echten Namen.

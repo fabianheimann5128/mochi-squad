@@ -16,6 +16,7 @@ import history  # noqa: E402
 import post  # noqa: E402
 import launcher  # noqa: E402
 import limits  # noqa: E402
+import memory  # noqa: E402
 import routine  # noqa: E402
 
 
@@ -131,6 +132,31 @@ class LimitTests(unittest.TestCase):
             self.assertEqual(entry["five"]["percent"], 100.0)
             self.assertEqual(entry["stamp"], "2026-11-27T13:48:02Z")
             self.assertIsNone(limits.codex(Path(home) / "missing", "codex"))
+
+
+class MemoryTests(unittest.TestCase):
+    def test_notes_reach_the_briefing(self):
+        with tempfile.TemporaryDirectory() as home:
+            root = Path(home) / "Mochi Memory"
+            root.mkdir()
+            (root / "About me.md").write_text("---\nmochi: profile\n---\n# About me\n\n- Likes short answers · Mira · 2026-11-27\n")
+            (root / "Shop.md").write_text('---\nmochi: project\nproject: "/tmp/shop"\n---\n# Shop\n\n- [[About me]]\n- Runs on Shopify\n')
+            (root / "Random.md").write_text("- not a memory note\n")
+            folder, profile, project = memory.for_project("/tmp/shop", settings={}, home=home)
+            self.assertEqual(folder, root)
+            self.assertEqual(profile, ["Likes short answers"])
+            self.assertEqual(project, ["Runs on Shopify"])
+            chosen = memory.folder({"memoryFolder": "/elsewhere"}, home)
+            self.assertEqual(chosen, Path("/elsewhere"))
+            spec = launcher.attach_memory({"project": "/tmp/shop"}, settings={}, home=home)
+            spec.update(post="/x/post", team=[], unattended=False)
+            self.assertEqual(spec["memoryProject"], ["Runs on Shopify"])
+
+    def test_remember_command(self):
+        self.assertEqual(post.parse(["remember", "Uses", "Shopify"]), {"to": "@memory", "text": "Uses Shopify"})
+        self.assertEqual(post.parse(["remember", "--about-me", "Likes tea"]), {"to": "@memory-me", "text": "Likes tea"})
+        self.assertIsNone(post.parse(["remember"]))
+        self.assertIsNone(post.parse(["remember", "--about-me"]))
 
 
 class DirectiveTests(unittest.TestCase):

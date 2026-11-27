@@ -18,6 +18,7 @@ import uuid
 from pathlib import Path
 
 import common
+import memory
 from common import t
 
 # Read lock for commands in the sandbox: credentials, histories of other projects, data of other apps.
@@ -142,6 +143,17 @@ def attach_skills(spec, data=None, shared=None):
     return dict(spec, skills=skills[:40], skillsFolder=str(root))
 
 
+def attach_memory(spec, settings=None, home=None):
+    """Adds what Mochi Memory knows about the user and this project. The launcher reads the notes itself, so agents
+    in the sandbox need no access to the memory folder."""
+    try:
+        root, profile, project = memory.for_project(spec["project"], settings, home)
+    except Exception:  # noqa: BLE001 – a broken note must never keep an agent from starting
+        return spec
+    return dict(spec, memoryFolder=str(root), memoryProfile=[_line(x, 300) for x in profile],
+                memoryProject=[_line(x, 300) for x in project])
+
+
 def _line(value, limit):
     """One line of plain text for the briefing."""
     return " ".join(str(value or "").split())[:limit]
@@ -214,6 +226,21 @@ def build_prompt(spec):
                      "Answers appear as \"Message from <name>\" in your chat. You answer the coordinator simply here in the "
                      "chat; it reads your history and cannot be reached by post. When a message starts with "
                      "\"Team chat · <name>:\", you answer for everyone in the team chat; @name brings a colleague in there.")
+    if spec.get("memoryProfile") or spec.get("memoryProject") or spec.get("post"):
+        known = []
+        if spec.get("memoryProfile"):
+            known.append(f"About {owner}:\n" + "\n".join("- " + x for x in spec["memoryProfile"]))
+        if spec.get("memoryProject"):
+            known.append("About this project:\n" + "\n".join("- " + x for x in spec["memoryProject"]))
+        text = (f"Mochi Memory, what the team remembers ({owner} can read and edit it):\n" + "\n".join(known)) if known else ""
+        if spec.get("post"):
+            text += ("\n" if text else "") + (
+                f"When you learn something lasting, such as a preference of {owner}, a decision or an important fact about "
+                f"the project, save it in one short sentence with `{spec['post']} remember \"<fact>\"`, or with "
+                f"`{spec['post']} remember --about-me \"<fact>\"` if it is about {owner} personally. Save only what will "
+                "still matter in a week, never passwords, keys, tokens or private details of other people. If an entry "
+                "above is wrong or outdated, say so in the chat and save the correct one.")
+        parts.append(text)
     if spec.get("skills"):
         parts.append(f"You have skills: instructions for particular kinds of work that {owner} gave you. Before you start a "
                      "task that fits one of them, read its file completely and follow it; files it mentions lie next to it.\n"
@@ -527,7 +554,7 @@ def run(spec_path):
         if session_dir.parent != common.SESSIONS.resolve():
             raise SpecError(t("The session description is not in Mochi Squad's session area.",
                               "Die Sitzungsbeschreibung liegt nicht im Sitzungsbereich von Mochi Squad."))
-        spec = attach_skills(attach_runtime(load_spec(spec_path), session_dir))
+        spec = attach_memory(attach_skills(attach_runtime(load_spec(spec_path), session_dir)))
     except SpecError as error:
         raise SystemExit(str(error))
     provider = spec["provider"]

@@ -776,4 +776,35 @@ import Testing
         usage.base = 90_000
         #expect(usage.parts.first?.tokens == 63_340 && usage.parts.allSatisfy { $0.tokens > 0 })
     }
+
+    @MainActor @Test func memoryKeepsFactsAsObsidianNotes() throws {
+        let root = try folder(), fm = FileManager.default
+        defer { try? fm.removeItem(at: root) }
+        let store = MemoryStore(folder: root.appendingPathComponent("Mochi Memory"))
+        #expect(store.notes.isEmpty)
+        let day = Date(timeIntervalSince1970: 1_795_000_000)
+        let note = try store.remember("Fabian wants answers in German", project: nil, author: "Mira", date: day)
+        #expect(note.kind == .profile && note.title == "About me" && note.entries.first?.author == "Mira")
+        try store.remember("The shop runs on Shopify", project: "/tmp/Shop", author: "Otto", date: day)
+        let shop = try #require(store.note(for: "/tmp/Shop"))
+        #expect(shop.title == "Shop" && shop.entries.map(\.text) == ["The shop runs on Shopify"])
+        let text = try String(contentsOf: shop.url, encoding: .utf8)
+        #expect(text.hasPrefix("---\nmochi: project\nproject: \"/tmp/Shop\"\n---") && text.contains("[[About me]]"))
+        // Duplicates, secrets and empty text are refused.
+        #expect(throws: MemoryStore.Failure.self) { try store.remember("the shop runs on shopify", project: "/tmp/Shop", author: "Otto") }
+        #expect(throws: MemoryStore.Failure.self) { try store.remember("api_key: sk-abcdefghijklmnopqrstuv", project: nil, author: "Otto") }
+        #expect(throws: MemoryStore.Failure.self) { try store.remember("   ", project: nil, author: "Otto") }
+        // Lines the user wrote count too; editing keeps the attribution, forgetting removes the line only.
+        try (text + "- Ships on Fridays\n").write(to: shop.url, atomically: true, encoding: .utf8)
+        store.reload()
+        let edited = try #require(store.note(for: "/tmp/Shop"))
+        #expect(edited.entries.count == 2 && edited.entries[1].author == nil)
+        try store.edit(edited.entries[0], in: edited, to: "The shop runs on Shopify Plus")
+        let after = try #require(store.note(for: "/tmp/Shop"))
+        #expect(after.entries[0].text == "The shop runs on Shopify Plus" && after.entries[0].author == "Otto")
+        try store.edit(after.entries[1], in: after, to: nil)
+        #expect(store.note(for: "/tmp/Shop")?.entries.count == 1)
+        #expect(MemoryStore.parse(line: "- [[About me]]", index: 0) == nil)
+        #expect(!MemoryStore.looksSecret("Prefers short answers and dark mode"))
+    }
 }

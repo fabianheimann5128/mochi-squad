@@ -230,7 +230,20 @@ import Foundation
 
     /// Message from one agent to another named agent of the same project. The receipts are read by agents
     /// and therefore always in English.
+    /// Mochi Memory, where agents save lasting facts through `post remember`.
+    var memory: MemoryStore?
+
     func deliver(from origin: AgentSession, to name: String, text: String) -> String {
+        if name == "@memory" || name == "@memory-me" {
+            guard let memory else { return "Mochi Memory is not available right now." }
+            let author = agents.agent(origin.agentID)?.name ?? "Agent"
+            do {
+                let note = try memory.remember(text, project: name == "@memory" ? origin.project.path : nil, author: author)
+                return "Saved in Mochi Memory (\(note.title))."
+            } catch {
+                return "Not saved: " + (error.localizedDescription)
+            }
+        }
         // The coordinator cannot be reached by agents: through its tools they could trigger more than they may themselves.
         let sender = agents.agent(origin.agentID)
         let colleagues = agents.agents(in: origin.project).filter { !$0.isCoordinator && $0.id != origin.agentID }

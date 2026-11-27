@@ -82,14 +82,14 @@ def build_spec(routine, owner, session_id, language="en", previous=""):
     agent = routine.get("agent") or {}
     if isinstance(agent, dict) and agent.get("isCoordinator"):
         agent = dict(agent, isCoordinator=False, job=agent.get("job") or "coordinator")
-    return launcher.attach_skills(launcher.validate_spec({
+    return launcher.attach_memory(launcher.attach_skills(launcher.validate_spec({
         "provider": routine.get("provider"), "project": routine.get("project"),
         "task": routine_task(routine, owner or "the user", previous),
         "sessionId": session_id, "owner": owner, "language": language, "unattended": True,
         "allowWeb": routine.get("allowWeb") is True,
         "agent": agent, "account": agent.get("account") or "" if isinstance(agent, dict) else "",
         "agentId": agent.get("id") or "" if isinstance(agent, dict) else "",
-    }))
+    })))
 
 
 def execute(spec, binary):

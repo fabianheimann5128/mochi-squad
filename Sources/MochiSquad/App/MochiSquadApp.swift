@@ -12,12 +12,15 @@ import SwiftUI
     let chats = ChatIndex()
     let skills = SkillStore()
     let limits = LimitStore()
+    let memory: MemoryStore
     let navigation = Navigation()
     let manager: SessionManager
     let messengers: MessengerHub
 
     private init() {
         manager = SessionManager(agents: agents, settings: settings, routines: routines, team: team)
+        memory = MemoryStore(folder: MemoryStore.folder(chosen: settings.value.memoryFolder))
+        manager.memory = memory
         messengers = MessengerHub(manager: manager, settings: settings, team: team)
     }
 }
@@ -38,6 +41,7 @@ struct MochiSquadApp: App {
                 .environmentObject(state.chats)
                 .environmentObject(state.skills)
                 .environmentObject(state.limits)
+                .environmentObject(state.memory)
                 .environmentObject(state.navigation)
                 .environmentObject(state.manager)
                 .environmentObject(state.messengers)
