@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// A skill: a folder with a SKILL.md that tells an agent how to do one kind of work, plus any files it refers to.
@@ -7,13 +8,16 @@ struct Skill: Codable, Identifiable, Equatable {
     var description: String
     /// The agents that get this skill; nil means every agent.
     var agents: [UUID]?
-}
+    /// Folder in Claude Code's or Codex's own skills the skill is linked to; nil for a skill the user added by hand.
+    var source: String?
+    /// Fingerprint of that folder when it was last copied: a different one means the skill changed there.
+    var stamp: String?
 
-/// A skill found in a client's own folder that could be added to the library.
-struct FoundSkill: Identifiable, Equatable {
-    let name, description, source: String
-    let folder: URL
-    var id: String { folder.path }
+    /// "Claude Code", "Codex", or nil for a skill added by hand.
+    var origin: String? {
+        guard let source else { return nil }
+        return source.contains("/.claude/") ? "Claude Code" : "Codex"
+    }
 }
 
 /// The skill library of Mochi Squad. Skills work the same for Claude Code and Codex agents: the app tells an agent
@@ -25,9 +29,12 @@ struct FoundSkill: Identifiable, Equatable {
 /// - skills.json, the list with the assignment to agents, read by the launcher for sessions and routines.
 @MainActor final class SkillStore: ObservableObject {
     @Published private(set) var skills: [Skill]
+    /// Linked skills the user took out; they stay out until the user brings them back.
+    @Published private(set) var hidden: [String]
     private let index: URL
     private let library: URL
     private let mirror: URL
+    private let hiddenFile: URL
 
     static let maxBytes = 50 * 1024 * 1024
     static let maxFiles = 2000
@@ -45,11 +52,14 @@ struct FoundSkill: Identifiable, Equatable {
     }
 
     init(index: URL = AppPaths.file("skills.json"), library: URL = AppPaths.folder("skills"),
-         mirror: URL = AppPaths.shared.appendingPathComponent("skills", isDirectory: true)) {
+         mirror: URL = AppPaths.shared.appendingPathComponent("skills", isDirectory: true),
+         hidden: URL = AppPaths.file("skills-hidden.json")) {
         self.index = index
         self.library = library
         self.mirror = mirror
+        self.hiddenFile = hidden
         skills = JSONFile.load([Skill].self, from: index) ?? []
+        self.hidden = JSONFile.load([String].self, from: hidden) ?? []
         // The shared copy lives in a cache folder macOS may clear: bring it back at every launch.
         publish()
     }
@@ -106,6 +116,17 @@ struct FoundSkill: Identifiable, Equatable {
         }
         guard let text = try? String(contentsOf: folder.appendingPathComponent("SKILL.md"), encoding: .utf8),
               let head = Self.parse(text) else { throw Failure.noSkill }
+        // A skill of the same name is replaced: importing again is how one updates it. Its assignment stays.
+        let previous = skills.first { $0.name.caseInsensitiveCompare(head.name) == .orderedSame }
+        let skill = try keep(folder, head: head, replacing: previous, source: nil, stamp: nil)
+        save()
+        return skill
+    }
+
+    /// Copies a skill folder into the library and puts it in the list in place of `previous`.
+    private func keep(_ folder: URL, head: (name: String, description: String), replacing previous: Skill?,
+                      source: String?, stamp: String?) throws -> Skill {
+        let fm = FileManager.default
         guard Self.fits(folder) else { throw Failure.tooLarge }
         let slug = String(head.name.lowercased().unicodeScalars.map { CharacterSet.alphanumerics.contains($0) && $0.isASCII ? Character($0) : "-" })
             .split(separator: "-").joined(separator: "-")
@@ -118,13 +139,75 @@ struct FoundSkill: Identifiable, Equatable {
             try? fm.removeItem(at: home)
             throw Failure.unreadable
         }
-        // A skill of the same name is replaced: importing again is how one updates it. Its assignment stays.
-        let previous = skills.first { $0.name.caseInsensitiveCompare(head.name) == .orderedSame }
         if let previous { try? fm.removeItem(at: library.appendingPathComponent(previous.id)) }
-        let skill = Skill(id: id, name: head.name, description: head.description, agents: previous?.agents)
-        skills = skills.filter { $0.id != previous?.id } + [skill]
-        save()
+        let skill = Skill(id: id, name: head.name, description: head.description, agents: previous?.agents, source: source, stamp: stamp)
+        if let position = skills.firstIndex(where: { $0.id == previous?.id }) { skills[position] = skill } else { skills.append(skill) }
         return skill
+    }
+
+    /// The places where Claude Code and Codex keep the user's own skills, in this order.
+    static let clientFolders = [".claude/skills", ".codex/skills", ".agents/skills"]
+
+    /// Links every skill the user already has in Claude Code or Codex, so agents of both kinds can use it, and
+    /// keeps the links current: a skill changed there is copied again, one deleted there goes away here too.
+    /// Skills the user took out stay out. Cheap when nothing changed: only file sizes and dates are compared.
+    func sync(home: URL = FileManager.default.homeDirectoryForCurrentUser) {
+        let fm = FileManager.default
+        var changed = false, seen = Set<String>(), names = Set<String>()
+        for path in Self.clientFolders {
+            let root = home.appendingPathComponent(path, isDirectory: true)
+            for folder in ((try? fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []).sorted(by: { $0.path < $1.path }) {
+                guard let text = try? String(contentsOf: folder.appendingPathComponent("SKILL.md"), encoding: .utf8),
+                      let head = Self.parse(text), names.insert(head.name.lowercased()).inserted else { continue }
+                let source = folder.path
+                seen.insert(source)
+                guard !hidden.contains(source) else { continue }
+                let stamp = Self.fingerprint(folder)
+                // Linked before; or taken over by hand from the clients earlier, then it becomes a link now.
+                let previous = skills.first { $0.source == source }
+                    ?? skills.first { $0.source == nil && $0.name.caseInsensitiveCompare(head.name) == .orderedSame }
+                if let previous, previous.source == source, previous.stamp == stamp,
+                   fm.fileExists(atPath: library.appendingPathComponent(previous.id + "/SKILL.md").path) { continue }
+                if (try? keep(folder, head: head, replacing: previous, source: source, stamp: stamp)) != nil { changed = true }
+            }
+        }
+        // Linked skills whose folder is gone, or that the user took out.
+        for skill in skills where skill.source.map({ !seen.contains($0) || hidden.contains($0) }) == true {
+            try? fm.removeItem(at: library.appendingPathComponent(skill.id))
+            skills.removeAll { $0.id == skill.id }
+            changed = true
+        }
+        if changed { save() }
+    }
+
+    /// Takes a linked skill out; it does not come back by itself. A skill added by hand is simply removed.
+    func hide(_ skill: Skill) {
+        if let source = skill.source, !hidden.contains(source) {
+            hidden.append(source)
+            SaveGuard.save(t("skills", "Skills")) { [hidden, hiddenFile] in try JSONFile.save(hidden, to: hiddenFile) }
+        }
+        remove(skill)
+    }
+
+    /// Brings back every linked skill the user took out.
+    func showHidden(home: URL = FileManager.default.homeDirectoryForCurrentUser) {
+        hidden = []
+        SaveGuard.save(t("skills", "Skills")) { [hiddenFile] in try JSONFile.save([String](), to: hiddenFile) }
+        sync(home: home)
+    }
+
+    /// Paths, sizes and dates of the files in a skill folder, hashed. Contents are not read.
+    static func fingerprint(_ folder: URL) -> String {
+        let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey, .isRegularFileKey]
+        var lines = [String]()
+        let walker = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: keys)
+        while let item = walker?.nextObject() as? URL {
+            guard let values = try? item.resourceValues(forKeys: Set(keys)), values.isRegularFile == true else { continue }
+            let relative = String(item.path.dropFirst(folder.path.count))
+            lines.append("\(relative)|\(values.fileSize ?? 0)|\(values.contentModificationDate?.timeIntervalSince1970 ?? 0)")
+        }
+        let digest = SHA256.hash(data: Data(lines.sorted().joined(separator: "\n").utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 
     func remove(_ skill: Skill) {
@@ -138,21 +221,6 @@ struct FoundSkill: Identifiable, Equatable {
         guard let position = skills.firstIndex(where: { $0.id == skill.id }) else { return }
         skills[position].agents = agents
         save()
-    }
-
-    /// Skills in the clients' own folders that are not in the library yet.
-    func found(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> [FoundSkill] {
-        let known = Set(skills.map { $0.name.lowercased() })
-        var result = [FoundSkill]()
-        for (source, path) in [("Claude Code", ".claude/skills"), ("Codex", ".codex/skills")] {
-            let root = home.appendingPathComponent(path, isDirectory: true)
-            for folder in ((try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? []).sorted(by: { $0.path < $1.path }) {
-                guard let text = try? String(contentsOf: folder.appendingPathComponent("SKILL.md"), encoding: .utf8), let head = Self.parse(text),
-                      !known.contains(head.name.lowercased()), !result.contains(where: { $0.name.lowercased() == head.name.lowercased() }) else { continue }
-                result.append(FoundSkill(name: head.name, description: head.description, source: source, folder: folder))
-            }
-        }
-        return result
     }
 
     private func save() {

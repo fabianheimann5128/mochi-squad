@@ -1,5 +1,13 @@
 # What's new
 
+## 0.2.1
+
+- **Skills link themselves.** Every skill you have in Claude Code or Codex is there from the first launch and stays current; a new or changed skill shows up on its own.
+- **Skills window, tidied.** Search, filter by where a skill comes from, one line per skill, and a menu to show it in Finder or leave it out.
+- **Exact models.** Claude agents can use Fable 5.2, Opus 5.5, Sonnet 5.5 or Haiku 5.5; Codex models show their real names.
+- **Long dictation.** Talking for a long time no longer loses the first sentences.
+- **Cleaner chat list.** Times no longer wrap, and a job that repeats the name is left out.
+
 ## 0.2.0
 
 - **Download and go.** Mochi Squad comes as a signed disk image for Apple silicon and Intel Macs; drag it to Applications and open it.

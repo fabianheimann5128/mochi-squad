@@ -1,5 +1,13 @@
 # Was ist neu
 
+## 0.2.1
+
+- **Skills verknüpfen sich selbst.** Jeder Skill, den du in Claude Code oder Codex hast, ist ab dem ersten Start da und bleibt aktuell; neue oder geänderte Skills erscheinen von allein.
+- **Skills-Fenster aufgeräumt.** Suche, Filter nach Herkunft, eine Zeile pro Skill und ein Menü, um ihn im Finder zu zeigen oder wegzulassen.
+- **Genaue Modelle.** Claude-Agenten können Fable 5.2, Opus 5.5, Sonnet 5.5 oder Haiku 5.5 nutzen; Codex-Modelle tragen ihre echten Namen.
+- **Lange Spracheingabe.** Wer lange spricht, verliert die ersten Sätze nicht mehr.
+- **Ruhigere Chatliste.** Uhrzeiten brechen nicht mehr um, und eine Rolle, die nur den Namen wiederholt, entfällt.
+
 ## 0.2.0
 
 - **Laden und los.** Mochi Squad gibt es als signiertes Disk-Image für Macs mit Apple-Chip und Intel; in „Programme“ ziehen und öffnen.

@@ -306,7 +306,7 @@ import Foundation
         // Only the user calls the coordinator; agents do not reach it in the team chat either (see deliver).
         // An agent without the same rights does not call colleagues with full access or computer use.
         let everyone = agents.agents(in: project)
-        var people = everyone.filter { other in
+        let people = everyone.filter { other in
             guard let origin else { return true }
             return other.id != origin.id && !other.isCoordinator && mayReach(origin, other)
         }

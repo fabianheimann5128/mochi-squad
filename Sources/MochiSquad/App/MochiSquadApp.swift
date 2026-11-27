@@ -71,7 +71,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         state.routines.sync(with: state.agents.agents)
         state.routines.installAll()
+        // Skills from Claude Code and Codex are linked from the first launch on, without a click.
+        state.skills.sync()
         state.messengers.start()
+    }
+
+    /// Back in the app, for example after signing in to a client or installing a skill there: link what is new.
+    /// At most once a minute, since the check walks the skill folders.
+    private var skillsChecked = Date()
+    func applicationDidBecomeActive(_ notification: Notification) {
+        guard Date().timeIntervalSince(skillsChecked) > 60 else { return }
+        skillsChecked = Date()
+        AppState.shared.skills.sync()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {

@@ -656,7 +656,10 @@ import Testing
         try Data("---\nname: reviews\ndescription: >\n  How reviews are written,\n  step by step\n---\n# Body".utf8).write(to: source.appendingPathComponent("SKILL.md"))
         try Data("x".utf8).write(to: source.appendingPathComponent("refs/checklist.md"))
         try fm.createSymbolicLink(at: source.appendingPathComponent("secret"), withDestinationURL: URL(fileURLWithPath: "/etc/hosts"))
-        func store() -> SkillStore { SkillStore(index: home.appendingPathComponent("skills.json"), library: home.appendingPathComponent("library"), mirror: mirror) }
+        func store() -> SkillStore {
+            SkillStore(index: home.appendingPathComponent("skills.json"), library: home.appendingPathComponent("library"), mirror: mirror,
+                       hidden: home.appendingPathComponent("hidden.json"))
+        }
         let skills = store()
         let skill = try skills.add(from: source)
         #expect(skill.name == "reviews" && skill.description == "How reviews are written, step by step" && skill.agents == nil)
@@ -685,15 +688,42 @@ import Testing
         skills.skills.forEach(skills.remove)
         #expect(skills.skills.isEmpty)
         #expect(try fm.contentsOfDirectory(atPath: mirror.path).isEmpty)
-        // What the clients already have is offered, minus what is in the library.
+        // What the clients already have is linked without a click, and kept current.
         let userHome = home.appendingPathComponent("user")
-        for (root, name) in [(".claude/skills", "videos"), (".codex/skills", "videos"), (".codex/skills", "deploy")] {
+        func write(_ root: String, _ name: String, _ body: String = "d") throws {
             let folder = userHome.appendingPathComponent(root + "/" + name)
             try fm.createDirectory(at: folder, withIntermediateDirectories: true)
-            try Data("---\nname: \(name)\ndescription: d\n---".utf8).write(to: folder.appendingPathComponent("SKILL.md"))
+            try Data("---\nname: \(name)\ndescription: \(body)\n---".utf8).write(to: folder.appendingPathComponent("SKILL.md"))
         }
-        #expect(skills.found(home: userHome).map(\.name).sorted() == ["deploy", "videos"])
-        try skills.add(from: userHome.appendingPathComponent(".codex/skills/deploy"))
-        #expect(skills.found(home: userHome).map(\.name) == ["videos"])
+        try write(".claude/skills", "videos"); try write(".codex/skills", "videos"); try write(".codex/skills", "deploy")
+        // A skill taken over by hand earlier becomes a link and keeps its assignment.
+        let earlier = try skills.add(from: userHome.appendingPathComponent(".codex/skills/deploy"))
+        skills.assign(earlier, to: [mira.id])
+        skills.sync(home: userHome)
+        #expect(skills.skills.map(\.name).sorted() == ["deploy", "videos"])
+        #expect(skills.skills.first { $0.name == "videos" }?.origin == "Claude Code")
+        let deploy = try #require(skills.skills.first { $0.name == "deploy" })
+        #expect(deploy.origin == "Codex" && deploy.agents == [mira.id])
+        // Nothing changed: nothing is copied again.
+        let ids = skills.skills.map(\.id)
+        skills.sync(home: userHome)
+        #expect(skills.skills.map(\.id) == ids)
+        // Changed in the client: copied again under a new id, assignment kept.
+        Thread.sleep(forTimeInterval: 1.1)
+        try write(".codex/skills", "deploy", "a longer description now")
+        skills.sync(home: userHome)
+        let updated = try #require(skills.skills.first { $0.name == "deploy" })
+        #expect(updated.id != deploy.id && updated.description == "a longer description now" && updated.agents == [mira.id])
+        #expect(fm.fileExists(atPath: mirror.appendingPathComponent(updated.id + "/SKILL.md").path))
+        // Hidden ones stay out until brought back; deleted ones go.
+        skills.hide(updated)
+        skills.sync(home: userHome)
+        #expect(skills.skills.map(\.name) == ["videos"] && skills.hidden.count == 1)
+        skills.showHidden(home: userHome)
+        #expect(skills.skills.count == 2 && skills.hidden.isEmpty)
+        try fm.removeItem(at: userHome.appendingPathComponent(".claude/skills/videos"))
+        skills.sync(home: userHome)
+        // The same name in Codex takes over once the Claude Code one is gone.
+        #expect(skills.skills.first { $0.name == "videos" }?.origin == "Codex")
     }
 }

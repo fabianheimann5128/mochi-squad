@@ -66,7 +66,7 @@ A routine runs while you are away, so it trusts less than a chat does:
 
 ## Skills
 
-A skill is a folder with instructions (`SKILL.md`) and sometimes scripts. Whatever a skill says, an agent that has it will try to do, within its rights: **add only skills from sources you trust**, as you would with any program. Mochi Squad keeps added skills in its own data, where agents can neither read nor change them, and gives the agents a copy to read. Sandboxed agents cannot change that copy; an agent with full access can, until the app rebuilds it at the next launch or change. Links inside a skill are removed on import, so a skill cannot point at files outside its folder. Which agent gets which skill is decided by the list in the app's data, never by anything in a project or a session file.
+A skill is a folder with instructions (`SKILL.md`) and sometimes scripts. Whatever a skill says, an agent that has it will try to do, within its rights: **use only skills from sources you trust**, as you would with any program. Skills you installed in Claude Code (`~/.claude/skills`) or Codex (`~/.codex/skills`, `~/.agents/skills`) are linked automatically and then reach agents of both kinds; take one out in the Skills window if it should not. Mochi Squad keeps added skills in its own data, where agents can neither read nor change them, and gives the agents a copy to read. Sandboxed agents cannot change that copy; an agent with full access can, until the app rebuilds it at the next launch or change. Links inside a skill are removed on import, so a skill cannot point at files outside its folder. Which agent gets which skill is decided by the list in the app's data, never by anything in a project or a session file.
 
 ## Messengers
 
