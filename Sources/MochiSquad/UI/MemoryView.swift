@@ -197,7 +197,9 @@ struct MemoryView: View {
         let day = entry.date.flatMap(Self.day)
         guard let author = entry.author else { return t("Added by you", "Von dir eingetragen") }
         let owner = settings.value.ownerName
-        let who = author == owner || author == t("You", "Du") ? t("Added by you", "Von dir eingetragen") : t("Learned by \(author)", "Gelernt von \(author)")
+        // The app's marker says who typed it; the name alone may be an old owner name.
+        let mine = entry.source?.user == true || entry.source == nil && (author == owner || author == t("You", "Du"))
+        let who = mine ? t("Added by you", "Von dir eingetragen") : t("Learned by \(author)", "Gelernt von \(author)")
         return [who, day].compactMap { $0 }.joined(separator: " · ")
     }
 
