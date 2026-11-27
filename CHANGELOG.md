@@ -2,6 +2,9 @@
 
 ## 0.2.0
 
+- **Download and go.** Mochi Squad comes as a signed disk image for Apple silicon and Intel Macs; drag it to Applications and open it.
+- **Updates built in.** The app looks for new versions once a day and installs them after asking; "Check for Updates…" is in the app menu.
+- **Setup without Terminal.** If Apple's command line tools are missing, one click installs them and setup continues by itself.
 - **English first.** English is now the main language; German can be chosen during setup and in Settings.
 - **Agents speak your language.** They answer in the language you write to them, whatever the interface is set to.
 - **Telegram.** Talk to your coordinator from your phone through your own bot.

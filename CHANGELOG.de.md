@@ -2,6 +2,9 @@
 
 ## 0.2.0
 
+- **Laden und los.** Mochi Squad gibt es als signiertes Disk-Image für Macs mit Apple-Chip und Intel; in „Programme“ ziehen und öffnen.
+- **Updates eingebaut.** Die App sucht einmal am Tag nach neuen Versionen und installiert sie nach Rückfrage; „Nach Updates suchen …“ steht im App-Menü.
+- **Einrichtung ohne Terminal.** Fehlen Apples Befehlszeilenwerkzeuge, installiert ein Klick sie, und die Einrichtung macht von selbst weiter.
 - **Englisch zuerst.** Englisch ist jetzt die Hauptsprache; Deutsch wählst du bei der Einrichtung und in den Einstellungen.
 - **Agenten sprechen deine Sprache.** Sie antworten in der Sprache, in der du ihnen schreibst, egal wie die Oberfläche eingestellt ist.
 - **Telegram.** Schreib vom Handy mit deinem Koordinator, über deinen eigenen Bot.

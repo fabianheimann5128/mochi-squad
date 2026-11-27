@@ -46,11 +46,30 @@ if [[ -d "$bin/SwiftTerm_SwiftTerm.bundle" ]]; then
     ditto "$bin/SwiftTerm_SwiftTerm.bundle" "$resources/SwiftTerm_SwiftTerm.bundle"
 fi
 
+# Sparkle (updates). Its XPC services are only needed by sandboxed apps; Mochi Squad is not sandboxed.
+sparkle=".build/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64/Sparkle.framework"
+mkdir -p "$new/Contents/Frameworks"
+ditto "$sparkle" "$new/Contents/Frameworks/Sparkle.framework"
+rm -rf "$new/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices" "$new/Contents/Frameworks/Sparkle.framework/XPCServices"
+
 # Hardened runtime as Apple requires it for notarization; local builds use it too, so they behave like the download.
+# Signed from the inside out: Sparkle's helpers, Sparkle, then the app.
 identity="${MOCHI_SIGN:--}"
-sign=(codesign --force --options runtime --entitlements Resources/MochiSquad.entitlements --sign "$identity")
+sign=(codesign --force --options runtime --sign "$identity")
 [[ "$identity" != - ]] && sign+=(--timestamp)
-"${sign[@]}" "$new" >/dev/null 2>&1
+framework="$new/Contents/Frameworks/Sparkle.framework"
+"${sign[@]}" "$framework/Versions/B/Autoupdate" >/dev/null 2>&1
+"${sign[@]}" "$framework/Versions/B/Updater.app" >/dev/null 2>&1
+"${sign[@]}" "$framework" >/dev/null 2>&1
+entitlements=Resources/MochiSquad.entitlements
+if [[ "$identity" == - ]]; then
+    # Ad hoc signatures carry no team, so the hardened runtime would refuse to load Sparkle into the app.
+    # Only builds without a Developer ID relax this check; the download keeps it.
+    entitlements="$stage/local.entitlements"
+    cp Resources/MochiSquad.entitlements "$entitlements"
+    /usr/libexec/PlistBuddy -c "Add :com.apple.security.cs.disable-library-validation bool true" "$entitlements"
+fi
+"${sign[@]}" --entitlements "$entitlements" "$new" >/dev/null 2>&1
 codesign --verify --deep --strict "$new"
 
 # Swap: the old app steps aside, the new one takes its place, then the old one goes.

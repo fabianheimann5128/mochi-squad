@@ -18,6 +18,9 @@
 	<key>LSMinimumSystemVersion</key><string>14.0</string>
 	<key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
 	<key>NSHighResolutionCapable</key><true/>
+	<key>SUFeedURL</key><string>https://github.com/fabianheimann5128/mochi-squad/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key><string></string>
+	<key>SUEnableAutomaticChecks</key><true/>
 	<key>NSAppleEventsUsageDescription</key><string>Agents you allow to operate the computer control other apps for you.</string>
 	<key>NSMicrophoneUsageDescription</key><string>Mochi Squad records your voice when you dictate a message.</string>
 	<key>NSSpeechRecognitionUsageDescription</key><string>Mochi Squad turns your spoken message into text.</string>

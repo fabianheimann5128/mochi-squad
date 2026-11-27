@@ -37,13 +37,19 @@
 ## Requirements
 
 - macOS 14 (Sonoma) or newer
-- Xcode command line tools with Swift 6 or newer: `xcode-select --install` (Xcode itself is not needed)
+- Apple's command line tools (installed by the app if missing; to build from source you need their Swift 6 or newer)
 - At least one of these programs with a subscription; one is enough, every agent can run on either:
   - [Claude Code](https://docs.claude.com/claude-code) with Claude Pro or Max
   - [Codex CLI](https://developers.openai.com/codex/cli) with ChatGPT Plus or Pro (also included in the ChatGPT app for Mac)
 - Optional, only for the WhatsApp link: [Node.js](https://nodejs.org) 20 or newer
 
 ## Install
+
+**[Download Mochi Squad](https://github.com/fabianheimann5128/mochi-squad/releases/latest)** (free, macOS 14 or newer, Apple silicon and Intel). Open the disk image, drag Mochi Squad to Applications and start it. The app updates itself; "Check for Updates…" is in the app menu.
+
+On first launch the app checks for Apple's command line tools (its helpers run on their Python) and installs them with one click if they are missing.
+
+### Build from source
 
 ```bash
 git clone https://github.com/fabianheimann5128/mochi-squad.git
@@ -99,9 +105,11 @@ This removes settings, agents, routines and the team chat. It also removes the s
 ## Development
 
 ```bash
-swift build          # build
-./tools/test.sh      # all tests (Swift and Python)
-./install.sh         # install to ~/Applications
+swift build             # build
+./tools/test.sh         # all tests (Swift and Python)
+./install.sh            # install to ~/Applications
+./tools/make-dmg.sh     # disk image for download (see the script for signing and notarization)
+./tools/release.sh      # signed release with update feed (maintainers)
 ```
 
 | Path | Content |

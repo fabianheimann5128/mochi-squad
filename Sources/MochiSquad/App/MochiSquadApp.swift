@@ -44,6 +44,7 @@ struct MochiSquadApp: App {
         .defaultSize(width: min(1500, NSScreen.main?.visibleFrame.width ?? 1200),
                      height: min(960, NSScreen.main?.visibleFrame.height ?? 760))
         .windowResizability(.contentMinSize)
+        .commands { CommandGroup(after: .appInfo) { UpdateMenuItem() } }
     }
 }
 
@@ -58,6 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             exit(0)
         }
         AppPaths.prepareRuntime()
+        _ = Updates.shared
         let state = AppState.shared
         SaveGuard.report = { [weak manager = state.manager] text in manager?.notice = text }
         state.manager.start()

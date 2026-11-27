@@ -76,6 +76,10 @@ Telegram and WhatsApp let you write to the coordinator of one project from your 
 - **WhatsApp.** The app links this Mac as a device of your account through the unofficial Baileys library, which is downloaded from the npm registry when you set WhatsApp up (install scripts of packages are not run). It reads and writes one chat only, "Message yourself"; all other chats are discarded before they are decrypted. WhatsApp does not permit unofficial clients and may block a number. The session is stored in the app data, which is locked for sandboxed agents.
 - Whoever has your unlocked phone, or control of your Telegram or WhatsApp account, can give your coordinator tasks, with everything the coordinator is allowed to do. Keep that in mind when you choose the coordinator's access level, and lock your phone.
 
+## Download and updates
+
+The download is signed with the maintainer's Developer ID and notarized by Apple. Updates come through [Sparkle](https://sparkle-project.org): the app reads the update feed from this repository's latest GitHub release over HTTPS and installs a new version only if it carries the signature of the release key (EdDSA) whose public half is built into the app, and only after asking you. Copies built from source without that key never look for updates. The app runs with the hardened runtime; it asks macOS for the microphone (dictation) and for scripting other apps (computer use) and for nothing else.
+
 ## Attachments, dictation, background
 
 - **Attachments** are copied to `<project>/.mochi-squad/attachments` and stay there; every agent of the project can read them. A message without files creates nothing, so plain text also works in a read-only project. If one of several files cannot be attached, none is left behind. The app shows previews only for files in that folder, only on your own messages, and only while the folder really lies inside the project. A click opens images; other files are revealed in Finder and never run directly.
