@@ -13,3 +13,4 @@ __pycache__/
 
 # Node (WhatsApp helper, installed on demand into the app data)
 node_modules/
+dist/

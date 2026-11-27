@@ -4,3 +4,4 @@
 "NSDocumentsFolderUsageDescription" = "Mochi Squad öffnet die Projektordner, die du für deine Agenten auswählst.";
 "NSDesktopFolderUsageDescription" = "Mochi Squad öffnet die Projektordner, die du für deine Agenten auswählst.";
 "NSDownloadsFolderUsageDescription" = "Mochi Squad öffnet die Projektordner, die du für deine Agenten auswählst.";
+"NSAppleEventsUsageDescription" = "Agenten, denen du die Computer-Nutzung erlaubst, steuern andere Apps für dich.";

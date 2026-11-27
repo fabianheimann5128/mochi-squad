@@ -18,6 +18,7 @@
 	<key>LSMinimumSystemVersion</key><string>14.0</string>
 	<key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
 	<key>NSHighResolutionCapable</key><true/>
+	<key>NSAppleEventsUsageDescription</key><string>Agents you allow to operate the computer control other apps for you.</string>
 	<key>NSMicrophoneUsageDescription</key><string>Mochi Squad records your voice when you dictate a message.</string>
 	<key>NSSpeechRecognitionUsageDescription</key><string>Mochi Squad turns your spoken message into text.</string>
 	<key>NSDocumentsFolderUsageDescription</key><string>Mochi Squad opens the project folders you choose for your agents.</string>

@@ -126,7 +126,8 @@ struct Onboarding: View {
     @State private var status: ClientStatus?
     @State private var login: Provider?
     @State private var keepInDock = true
-    private let toolsMissing = !AppPaths.pythonAvailable
+    @State private var toolsMissing = !AppPaths.pythonAvailable
+    @State private var toolsInstalling = false
     /// Suggestion for the first project so nobody has to look for a folder first. It is created only at the end.
     static let starterFolder = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Mochi Squad", isDirectory: true)
 
@@ -173,10 +174,7 @@ struct Onboarding: View {
             }), options: Language.allCases.map { ($0, $0.title) })
             title(t("Welcome to Mochi Squad", "Willkommen bei Mochi Squad"),
                   t("Your team of AI agents on the Mac. You will be ready in a minute.", "Dein Team aus KI-Agenten auf dem Mac. In einer Minute bist du startklar."))
-            if toolsMissing {
-                note(t("Apple's command line tools are missing. Open Terminal, run “xcode-select --install” and then restart Mochi Squad.",
-                       "Es fehlen die Befehlszeilenwerkzeuge von Apple. Öffne das Terminal, führe „xcode-select --install“ aus und starte Mochi Squad danach neu."), Desk.warning)
-            }
+            if toolsMissing { toolsCard }
             field(t("What is your name?", "Wie heißt du?"), t("Your first name", "Dein Vorname"), $name)
             field(t("What should your coordinator be called?", "Wie soll dein Koordinator heißen?"), "Mochi", $coordinator)
             Button(t("Continue", "Weiter")) { step = 1 }.buttonStyle(.primaryPill).keyboardShortcut(.defaultAction)
@@ -265,6 +263,45 @@ struct Onboarding: View {
             Text(head).font(.system(size: 24, weight: .semibold)).multilineTextAlignment(.center)
             Text(text).font(.system(size: 14)).foregroundStyle(Desk.dim).multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
         }.padding(.bottom, 6)
+    }
+
+    /// Mochi Squad's helpers run on the Python of Apple's command line tools. A Mac without them gets the tools from
+    /// Apple's own installer with one click, and setup continues by itself as soon as they are there.
+    private var toolsCard: some View {
+        VStack(spacing: 10) {
+            note(toolsInstalling
+                 ? t("Follow the installer macOS opened. Mochi Squad continues by itself once it is done, usually after a few minutes.",
+                     "Folge dem Installationsfenster von macOS. Mochi Squad macht danach von selbst weiter, meist nach ein paar Minuten.")
+                 : t("Mochi Squad needs Apple's free command line tools. They are installed by macOS itself.",
+                     "Mochi Squad braucht die kostenlosen Befehlszeilenwerkzeuge von Apple. macOS installiert sie selbst."), toolsInstalling ? Desk.dim : Desk.warning)
+            if toolsInstalling {
+                ProgressView().controlSize(.small)
+                // Whoever closed Apple's window by mistake gets it back here.
+                Button(t("Open the installer again", "Installationsfenster erneut öffnen"), action: installTools)
+                    .buttonStyle(.plain).font(.system(size: 12)).foregroundStyle(Desk.dim)
+            } else {
+                Button(t("Install command line tools", "Befehlszeilenwerkzeuge installieren"), action: installTools).buttonStyle(.pill)
+            }
+        }
+    }
+
+    private func installTools() {
+        let installer = Process()
+        installer.executableURL = URL(fileURLWithPath: "/usr/bin/xcode-select")
+        installer.arguments = ["--install"]
+        installer.standardOutput = FileHandle.nullDevice
+        installer.standardError = FileHandle.nullDevice
+        try? installer.run()
+        guard !toolsInstalling else { return }
+        toolsInstalling = true
+        Task {
+            // The check is cheap; asking every few seconds is enough for an installation that takes minutes.
+            while toolsMissing {
+                try? await Task.sleep(for: .seconds(3))
+                let ready = await Task.detached { AppPaths.pythonAvailable }.value
+                if ready { toolsMissing = false; toolsInstalling = false }
+            }
+        }
     }
 
     private func note(_ text: String, _ color: SwiftUI.Color) -> some View {
