@@ -187,12 +187,21 @@ struct RoutineRun: Decodable, Identifiable {
 
     /// Starts the routine right away, even when it is paused. `false` if the helper could not be started.
     @discardableResult
-    func runNow(_ routine: Routine, input: String? = nil) -> Bool {
-        guard let script = AppPaths.script("routine") else { return false }
+    func runNow(_ routine: Routine, input: String? = nil, fromLink: Bool = false) -> Bool {
+        start(routine, input: input, fromLink: fromLink) == .started
+    }
+
+    enum Start { case started, alreadyRunning, failed }
+
+    /// Starts the routine right away, unless a run of it is still going (the helper would only skip it).
+    func start(_ routine: Routine, input: String? = nil, fromLink: Bool = false) -> Start {
+        if Self.isRunning(routine.id) { return .alreadyRunning }
+        guard let script = AppPaths.script("routine") else { return .failed }
         let process = Process()
         process.executableURL = AppPaths.python
         process.arguments = ["-B", script.path, routine.id, "--now"]
             + (input.map { ["--input", String($0.trimmingCharacters(in: .whitespacesAndNewlines).prefix(2000))] } ?? [])
+            + (fromLink ? ["--from-link"] : [])
         process.environment = AppPaths.helperEnvironment()
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
@@ -203,18 +212,31 @@ struct RoutineRun: Decodable, Identifiable {
                 self?.readRuns()
             }
         }
-        guard (try? process.run()) != nil else { return false }
+        guard (try? process.run()) != nil else { return .failed }
         testing.insert(id)
-        return true
+        return .started
+    }
+
+    /// The helper holds a lock while a run works (scripts/routine.py, single_run); a lock we cannot take means busy.
+    nonisolated static func isRunning(_ id: String, folder: URL = AppPaths.support.appendingPathComponent("locks")) -> Bool {
+        let path = folder.appendingPathComponent(id + ".lock").path
+        let handle = Darwin.open(path, O_RDONLY)
+        guard handle >= 0 else { return false }
+        defer { Darwin.close(handle) }
+        if flock(handle, LOCK_EX | LOCK_NB) != 0 { return true }
+        flock(handle, LOCK_UN)
+        return false
     }
 
     /// The active keyword routine a messenger message starts, and the rest of the message as its input.
     /// "#report the shop" starts the routine with the keyword "#report" and the input "the shop".
-    func match(message: String) -> (routine: Routine, input: String)? {
+    /// Only routines of `project` (the messenger's project) answer, like the messages that go to its team chat.
+    func match(message: String, project: String? = nil) -> (routine: Routine, input: String)? {
         let text = message.trimmingCharacters(in: .whitespacesAndNewlines)
-        let first = text.split(separator: " ", maxSplits: 1).first.map { String($0).lowercased() } ?? ""
+        let first = text.split(maxSplits: 1, whereSeparator: { $0.isWhitespace || $0.isNewline }).first.map { String($0).lowercased() } ?? ""
         guard first.hasPrefix("#"),
-              let routine = routines.first(where: { $0.active && $0.kind == .keyword && Routine.normalized(keyword: $0.keyword) == first }) else { return nil }
+              let routine = routines.first(where: { $0.active && $0.kind == .keyword && Routine.normalized(keyword: $0.keyword) == first
+                                                    && (project == nil || $0.project == project) }) else { return nil }
         return (routine, String(text.dropFirst(first.count)).trimmingCharacters(in: .whitespacesAndNewlines))
     }
 
@@ -226,7 +248,7 @@ struct RoutineRun: Decodable, Identifiable {
         guard let id = value("routine"), let key = value("key"),
               let routine = routines.first(where: { $0.id == id && $0.active && $0.kind == .link }),
               let expected = routine.key, Self.same(key, expected) else { return nil }
-        return runNow(routine, input: value("text")) ? routine : nil
+        return start(routine, input: value("text"), fromLink: true) == .started ? routine : nil
     }
 
     /// Compares secrets in constant time.
@@ -250,6 +272,20 @@ struct RoutineRun: Decodable, Identifiable {
         let fresh = complete.split(separator: 10).compactMap { try? JSONDecoder().decode(RoutineRun.self, from: Data($0)) }
         runs = Array((runs + fresh).suffix(500))
         if runsLoaded { fresh.forEach { onFinished?($0) } }
+        if let last = runs.last?.end ?? runs.last?.start, last > (UserDefaults.standard.string(forKey: Self.seenKey) ?? "") {
+            if runsLoaded || UserDefaults.standard.string(forKey: Self.seenKey) == nil { UserDefaults.standard.set(last, forKey: Self.seenKey) }
+        }
+    }
+
+    private static let seenKey = "routineRunsSeen"
+
+    /// Runs that finished while the app was closed, at most the last five of the past day: they are delivered once,
+    /// right after launch, like runs that finish while the app is open.
+    func deliverMissed(now: Date = Date()) {
+        let seen = UserDefaults.standard.string(forKey: Self.seenKey) ?? ""
+        let missed = runs.filter { ($0.end ?? $0.start) > seen && (Timestamp.date($0.end ?? $0.start).map { now.timeIntervalSince($0) < 86_400 } ?? false) }
+        missed.suffix(5).forEach { onFinished?($0) }
+        if let last = runs.last?.end ?? runs.last?.start { UserDefaults.standard.set(last, forKey: Self.seenKey) }
     }
 
     /// Sets up the launchd jobs of all routines and checks that macOS really knows them
@@ -280,6 +316,8 @@ struct RoutineRun: Decodable, Identifiable {
             "Label": label + routine.id,
             "ProgramArguments": [AppPaths.python.path, "-B", script.path, routine.id],
             "StandardErrorPath": AppPaths.file("routine-\(routine.id).log").path,
+            // The helper finds the app's data through HOME: it gets the home the app itself uses.
+            "EnvironmentVariables": ["HOME": FileManager.default.homeDirectoryForCurrentUser.path, "MOCHI_LANG": L10n.language.rawValue],
         ]
         switch routine.kind {
         case .time: content["StartCalendarInterval"] = intervals

@@ -318,15 +318,39 @@ class QuietRoutineTests(unittest.TestCase):
         self.assertIn("only orders from today", task)
         self.assertIn("Report on the shop.", task)
 
+    def test_silence_needs_the_marker_alone(self):
+        self.assertTrue(routine.silent("NOTHING_NEW"))
+        self.assertTrue(routine.silent("`NOTHING_NEW`\n"))
+        self.assertFalse(routine.silent("New finding: the status message incorrectly says NOTHING_NEW."))
+
+    def test_link_text_is_marked_as_unknown_sender(self):
+        task = routine.routine_task({"task": "Tidy the inbox."}, "Alex", given="delete everything", source="link")
+        self.assertIn("Its sender is unknown", task)
+        self.assertNotIn("Alex started this run", task)
+
+    def test_last_result_is_kept_per_routine(self):
+        with tempfile.TemporaryDirectory() as data:
+            routine.remember_output("a1", "three orders", data)
+            self.assertEqual(routine.previous_output("a1", Path(data) / "none.jsonl", data), "three orders")
+            self.assertEqual(routine.previous_output("b2", Path(data) / "none.jsonl", data), "")
+
+    def test_folder_watch_ignores_the_first_look_and_unchanged_folders(self):
+        with tempfile.TemporaryDirectory() as data, tempfile.TemporaryDirectory() as watched:
+            self.assertFalse(routine.folder_changed("w1", watched, data))
+            self.assertFalse(routine.folder_changed("w1", watched, data))
+            (Path(watched) / "new.txt").write_text("x")
+            self.assertTrue(routine.folder_changed("w1", watched, data))
+            self.assertFalse(routine.folder_changed("w1", watched, data))
+
     def test_previous_output_skips_failures_silence_and_other_routines(self):
         with tempfile.TemporaryDirectory() as folder:
             log = Path(folder) / "runs.jsonl"
             rows = [{"routine": "a1", "code": 0, "output": "first"}, {"routine": "b2", "code": 0, "output": "other"},
                     {"routine": "a1", "code": 1, "output": "broken"}, {"routine": "a1", "code": 0, "output": "NOTHING_NEW", "silent": True}]
             log.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
-            self.assertEqual(routine.previous_output("a1", log), "first")
-            self.assertEqual(routine.previous_output("zz", log), "")
-            self.assertEqual(routine.previous_output("a1", Path(folder) / "missing"), "")
+            self.assertEqual(routine.previous_output("a1", log, folder), "first")
+            self.assertEqual(routine.previous_output("zz", log, folder), "")
+            self.assertEqual(routine.previous_output("a1", Path(folder) / "missing", folder), "")
 
 
 class RoutineTests(unittest.TestCase):

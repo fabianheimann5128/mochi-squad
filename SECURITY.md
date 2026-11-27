@@ -62,7 +62,7 @@ A routine runs while you are away, so it trusts less than a chat does:
 - With Codex the user's tool servers are switched off, and the list is taken in the project folder the routine runs in.
 - Without "May search the web", the web tools are denied.
 - The same routine never runs twice at once.
-- **Keyword and start link.** A keyword routine starts when the paired messenger account writes its keyword; the rest of the message goes into the task. A start link (`mochisquad://run?routine=…&key=…`) carries a random 24-character key that is compared in constant time; anyone who has the link can start that routine, in the sandbox, with the text they add. Create a new link if it leaked. Both work only while the app runs (a link opens the app).
+- **Keyword and start link.** A keyword routine starts when the paired messenger account writes its keyword; the rest of the message goes into the task. A start link (`mochisquad://run?routine=…&key=…`) carries a random 24-character key that is compared in constant time; anyone who has the link can start that routine, in the sandbox, with the text they add, and use up some of your plan by starting it again and again. Text from a link is handed to the agent as coming from an unknown sender, not from you. Create a new link if it leaked. Both work only while the app runs (a link opens the app).
 - Rights, model and subscription of a routine always follow the agent as it is now. A form left open cannot bring back rights you took away.
 
 ## Skills

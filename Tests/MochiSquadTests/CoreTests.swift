@@ -839,6 +839,18 @@ import Testing
         #expect(hit.routine.id == report.id && hit.input == "the new orders")
         #expect(store.match(message: "#REPORT")?.input == "")
         #expect(store.match(message: "please #report") == nil && store.match(message: "#reports") == nil)
+        // 6.6: a line break after the keyword; 6.4: only the messenger's project.
+        #expect(store.match(message: "#report\nonly today")?.input == "only today")
+        #expect(store.match(message: "#report", project: home.path) != nil && store.match(message: "#report", project: "/elsewhere") == nil)
+        // 6.9: a run that holds the helper's lock counts as busy.
+        let locks = home.appendingPathComponent("locks")
+        try FileManager.default.createDirectory(at: locks, withIntermediateDirectories: true)
+        #expect(!RoutineStore.isRunning(report.id, folder: locks))
+        let held = Darwin.open(locks.appendingPathComponent(report.id + ".lock").path, O_CREAT | O_WRONLY, 0o600)
+        flock(held, LOCK_EX)
+        #expect(RoutineStore.isRunning(report.id, folder: locks))
+        Darwin.close(held)
+        #expect(!RoutineStore.isRunning(report.id, folder: locks))
         report.active = false
         store.save(report, agent: mira)
         #expect(store.match(message: "#report") == nil)

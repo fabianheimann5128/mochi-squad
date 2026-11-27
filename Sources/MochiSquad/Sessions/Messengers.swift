@@ -474,11 +474,16 @@ enum Keychain {
         }
         lastHeard[channel] = Date()
         // "#keyword …" starts the routine with that keyword instead of going to the coordinator.
-        if let routines, let (routine, input) = routines.match(message: text) {
+        if let routines, let (routine, input) = routines.match(message: text, project: project.path) {
             let what = routine.agent.name + " · " + routine.summary
-            if routines.runNow(routine, input: input.isEmpty ? nil : input) {
-                send(t("▶︎ Started: \(what). The result follows here.", "▶︎ Gestartet: \(what). Das Ergebnis kommt hierher."), to: channel)
-            } else {
+            switch routines.start(routine, input: input.isEmpty ? nil : input) {
+            case .started:
+                send(routine.quiet == true
+                     ? t("▶︎ Started: \(what). You hear back only if there is something new.", "▶︎ Gestartet: \(what). Du hörst nur etwas, wenn es Neues gibt.")
+                     : t("▶︎ Started: \(what). The result follows here.", "▶︎ Gestartet: \(what). Das Ergebnis kommt hierher."), to: channel)
+            case .alreadyRunning:
+                send(t("\(what) is still running from before; try again when it is done.", "\(what) läuft noch vom letzten Mal; versuch es, wenn es fertig ist."), to: channel)
+            case .failed:
                 send(t("The routine could not be started.", "Die Routine ließ sich nicht starten."), to: channel)
             }
             return

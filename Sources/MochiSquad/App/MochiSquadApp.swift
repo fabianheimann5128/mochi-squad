@@ -88,14 +88,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         state.limits.start()
         // Routine results come to the user: as a Mac notification and on the phone. Quiet routines only when there is news.
-        state.routines.onFinished = { [weak messengers = state.messengers] run in
+        state.routines.onFinished = { [weak messengers = state.messengers, weak settings = state.settings] run in
             guard run.silent != true, run.code != 75 else { return }
+            // The phone hears about the messenger's own project, as with its team chat; the Mac about every project.
+            let toPhone = run.project != nil && run.project == settings?.messengerProject?.path
             let who = run.name ?? t("Routine", "Routine")
             let body = run.code == 0 ? Notifier.summary(of: run.output ?? "")
                                      : t("The routine failed: ", "Die Routine ist fehlgeschlagen: ") + Notifier.summary(of: run.output ?? "", limit: 160)
             Notifier.post(title: who, body: body.isEmpty ? t("Done.", "Fertig.") : body)
-            messengers?.announce(who + ": " + (body.isEmpty ? t("Done.", "Fertig.") : body))
+            if toPhone { messengers?.announce(who + ": " + (body.isEmpty ? t("Done.", "Fertig.") : body)) }
         }
+        state.routines.deliverMissed()
         state.messengers.start()
     }
 
@@ -112,7 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func application(_ application: NSApplication, open urls: [URL]) {
         let routines = AppState.shared.routines
         for url in urls {
-            if let routine = routines.open(link: url) {
+            if let routine = routines.open(link: url), routine.quiet != true {
                 Notifier.post(title: routine.agent.name, body: t("Routine started from its link.", "Routine über ihren Link gestartet."))
             }
         }
