@@ -75,7 +75,10 @@ echo "Built: dist/MochiSquad-$version.dmg and dist/appcast.xml"
 if [[ "${1:-}" == publish ]]; then
     notes="$(mktemp)"
     awk -v v="## $version" '$0==v{f=1;next} /^## /{f=0} f' CHANGELOG.md > "$notes"
+    # The same image once more without version number: releases/latest/download/MochiSquad.dmg stays valid for every
+    # release, so the website can link to it once and for all.
+    cp "dist/MochiSquad-$version.dmg" dist/MochiSquad.dmg
     gh release create "v$version" --repo "$repo" --target main --title "Mochi Squad $version" --notes-file "$notes" \
-        "dist/MochiSquad-$version.dmg" dist/appcast.xml
+        "dist/MochiSquad-$version.dmg" dist/MochiSquad.dmg dist/appcast.xml
     rm -f "$notes"
 fi
