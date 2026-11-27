@@ -650,6 +650,40 @@ import Testing
         #expect(SkillStore.parse("---\r\nname: windows\r\ndescription: line endings\r\n---\r\nBody")?.name == "windows")
     }
 
+    /// B1: what waits for a messenger stays bound to the account and project it was meant for.
+    @MainActor @Test func waitingMessagesGoOnlyToTheirAccountAndProject() throws {
+        let home = try folder(), fm = FileManager.default
+        defer { try? fm.removeItem(at: home) }
+        let settings = SettingsStore(file: home.appendingPathComponent("settings.json"))
+        let manager = SessionManager(agents: AgentStore(file: home.appendingPathComponent("agents.json")), settings: settings,
+                                     routines: RoutineStore(file: home.appendingPathComponent("r.json"), runFile: home.appendingPathComponent("runs.jsonl")),
+                                     team: TeamLog(folder: home))
+        let hub = MessengerHub(manager: manager, settings: settings, team: TeamLog(folder: home))
+        let a = home.appendingPathComponent("a", isDirectory: true), b = home.appendingPathComponent("b", isDirectory: true)
+        for project in [a, b] { try fm.createDirectory(at: project, withIntermediateDirectories: true); _ = settings.addProject(project) }
+        settings.messengers.project = a.path
+        // Not set up: nothing waits.
+        hub.announce("lost")
+        #expect(hub.pending.isEmpty)
+        settings.messengers.telegram = .init(bot: "bot", userID: 1, userName: "Me")
+        hub.announce("warning")
+        hub.announce("result of a", project: a.path)
+        hub.announce("result of b", project: b.path)
+        #expect(hub.pending["Telegram"]?.map(\.text) == ["ℹ️ warning", "ℹ️ result of a"])
+        // The messenger project changes: the result of the old project no longer goes out.
+        settings.messengers.project = b.path
+        hub.flush("Telegram")
+        #expect(hub.pending["Telegram"]?.map(\.text) == ["ℹ️ warning"])
+        // Paired with another account: nothing meant for the first one reaches it.
+        settings.messengers.telegram = .init(bot: "bot", userID: 2, userName: "Someone")
+        hub.flush("Telegram")
+        #expect(hub.pending["Telegram"] == nil)
+        hub.announce("again")
+        settings.messengers.telegram = nil
+        hub.flush("Telegram")
+        #expect(hub.pending.isEmpty)
+    }
+
     /// Skills: import from a folder or archive, assignment, and the copy agents read.
     @MainActor @Test func skillsAreImportedAssignedAndPublished() throws {
         let home = try folder(), fm = FileManager.default
@@ -732,6 +766,98 @@ import Testing
         skills.sync(home: userHome)
         // The same name in Codex takes over once the Claude Code one is gone.
         #expect(skills.skills.first { $0.name == "videos" }?.origin == "Codex")
+    }
+
+    /// Second review: a source that cannot be copied or read for a moment never loses a skill or its assignment,
+    /// and the agents' copy always shows what the library holds.
+    @MainActor @Test func skillSyncSurvivesBrokenSources() throws {
+        let fm = FileManager.default
+        let home = fm.temporaryDirectory.appendingPathComponent("mochi-skills2-" + UUID().uuidString)
+        defer { try? fm.removeItem(at: home) }
+        let user = home.appendingPathComponent("user"), mirror = home.appendingPathComponent("shared")
+        let skills = SkillStore(index: home.appendingPathComponent("skills.json"), library: home.appendingPathComponent("library"),
+                                mirror: mirror, hidden: home.appendingPathComponent("hidden.json"))
+        let mira = Agent(name: "Mira", job: "", project: "/tmp/p")
+        @discardableResult func write(_ root: String, _ name: String, _ body: String = "d", extra: String = "") throws -> URL {
+            let folder = user.appendingPathComponent(root + "/" + name)
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            try Data("---\nname: \(name)\ndescription: \(body)\n---\n\(extra)".utf8).write(to: folder.appendingPathComponent("SKILL.md"))
+            return folder
+        }
+        func mirrored(_ skill: Skill, _ file: String = "SKILL.md") throws -> String {
+            try String(contentsOf: mirror.appendingPathComponent(skill.id + "/" + file), encoding: .utf8)
+        }
+        // A1: a preferred source too large to copy leaves the working one and its assignment alone.
+        try write(".codex/skills", "deploy", "CODEX")
+        skills.sync(home: user)
+        skills.assign(try #require(skills.skills.first), to: [mira.id])
+        let big = try write(".claude/skills", "deploy", "CLAUDE")
+        try Data(count: SkillStore.maxBytes + 1).write(to: big.appendingPathComponent("blob.bin"))
+        skills.sync(home: user)
+        var deploy = try #require(skills.skills.first)
+        #expect(skills.skills.count == 1 && deploy.origin == "Codex" && deploy.agents == [mira.id])
+        // Once it fits, it takes over and keeps the assignment; A5: the agents' copy shows the new text at once.
+        try fm.removeItem(at: big.appendingPathComponent("blob.bin"))
+        skills.sync(home: user)
+        deploy = try #require(skills.skills.first)
+        let shown = try mirrored(deploy)
+        #expect(deploy.origin == "Claude Code" && deploy.agents == [mira.id] && shown.contains("CLAUDE"))
+        // A2: SKILL.md missing for a moment in a folder that is still there: the skill and assignment stay.
+        try fm.moveItem(at: big.appendingPathComponent("SKILL.md"), to: home.appendingPathComponent("aside.md"))
+        skills.sync(home: user)
+        #expect(skills.skills.first?.id == deploy.id && skills.skills.first?.agents == [mira.id] && skills.skills.count == 1)
+        try fm.moveItem(at: home.appendingPathComponent("aside.md"), to: big.appendingPathComponent("SKILL.md"))
+        skills.sync(home: user)
+        #expect(skills.skills.first?.agents == [mira.id] && skills.skills.first?.origin == "Claude Code")
+        // A4: a link inside the skill that now points elsewhere is copied again.
+        let notes = try write(".claude/skills", "notes")
+        try Data("FIRST".utf8).write(to: notes.appendingPathComponent("one.txt"))
+        try Data("SECOND".utf8).write(to: notes.appendingPathComponent("two.txt"))
+        try fm.createSymbolicLink(atPath: notes.appendingPathComponent("current.txt").path, withDestinationPath: "one.txt")
+        skills.sync(home: user)
+        let linked = try #require(skills.skills.first { $0.name == "notes" })
+        #expect(try mirrored(linked, "current.txt") == "FIRST")
+        try fm.removeItem(at: notes.appendingPathComponent("current.txt"))
+        try fm.createSymbolicLink(atPath: notes.appendingPathComponent("current.txt").path, withDestinationPath: "two.txt")
+        skills.sync(home: user)
+        #expect(try mirrored(linked, "current.txt") == "SECOND")
+        // A7: a long SKILL.md with a short head is a valid skill.
+        try write(".claude/skills", "long", extra: String(repeating: "A normal paragraph of documentation.\n", count: 9000))
+        skills.sync(home: user)
+        #expect(skills.skills.contains { $0.name == "long" })
+        // A9: deep folders are copied completely, or the skill is refused, never copied in part.
+        var deep = try write(".claude/skills", "deep")
+        for level in 0..<24 { deep = deep.appendingPathComponent("d\(level)") }
+        try fm.createDirectory(at: deep, withIntermediateDirectories: true)
+        try Data("bottom".utf8).write(to: deep.appendingPathComponent("doc.md"))
+        skills.sync(home: user)
+        let deepSkill = try #require(skills.skills.first { $0.name == "deep" })
+        #expect(fm.fileExists(atPath: mirror.appendingPathComponent(deepSkill.id + "/" + (0..<24).map { "d\($0)" }.joined(separator: "/") + "/doc.md").path))
+        // V-A: what links bring in counts against the size limit, and a link loop is not followed.
+        let loop = try write(".claude/skills", "loop")
+        try fm.createSymbolicLink(atPath: loop.appendingPathComponent("again").path, withDestinationPath: ".")
+        skills.sync(home: user)
+        #expect(skills.skills.contains { $0.name == "loop" })
+        let copies = try write(".claude/skills", "copies")
+        try fm.createDirectory(at: copies.appendingPathComponent("data"), withIntermediateDirectories: true)
+        try Data(count: SkillStore.maxBytes / 2 + 1).write(to: copies.appendingPathComponent("data/half.bin"))
+        try fm.createSymbolicLink(atPath: copies.appendingPathComponent("mirror").path, withDestinationPath: "data")
+        #expect(throws: SkillStore.Failure.self) {
+            try SkillStore.copyResolved(copies, to: home.appendingPathComponent("copied"), root: copies.resolvingSymlinksInPath())
+        }
+        // A8: a hidden skill whose file broke cannot be brought back, so it is not counted.
+        skills.hide(try #require(skills.skills.first { $0.name == "notes" }))
+        #expect(skills.restorable(home: user) == 1)
+        try Data("no head".utf8).write(to: notes.appendingPathComponent("SKILL.md"))
+        #expect(skills.restorable(home: user) == 0)
+        // A3: the swap leaves one complete folder in place.
+        let target = home.appendingPathComponent("swap"), fresh = home.appendingPathComponent("fresh")
+        try fm.createDirectory(at: target, withIntermediateDirectories: true)
+        try fm.createDirectory(at: fresh, withIntermediateDirectories: true)
+        try Data("old".utf8).write(to: target.appendingPathComponent("f"))
+        try Data("new".utf8).write(to: fresh.appendingPathComponent("f"))
+        try SkillStore.swap(fresh, into: target)
+        #expect(try String(contentsOf: target.appendingPathComponent("f"), encoding: .utf8) == "new" && !fm.fileExists(atPath: fresh.path))
     }
 
     @MainActor @Test func usageWarnsOncePerThresholdAndWindow() {
